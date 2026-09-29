@@ -1,4 +1,4 @@
-from typing import TypedDict, Annotated, List, Dict, Any
+from typing import TypedDict, Annotated, List, Dict, Any, NotRequired
 import operator
 
 class SyntropicState(TypedDict):
@@ -12,6 +12,10 @@ class SyntropicState(TypedDict):
     # Global Health Metrics (Syntropic Enhancement)
     confidence_score: float  # 0.0 to 1.0 threshold scale
     validation_errors: List[str]
+
+    # Catalog matching results
+    matched_catalog_item: NotRequired[Dict[str, Any] | None]
+    catalog_match_score: NotRequired[float]
 
     # State Circuit Breaker & Provenance
     retry_count: int
