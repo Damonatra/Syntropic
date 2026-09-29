@@ -1,18 +1,22 @@
 # syntropic/api/main.py
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Literal, Optional
+import asyncio
 import shutil
 from pathlib import Path
 import uuid
 from functools import lru_cache
 import json
 import sqlite3
-from pypdf import PdfReader
+from sse_starlette.sse import EventSourceResponse
 
 from syntropic.core.engine import build_syntropic_engine, erp_push_node
+from syntropic.ingestion.parser import parse_pdf_text
 
 app = FastAPI(
     title="Syntropic Enterprise Engine API",
@@ -150,6 +154,19 @@ def _list_pending_review_jobs() -> list[Dict[str, str]]:
     return [dict(row) for row in rows]
 
 
+async def _review_queue_event_stream(request: Request):
+    previous_queue = None
+    while not await request.is_disconnected():
+        review_queue = _list_pending_review_jobs()
+        if review_queue != previous_queue:
+            yield {
+                "event": "review_queue",
+                "data": json.dumps({"reviews": review_queue}),
+            }
+            previous_queue = review_queue
+        await asyncio.sleep(1)
+
+
 @app.get("/health")
 def health_check():
     return {"status": "online", "engine": "Syntropic Core 1.0"}
@@ -160,12 +177,39 @@ def list_pending_reviews():
     return _list_pending_review_jobs()
 
 
+@app.get("/api/v1/rfq/reviews/events")
+async def stream_review_queue(request: Request):
+    return EventSourceResponse(_review_queue_event_stream(request), ping=15)
+
+
 @app.get("/api/v1/rfq/reviews/{job_id}", response_model=ProcessingResponse)
 def get_review_job(job_id: str):
     job = _get_review_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="RFQ job not found.")
     return job
+
+
+@app.get("/api/v1/rfq/reviews/{job_id}/document")
+def get_review_document(job_id: str):
+    job = _get_review_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="RFQ job not found.")
+
+    filename_prefix = f"{job_id}_"
+    document_path = next(
+        (
+            path
+            for path in UPLOAD_DIR.iterdir()
+            if path.is_file()
+            and path.name.startswith(filename_prefix)
+            and path.suffix.lower() == ".pdf"
+        ),
+        None,
+    )
+    if document_path is None:
+        raise HTTPException(status_code=404, detail="Source PDF not found.")
+    return FileResponse(document_path, media_type="application/pdf", filename=job["filename"])
 
 
 @app.post("/api/v1/rfq/{job_id}/review", response_model=ProcessingResponse)
@@ -264,7 +308,7 @@ async def process_rfq_document(file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, buffer)
 
     try:
-        pdf_text = "\n".join(page.extract_text() or "" for page in PdfReader(saved_path).pages)
+        pdf_text = parse_pdf_text(saved_path)
 
         # Initialize execution state
         initial_state = {
@@ -294,4 +338,30 @@ async def process_rfq_document(file: UploadFile = File(...)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("syntropic.core.matching.api.main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("syntropic.api.main:app", host="127.0.0.1", port=8000, reload=True)
+    # Add to syntropic/api/main.py
+
+from sse_starlette.sse import EventSourceResponse
+import asyncio
+
+@app.get("/api/v1/rfq/stream/{job_id}")
+async def stream_rfq_execution(job_id: str):
+    """
+    Streams LangGraph execution events to the frontend in real time via SSE.
+    """
+    async def event_generator():
+        yield {"event": "status", "data": json.dumps({"step": "ingestion", "message": "Docling PDF Spatial Extraction Started..."})}
+        await asyncio.sleep(0.5)
+        
+        yield {"event": "status", "data": json.dumps({"step": "validation", "message": "Instructor Pydantic Validation & Normalization Active..."})}
+        await asyncio.sleep(0.5)
+        
+        yield {"event": "status", "data": json.dumps({"step": "matching", "message": "Qdrant BM25 + Dense RRF Hybrid Search Executing..."})}
+        await asyncio.sleep(0.5)
+        
+        yield {"event": "status", "data": json.dumps({"step": "gate_check", "message": "Evaluating Health Gate Criteria (Threshold: 0.85)..."})}
+        await asyncio.sleep(0.2)
+        
+        yield {"event": "complete", "data": json.dumps({"status": "finished", "job_id": job_id})}
+
+    return EventSourceResponse(event_generator())

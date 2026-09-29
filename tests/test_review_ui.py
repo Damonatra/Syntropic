@@ -1,6 +1,7 @@
 from pathlib import Path
 from unittest.mock import Mock
 
+import fitz
 import requests
 from streamlit.testing.v1 import AppTest
 
@@ -34,11 +35,17 @@ def test_pending_review_renders_correction_controls(monkeypatch):
 
     def mock_get(url, **kwargs):
         response = Mock(ok=True)
-        response.json.return_value = (
-            [{"job_id": job["job_id"], "filename": job["filename"]}]
-            if url.endswith("/reviews")
-            else job
-        )
+        if url.endswith("/reviews"):
+            response.json.return_value = [
+                {"job_id": job["job_id"], "filename": job["filename"]}
+            ]
+        elif url.endswith("/document"):
+            pdf = fitz.open()
+            pdf.new_page().insert_text((72, 72), "VLV-SS-050 2")
+            response.content = pdf.tobytes()
+            pdf.close()
+        else:
+            response.json.return_value = job
         return response
 
     monkeypatch.setattr(requests, "get", mock_get)
@@ -48,3 +55,4 @@ def test_pending_review_renders_correction_controls(monkeypatch):
     assert any(item.value == "Reviewer decision" for item in app.subheader)
     assert any(widget.label == "Part number" for widget in app.text_input)
     assert any(widget.label == "Quantity" for widget in app.number_input)
+    assert any(widget.label == "PDF page" for widget in app.selectbox)

@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 
 from langgraph.graph import StateGraph, END, START
 from pydantic import BaseModel, Field, ValidationError
-from syntropic.core.matching.catalog import QdrantHybridCatalog
+from syntropic.matching.catalog import QdrantHybridCatalog
 from syntropic.core.schemas import CanonicalSKU
 from syntropic.core.state import SyntropicState
 

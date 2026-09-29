@@ -1,3 +1,6 @@
+import asyncio
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -61,6 +64,27 @@ def test_reviewer_can_correct_and_approve_a_persisted_job(review_client):
     assert duplicate.status_code == 409
 
 
+def test_review_document_is_available_only_for_a_persisted_job(
+    review_client, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(api, "UPLOAD_DIR", tmp_path / "uploads")
+    api.UPLOAD_DIR.mkdir()
+    _add_pending_job("job-document")
+    source_pdf = api.UPLOAD_DIR / "job-document_quote.pdf"
+    source_pdf.write_bytes(b"%PDF-1.4 source")
+
+    response = review_client.get(
+        "/api/v1/rfq/reviews/job-document/document"
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.content == b"%PDF-1.4 source"
+    assert review_client.get(
+        "/api/v1/rfq/reviews/unknown/document"
+    ).status_code == 404
+
+
 def test_reviewer_can_reject_a_job(review_client):
     _add_pending_job("job-2")
 
@@ -73,6 +97,36 @@ def test_reviewer_can_reject_a_job(review_client):
     assert response.json()["status"] == "rejected"
     assert "Duplicate request." in response.json()["execution_result"]["execution_log"][-1]
     assert api._get_review_job("job-2")["review_decision"] == "reject"
+
+
+def test_review_queue_event_stream_emits_initial_and_updated_snapshots(
+    review_client, monkeypatch
+):
+    class ConnectedRequest:
+        async def is_disconnected(self):
+            return False
+
+    async def no_wait(_seconds):
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", no_wait)
+
+    async def read_events():
+        events = api._review_queue_event_stream(ConnectedRequest())
+        initial_event = await anext(events)
+        _add_pending_job("streamed-job")
+        updated_event = await anext(events)
+        await events.aclose()
+        return initial_event, updated_event
+
+    initial_event, updated_event = asyncio.run(read_events())
+
+    assert initial_event["event"] == "review_queue"
+    assert json.loads(initial_event["data"]) == {"reviews": []}
+    assert updated_event["event"] == "review_queue"
+    assert json.loads(updated_event["data"]) == {
+        "reviews": [{"job_id": "streamed-job", "filename": "quote.pdf"}]
+    }
 
 
 def test_approval_requires_valid_part_number_and_quantity(review_client):

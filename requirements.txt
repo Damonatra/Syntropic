@@ -8,5 +8,8 @@ python-multipart
 streamlit
 requests
 pypdf
+PyMuPDF
+Pillow
 qdrant-client
 fastembed
+sse-starlette
