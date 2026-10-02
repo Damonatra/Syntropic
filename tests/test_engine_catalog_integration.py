@@ -1,5 +1,5 @@
 from syntropic.core.engine import build_syntropic_engine, human_in_the_loop_node
-from syntropic.core.matching.api.main import _get_graph_app, _status_from_final_state
+from syntropic.core.matching.api.main import _status_from_final_state, app
 
 
 def test_workflow_matches_catalog_before_erp_push():
@@ -22,7 +22,7 @@ def test_workflow_matches_catalog_before_erp_push():
 
 
 def test_api_import_does_not_initialize_engine_and_status_tracks_outcome():
-    assert _get_graph_app.cache_info().currsize == 0
+    assert getattr(app.state, "graph_app", None) is None
 
     review_state = {
         "confidence_score": 1.0,
@@ -35,7 +35,7 @@ def test_api_import_does_not_initialize_engine_and_status_tracks_outcome():
 
     assert _status_from_final_state(review_state) == "flagged_for_review"
     assert _status_from_final_state(completed_state) == "completed"
-    assert _get_graph_app.cache_info().currsize == 0
+    assert getattr(app.state, "graph_app", None) is None
 
 
 def test_catalog_review_log_reports_match_score_reason():

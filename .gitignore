@@ -1,3 +1,10 @@
 outputs/review_queue.sqlite3
 outputs/review_queue.sqlite3-shm
 outputs/review_queue.sqlite3-wal
+.env
+.env.*
+!.env.example
+.venv/
+.pytest_cache/
+__pycache__/
+*.py[cod]

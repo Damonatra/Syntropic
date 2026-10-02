@@ -15,6 +15,7 @@ class SyntropicState(TypedDict):
 
     # Catalog matching results
     matched_catalog_item: NotRequired[Dict[str, Any] | None]
+    matched_catalog_items: NotRequired[List[Dict[str, Any]]]
     catalog_match_score: NotRequired[float]
 
     # State Circuit Breaker & Provenance

@@ -1,0 +1,59 @@
+services:
+  syntropic_db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-syntropic_db}
+      POSTGRES_USER: ${POSTGRES_USER:-syntropic}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  syntropic_api:
+    build: .
+    restart: unless-stopped
+    command: ["sh", "-c", "alembic upgrade head && uvicorn syntropic.core.matching.api.main:app --host 0.0.0.0 --port 8000"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+      OIDC_ISSUER: ${OIDC_ISSUER:?Set OIDC_ISSUER in .env}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:?Set OIDC_AUDIENCE in .env}
+      OIDC_JWKS_URL: ${OIDC_JWKS_URL:?Set OIDC_JWKS_URL in .env}
+      UPLOAD_DIR: /app/outputs/uploads
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - rfq_uploads:/app/outputs/uploads
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health', timeout=2)"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 120s
+    depends_on:
+      syntropic_db:
+        condition: service_healthy
+
+  syntropic_ui:
+    build: .
+    restart: unless-stopped
+    command: ["streamlit", "run", "syntropic/core/matching/api/ui/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    environment:
+      SYNTROPIC_API_BASE_URL: http://syntropic_api:8000/api/v1/rfq
+    ports:
+      - "127.0.0.1:8501:8501"
+    depends_on:
+      syntropic_api:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  rfq_uploads:

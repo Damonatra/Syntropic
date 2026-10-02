@@ -18,6 +18,7 @@ APP_PATH = (
 
 
 def test_pending_review_renders_correction_controls(monkeypatch):
+    request_headers = []
     job = {
         "job_id": "job-1",
         "filename": "quote.pdf",
@@ -26,7 +27,14 @@ def test_pending_review_renders_correction_controls(monkeypatch):
             "confidence_score": 1.0,
             "catalog_match_score": 0.31,
             "matched_catalog_item": {"part_number": "VALVE-SS-050"},
-            "extracted_data": {"part_number": "VLV-SS-050", "quantity": 2},
+            "extracted_data": {
+                "part_number": "VLV-SS-050",
+                "quantity": 2,
+                "line_items": [
+                    {"part_number": "VLV-SS-050", "quantity": 2},
+                    {"part_number": "PIPE-SS-100", "quantity": 3},
+                ],
+            },
             "execution_log": [
                 "Flagged for Human Review: Catalog match score 0.31 below threshold."
             ],
@@ -34,6 +42,7 @@ def test_pending_review_renders_correction_controls(monkeypatch):
     }
 
     def mock_get(url, **kwargs):
+        request_headers.append(kwargs.get("headers", {}))
         response = Mock(ok=True)
         if url.endswith("/reviews"):
             response.json.return_value = [
@@ -49,10 +58,19 @@ def test_pending_review_renders_correction_controls(monkeypatch):
         return response
 
     monkeypatch.setattr(requests, "get", mock_get)
-    app = AppTest.from_file(str(APP_PATH), default_timeout=10).run()
+    app = AppTest.from_file(str(APP_PATH), default_timeout=10)
+    app.session_state["oidc_access_token"] = "test-access-token"
+    app.run()
 
     assert not app.exception
+    assert request_headers
+    assert all(
+        headers.get("Authorization") == "Bearer test-access-token"
+        for headers in request_headers
+    )
     assert any(item.value == "Reviewer decision" for item in app.subheader)
     assert any(widget.label == "Part number" for widget in app.text_input)
+    assert any(widget.label == "Part number 2" for widget in app.text_input)
     assert any(widget.label == "Quantity" for widget in app.number_input)
+    assert any(widget.label == "Quantity 2" for widget in app.number_input)
     assert any(widget.label == "PDF page" for widget in app.selectbox)

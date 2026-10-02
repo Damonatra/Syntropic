@@ -29,22 +29,46 @@ def _extract_payload(raw_input: str, allow_abbreviations: bool = False) -> tuple
         "part_number": rf"\b(?:{part_labels})\s*[:#=]\s*([A-Za-z0-9][A-Za-z0-9./_-]*)",
         "quantity": rf"\b(?:{quantity_labels})\s*[:#=]\s*([+-]?\d+(?:\.\d+)?)",
     }
-    extracted = {}
-    for field, pattern in patterns.items():
-        match = re.search(pattern, raw_input, re.IGNORECASE)
-        if match:
-            extracted[field] = match.group(1)
+    part_matches = list(re.finditer(patterns["part_number"], raw_input, re.IGNORECASE))
+    if not part_matches:
+        try:
+            ExtractedRFQ.model_validate({})
+        except ValidationError as error:
+            validation_errors = [
+                f"{'.'.join(str(part) for part in item['loc'])}: {item['msg']}"
+                for item in error.errors()
+            ]
+            return {}, 0.0, validation_errors
 
-    try:
-        payload = ExtractedRFQ.model_validate(extracted)
-    except ValidationError as error:
-        validation_errors = [
-            f"{'.'.join(str(part) for part in item['loc'])}: {item['msg']}"
-            for item in error.errors()
-        ]
-        return extracted, 0.0, validation_errors
+    line_items = []
+    validation_errors = []
+    for index, part_match in enumerate(part_matches):
+        block_end = (
+            part_matches[index + 1].start()
+            if index + 1 < len(part_matches)
+            else len(raw_input)
+        )
+        block = raw_input[part_match.start():block_end]
+        quantity_match = re.search(patterns["quantity"], block, re.IGNORECASE)
+        candidate = {"part_number": part_match.group(1)}
+        if quantity_match:
+            candidate["quantity"] = quantity_match.group(1)
 
-    return payload.model_dump(), 1.0, []
+        try:
+            payload = ExtractedRFQ.model_validate(candidate)
+            line_items.append(payload.model_dump())
+        except ValidationError as error:
+            line_items.append(candidate)
+            validation_errors.extend(
+                f"line_items.{index}.{'.'.join(str(part) for part in item['loc'])}: {item['msg']}"
+                for item in error.errors()
+            )
+
+    extracted = {"line_items": line_items}
+    if line_items:
+        extracted.update(line_items[0])
+    confidence_score = 1.0 if line_items and not validation_errors else 0.0
+    return extracted, confidence_score, validation_errors
 
 
 def _bootstrap_catalog() -> QdrantHybridCatalog:
@@ -132,45 +156,83 @@ def catalog_match_node(state: SyntropicState, catalog: Optional[QdrantHybridCata
         catalog = _bootstrap_catalog()
 
     extracted = state.get("extracted_data", {})
-    part_number = str(extracted.get("part_number", "")).strip()
-    quantity = int(extracted.get("quantity", 1) or 1)
+    line_items = extracted.get("line_items") or [extracted]
     raw_input = state.get("raw_input", "")
-
-    if not part_number:
+    if not line_items or not any(item.get("part_number") for item in line_items):
         return {
             "matched_catalog_item": None,
+            "matched_catalog_items": [],
             "catalog_match_score": 0.0,
             "execution_log": ["Catalog match skipped: no part number available."],
         }
 
-    sku = CanonicalSKU(
-        part_number=part_number,
-        description=(raw_input or part_number),
-        quantity=quantity,
-        unit_of_measure="EA",
-        source_row_index=0,
-        extraction_confidence=0.9,
-    )
+    matched_items = []
+    execution_log = []
+    for index, line_item in enumerate(line_items):
+        part_number = str(line_item.get("part_number", "")).strip()
+        if not part_number:
+            matched_items.append({
+                "extracted_item": line_item,
+                "catalog_item": None,
+                "rrf_score": 0.0,
+            })
+            execution_log.append(f"No part number available for line item {index + 1}.")
+            continue
 
-    matches = catalog.match_sku(sku, top_k=1)
-    if not matches:
-        return {
-            "matched_catalog_item": None,
-            "catalog_match_score": 0.0,
-            "execution_log": [f"No catalog match found for part number: {part_number}"],
-        }
+        quantity = int(line_item.get("quantity", 1) or 1)
+        sku = CanonicalSKU(
+            part_number=part_number,
+            description=(raw_input if len(line_items) == 1 else part_number),
+            quantity=quantity,
+            unit_of_measure="EA",
+            source_row_index=index,
+            extraction_confidence=0.9,
+        )
+        matches = catalog.match_sku(sku, top_k=3)
+        if not matches:
+            matched_items.append({
+                "extracted_item": line_item,
+                "catalog_item": None,
+                "rrf_score": 0.0,
+            })
+            execution_log.append(f"No catalog match found for part number: {part_number}")
+            continue
 
-    best_match = matches[0]
-    best_item = best_match["catalog_item"]
-    best_score = float(best_match["rrf_score"])
+        normalized_part_number = part_number.replace(" ", "").upper()
+        best_match = next(
+            (
+                match
+                for match in matches
+                if str(match["catalog_item"].get("part_number", ""))
+                .replace(" ", "")
+                .upper()
+                == normalized_part_number
+            ),
+            matches[0],
+        )
+        best_item = best_match["catalog_item"]
+        best_score = float(best_match["rrf_score"])
+        matched_items.append({
+            "extracted_item": line_item,
+            "catalog_item": best_item,
+            "rrf_score": best_score,
+        })
+        execution_log.append(
+            f"Catalog match for line item {index + 1}: "
+            f"{best_item['part_number']} with score {best_score:.4f}."
+        )
+        print(
+            f"[Syntropic Engine] Catalog match found: "
+            f"{best_item['part_number']} ({best_score:.4f})"
+        )
 
-    print(f"[Syntropic Engine] Catalog match found: {best_item['part_number']} ({best_score:.4f})")
+    first_match = matched_items[0]
+    overall_score = min(item["rrf_score"] for item in matched_items)
     return {
-        "matched_catalog_item": best_item,
-        "catalog_match_score": best_score,
-        "execution_log": [
-            f"Catalog match confirmed for {best_item['part_number']} with score {best_score:.4f}."
-        ],
+        "matched_catalog_item": first_match["catalog_item"],
+        "matched_catalog_items": matched_items,
+        "catalog_match_score": overall_score,
+        "execution_log": execution_log,
     }
 
 
@@ -192,13 +254,24 @@ def erp_push_node(state: SyntropicState) -> Dict[str, Any]:
     except ValidationError as error:
         raise ValueError("Refusing ERP push for invalid RFQ data.") from error
 
+    matched_items = state.get("matched_catalog_items", [])
     matched_item = state.get("matched_catalog_item")
-    print("[Syntropic Engine] SUCCESS: Payload approved. Pushing to ERP catalog.")
-    return {
-        "execution_log": [
-            "Payload successfully committed to ERP." if matched_item is None else f"Payload matched catalog item {matched_item.get('part_number')} before ERP commit."
-        ]
-    }
+    matched_part_numbers = [
+        str(item["catalog_item"].get("part_number", ""))
+        for item in matched_items
+        if item.get("catalog_item")
+    ]
+    if matched_part_numbers:
+        message = (
+            "ERP push simulated for catalog items: "
+            f"{', '.join(matched_part_numbers)}."
+        )
+    elif matched_item is not None:
+        message = f"ERP push simulated for catalog item {matched_item.get('part_number')}."
+    else:
+        message = "ERP push simulated without a catalog match."
+    print("[Syntropic Engine] Payload approved; ERP push is simulated.")
+    return {"execution_log": [message]}
 
 # -------------------------------------------------------------------
 # 2. DYNAMIC HEALTH ROUTER (SYN TROPIC ENHANCEMENT)
@@ -234,7 +307,7 @@ def syntropic_health_router(state: SyntropicState) -> str:
 # 3. GRAPH COMPOSITION & COMPILATION
 # -------------------------------------------------------------------
 
-def build_syntropic_engine():
+def build_syntropic_engine(checkpointer: Any = None):
     workflow = StateGraph(SyntropicState)
     catalog = _bootstrap_catalog()
 
@@ -282,7 +355,7 @@ def build_syntropic_engine():
     workflow.add_edge("erp_push", END)
     workflow.add_edge("hitl_queue", END)
 
-    return workflow.compile()
+    return workflow.compile(checkpointer=checkpointer)
 
 if __name__ == "__main__":
     app = build_syntropic_engine()

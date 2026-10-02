@@ -2,6 +2,42 @@ import json
 
 from syntropic.core.matching.catalog import QdrantHybridCatalog
 from syntropic.core.schemas import CanonicalSKU
+from syntropic.core.engine import _extract_payload, build_syntropic_engine
+
+
+def test_extraction_preserves_all_labeled_line_items():
+    extracted, confidence, errors = _extract_payload(
+        "Part Number: VALVE-SS-050\nQuantity: 10\n"
+        "Part Number: PIPE-SS-100\nQuantity: 3"
+    )
+
+    assert confidence == 1.0
+    assert errors == []
+    assert extracted["line_items"] == [
+        {"part_number": "VALVE-SS-050", "quantity": 10},
+        {"part_number": "PIPE-SS-100", "quantity": 3},
+    ]
+
+
+def test_workflow_matches_every_extracted_line_item():
+    result = build_syntropic_engine().invoke(
+        {
+            "raw_input": (
+                "Part Number: VALVE-SS-050\nQuantity: 10\n"
+                "Part Number: PIPE-SS-100\nQuantity: 3"
+            ),
+            "extracted_data": {},
+            "confidence_score": 0.0,
+            "validation_errors": [],
+            "retry_count": 0,
+            "execution_log": [],
+        }
+    )
+
+    assert [
+        match["catalog_item"]["part_number"]
+        for match in result["matched_catalog_items"]
+    ] == ["VALVE-SS-050", "PIPE-SS-100"]
 
 
 def test_catalog_matches_expected_sku():
