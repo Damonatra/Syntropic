@@ -1,4 +1,4 @@
-from typing import TypedDict, Annotated, List, Dict, Any, NotRequired
+from typing import TypedDict, Annotated, List, Dict, Any, Literal, NotRequired
 import operator
 
 class SyntropicState(TypedDict):
@@ -8,6 +8,8 @@ class SyntropicState(TypedDict):
     """
     raw_input: str
     extracted_data: Dict[str, Any]
+    document_layout: NotRequired[Dict[str, Any]]
+    webhook_dispatch_requested: NotRequired[bool]
 
     # Global Health Metrics (Syntropic Enhancement)
     confidence_score: float  # 0.0 to 1.0 threshold scale
@@ -17,6 +19,10 @@ class SyntropicState(TypedDict):
     matched_catalog_item: NotRequired[Dict[str, Any] | None]
     matched_catalog_items: NotRequired[List[Dict[str, Any]]]
     catalog_match_score: NotRequired[float]
+    health_gate_decision: NotRequired[Literal["approve", "heal", "review"]]
+    health_gate_score: NotRequired[float]
+    health_gate_threshold: NotRequired[float]
+    health_gate_payload_valid: NotRequired[bool]
 
     # State Circuit Breaker & Provenance
     retry_count: int

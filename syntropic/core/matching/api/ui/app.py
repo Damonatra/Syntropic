@@ -232,6 +232,7 @@ if "result" in st.session_state:
             for index, line_item in enumerate(review_line_items):
                 part_label = "Part number" if index == 0 else f"Part number {index + 1}"
                 quantity_label = "Quantity" if index == 0 else f"Quantity {index + 1}"
+                unit_label = "Unit of measure" if index == 0 else f"Unit of measure {index + 1}"
                 part_number = st.text_input(
                     part_label,
                     value=str(line_item.get("part_number", "")),
@@ -244,8 +245,18 @@ if "result" in st.session_state:
                     step=1,
                     key=f"review_quantity_{index}",
                 )
+                unit_of_measure = st.text_input(
+                    unit_label,
+                    value=str(line_item.get("unit_of_measure", "EA")),
+                    max_chars=16,
+                    key=f"review_unit_of_measure_{index}",
+                )
                 corrected_line_items.append(
-                    {"part_number": part_number, "quantity": quantity}
+                    {
+                        "part_number": part_number,
+                        "quantity": quantity,
+                        "unit_of_measure": unit_of_measure,
+                    }
                 )
             review_note = st.text_area("Review note", max_chars=1000)
             approve = st.form_submit_button("Approve RFQ", type="primary")

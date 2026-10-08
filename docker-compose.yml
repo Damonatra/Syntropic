@@ -23,7 +23,20 @@ services:
       OIDC_ISSUER: ${OIDC_ISSUER:?Set OIDC_ISSUER in .env}
       OIDC_AUDIENCE: ${OIDC_AUDIENCE:?Set OIDC_AUDIENCE in .env}
       OIDC_JWKS_URL: ${OIDC_JWKS_URL:?Set OIDC_JWKS_URL in .env}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?Set OIDC_CLIENT_ID in .env}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:?Set OIDC_REDIRECT_URI in .env}
+      OIDC_STATE_SECRET: ${OIDC_STATE_SECRET:?Set OIDC_STATE_SECRET in .env}
+      WEBHOOK_URL: ${WEBHOOK_URL:?Set WEBHOOK_URL in .env}
+      WEBHOOK_HMAC_SECRET: ${WEBHOOK_HMAC_SECRET:?Set WEBHOOK_HMAC_SECRET in .env}
       UPLOAD_DIR: /app/outputs/uploads
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-syntropic-enterprise-production}
+      LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
+      LANGCHAIN_TRACING_V2: ${LANGSMITH_TRACING:-false}
+      LANGCHAIN_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGCHAIN_PROJECT: ${LANGSMITH_PROJECT:-syntropic-enterprise-production}
+      LANGCHAIN_ENDPOINT: ${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
@@ -43,13 +56,14 @@ services:
         condition: service_healthy
 
   syntropic_ui:
-    build: .
+    build:
+      context: ./syntropic-ui
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
     restart: unless-stopped
-    command: ["streamlit", "run", "syntropic/core/matching/api/ui/app.py", "--server.address=0.0.0.0", "--server.port=8501"]
-    environment:
-      SYNTROPIC_API_BASE_URL: http://syntropic_api:8000/api/v1/rfq
     ports:
-      - "127.0.0.1:8501:8501"
+      - "127.0.0.1:3000:3000"
     depends_on:
       syntropic_api:
         condition: service_healthy

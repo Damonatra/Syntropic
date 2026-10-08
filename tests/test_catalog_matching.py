@@ -19,6 +19,55 @@ def test_extraction_preserves_all_labeled_line_items():
     ]
 
 
+def test_extraction_and_normalization_canonicalize_uom_aliases():
+    result = build_syntropic_engine().invoke(
+        {
+            "raw_input": (
+                "Part Number: PIPE-SS-100\nQuantity: 3 feet\n"
+                "Part Number: VALVE-SS-050\nQuantity: 10 pcs"
+            ),
+            "extracted_data": {},
+            "confidence_score": 0.0,
+            "validation_errors": [],
+            "retry_count": 0,
+            "execution_log": [],
+        }
+    )
+
+    assert result["extracted_data"]["line_items"] == [
+        {
+            "part_number": "PIPE-SS-100",
+            "quantity": 3,
+            "unit_of_measure": "FT",
+        },
+        {
+            "part_number": "VALVE-SS-050",
+            "quantity": 10,
+            "unit_of_measure": "EA",
+        },
+    ]
+
+
+def test_unsupported_uom_is_routed_to_human_review():
+    result = build_syntropic_engine().invoke(
+        {
+            "raw_input": "Part Number: PIPE-SS-100\nQuantity: 3 furlongs",
+            "extracted_data": {},
+            "confidence_score": 0.0,
+            "validation_errors": [],
+            "retry_count": 0,
+            "execution_log": [],
+        }
+    )
+
+    assert result["validation_errors"]
+    assert "unsupported unit 'furlongs'" in result["validation_errors"][-1]
+    assert any(
+        entry.startswith("Flagged for Human Review:")
+        for entry in result["execution_log"]
+    )
+
+
 def test_workflow_matches_every_extracted_line_item():
     result = build_syntropic_engine().invoke(
         {

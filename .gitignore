@@ -8,3 +8,5 @@ outputs/review_queue.sqlite3-wal
 .pytest_cache/
 __pycache__/
 *.py[cod]
+node_modules/
+.next/

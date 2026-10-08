@@ -1,11 +1,34 @@
 import re
 from typing import Any, Dict, List, Optional
 
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import StateGraph, END, START
 from pydantic import BaseModel, Field, ValidationError
+from psycopg.rows import dict_row
+from psycopg_pool import AsyncConnectionPool
+from syntropic.core.config import settings
 from syntropic.matching.catalog import QdrantHybridCatalog
 from syntropic.core.schemas import CanonicalSKU
+from syntropic.core.normalization import normalize_extracted_data
+from syntropic.core.normalizer import TradeAttributeNormalizer
 from syntropic.core.state import SyntropicState
+
+
+async def init_checkpointer_pool() -> AsyncConnectionPool:
+    pool = AsyncConnectionPool(
+        conninfo=settings.sync_database_url,
+        max_size=20,
+        kwargs={"autocommit": True, "row_factory": dict_row},
+    )
+    await pool.open()
+    return pool
+
+
+async def get_postgres_saver(pool: AsyncConnectionPool) -> AsyncPostgresSaver:
+    saver = AsyncPostgresSaver(pool)
+    await saver.setup()
+    return saver
+
 
 CONFIDENCE_THRESHOLD = 0.85
 CATALOG_MATCH_THRESHOLD = 0.5
@@ -27,7 +50,7 @@ def _extract_payload(raw_input: str, allow_abbreviations: bool = False) -> tuple
 
     patterns = {
         "part_number": rf"\b(?:{part_labels})\s*[:#=]\s*([A-Za-z0-9][A-Za-z0-9./_-]*)",
-        "quantity": rf"\b(?:{quantity_labels})\s*[:#=]\s*([+-]?\d+(?:\.\d+)?)",
+        "quantity": rf"\b(?:{quantity_labels})\s*[:#=]\s*([+-]?\d+(?:\.\d+)?)(?:[ \t]*([A-Za-z]+))?",
     }
     part_matches = list(re.finditer(patterns["part_number"], raw_input, re.IGNORECASE))
     if not part_matches:
@@ -53,10 +76,15 @@ def _extract_payload(raw_input: str, allow_abbreviations: bool = False) -> tuple
         candidate = {"part_number": part_match.group(1)}
         if quantity_match:
             candidate["quantity"] = quantity_match.group(1)
+            if quantity_match.group(2):
+                candidate["unit_of_measure"] = quantity_match.group(2)
 
         try:
             payload = ExtractedRFQ.model_validate(candidate)
-            line_items.append(payload.model_dump())
+            line_item = payload.model_dump()
+            if candidate.get("unit_of_measure"):
+                line_item["unit_of_measure"] = candidate["unit_of_measure"]
+            line_items.append(line_item)
         except ValidationError as error:
             line_items.append(candidate)
             validation_errors.extend(
@@ -69,6 +97,26 @@ def _extract_payload(raw_input: str, allow_abbreviations: bool = False) -> tuple
         extracted.update(line_items[0])
     confidence_score = 1.0 if line_items and not validation_errors else 0.0
     return extracted, confidence_score, validation_errors
+
+
+def normalization_node(state: SyntropicState) -> Dict[str, Any]:
+    normalized, normalization_errors = normalize_extracted_data(
+        state.get("extracted_data", {})
+    )
+    validation_errors = list(state.get("validation_errors", []))
+    validation_errors.extend(normalization_errors)
+    return {
+        "extracted_data": normalized,
+        "validation_errors": validation_errors,
+        "confidence_score": (
+            state.get("confidence_score", 0.0) if not normalization_errors else 0.0
+        ),
+        "execution_log": [
+            "RFQ attributes normalized to canonical procurement units."
+            if not normalization_errors
+            else "RFQ normalization requires manual review."
+        ],
+    }
 
 
 def _bootstrap_catalog() -> QdrantHybridCatalog:
@@ -137,7 +185,7 @@ def self_healing_node(state: SyntropicState) -> Dict[str, Any]:
     }
 
 def human_in_the_loop_node(state: SyntropicState) -> Dict[str, Any]:
-    """Flags high-risk edge cases to the Streamlit/FastHTML review queue."""
+    """Flags high-risk edge cases for human review."""
     print("[Syntropic Engine] CRITICAL: Routed to Human-in-the-Loop Queue for Manual Approval.")
     errors = state.get("validation_errors", [])
     if errors:
@@ -179,19 +227,38 @@ def catalog_match_node(state: SyntropicState, catalog: Optional[QdrantHybridCata
             execution_log.append(f"No part number available for line item {index + 1}.")
             continue
 
+        description = str(
+            line_item.get("description")
+            or (raw_input if len(line_items) == 1 else part_number)
+        )
+        normalized_description, dimensional_specs = (
+            TradeAttributeNormalizer.extract_dimensions(description)
+        )
+        normalized_line_item = dict(line_item)
+        normalized_line_item["description"] = normalized_description
+        if dimensional_specs:
+            normalized_line_item["specifications"] = {
+                **line_item.get("specifications", {}),
+                **{
+                    key: f"{value:g}" if isinstance(value, float) else str(value)
+                    for key, value in dimensional_specs.items()
+                },
+            }
+
         quantity = int(line_item.get("quantity", 1) or 1)
         sku = CanonicalSKU(
             part_number=part_number,
-            description=(raw_input if len(line_items) == 1 else part_number),
+            description=normalized_description,
             quantity=quantity,
-            unit_of_measure="EA",
+            unit_of_measure=str(line_item.get("unit_of_measure", "EA")),
+            specifications=normalized_line_item.get("specifications", {}),
             source_row_index=index,
             extraction_confidence=0.9,
         )
         matches = catalog.match_sku(sku, top_k=3)
         if not matches:
             matched_items.append({
-                "extracted_item": line_item,
+                "extracted_item": normalized_line_item,
                 "catalog_item": None,
                 "rrf_score": 0.0,
             })
@@ -213,7 +280,7 @@ def catalog_match_node(state: SyntropicState, catalog: Optional[QdrantHybridCata
         best_item = best_match["catalog_item"]
         best_score = float(best_match["rrf_score"])
         matched_items.append({
-            "extracted_item": line_item,
+            "extracted_item": normalized_line_item,
             "catalog_item": best_item,
             "rrf_score": best_score,
         })
@@ -242,17 +309,53 @@ def catalog_match_router(state: SyntropicState) -> str:
     return "approve" if match_score >= CATALOG_MATCH_THRESHOLD else "review"
 
 
-def erp_push_node(state: SyntropicState) -> Dict[str, Any]:
-    """Pushes high-confidence parsed data into ERP system."""
+def erp_sync_node(state: SyntropicState) -> Dict[str, Any]:
+    """Normalize approved data and request durable asynchronous ERP delivery."""
     if (
         not CONFIDENCE_THRESHOLD <= state.get("confidence_score", 0.0) <= 1.0
         or state.get("validation_errors")
     ):
         raise ValueError("Refusing ERP push for unapproved or invalid RFQ data.")
+    extracted_data = dict(state.get("extracted_data", {}))
+    source_items = extracted_data.get("line_items") or [extracted_data]
     try:
-        ExtractedRFQ.model_validate(state.get("extracted_data", {}))
+        for item in source_items:
+            ExtractedRFQ.model_validate(item)
     except ValidationError as error:
         raise ValueError("Refusing ERP push for invalid RFQ data.") from error
+
+    normalized_items = []
+    for source_item in source_items:
+        item = dict(source_item)
+        raw_uom = item.get("unit_of_measure", "EA")
+        raw_description = str(item.get("description") or "")
+        item["unit_of_measure"] = TradeAttributeNormalizer.normalize_uom(
+            str(raw_uom)
+        )
+        normalized_description, specifications = (
+            TradeAttributeNormalizer.extract_dimensions(raw_description)
+        )
+        if raw_description:
+            item["description"] = normalized_description
+        if specifications:
+            existing_specifications = item.get("specifications") or {}
+            if not isinstance(existing_specifications, dict):
+                raise ValueError(
+                    "Refusing ERP sync for invalid item specifications."
+                )
+            item["specifications"] = {
+                **existing_specifications,
+                **{
+                    key: f"{value:g}" if isinstance(value, float) else str(value)
+                    for key, value in specifications.items()
+                },
+            }
+        normalized_items.append(item)
+
+    if extracted_data.get("line_items"):
+        extracted_data["line_items"] = normalized_items
+    if normalized_items:
+        extracted_data.update(normalized_items[0])
 
     matched_items = state.get("matched_catalog_items", [])
     matched_item = state.get("matched_catalog_item")
@@ -263,15 +366,22 @@ def erp_push_node(state: SyntropicState) -> Dict[str, Any]:
     ]
     if matched_part_numbers:
         message = (
-            "ERP push simulated for catalog items: "
+            "ERP webhook queued for catalog items: "
             f"{', '.join(matched_part_numbers)}."
         )
     elif matched_item is not None:
-        message = f"ERP push simulated for catalog item {matched_item.get('part_number')}."
+        message = f"ERP webhook queued for catalog item {matched_item.get('part_number')}."
     else:
-        message = "ERP push simulated without a catalog match."
-    print("[Syntropic Engine] Payload approved; ERP push is simulated.")
-    return {"execution_log": [message]}
+        message = "ERP webhook queued without a catalog match."
+    print("[Syntropic Engine] Payload approved; ERP webhook queued for delivery.")
+    return {
+        "extracted_data": extracted_data,
+        "webhook_dispatch_requested": True,
+        "execution_log": [message],
+    }
+
+
+erp_push_node = erp_sync_node
 
 # -------------------------------------------------------------------
 # 2. DYNAMIC HEALTH ROUTER (SYN TROPIC ENHANCEMENT)
@@ -285,11 +395,7 @@ def syntropic_health_router(state: SyntropicState) -> str:
     score = state.get("confidence_score", 0.0)
     retries = state.get("retry_count", 0)
 
-    try:
-        ExtractedRFQ.model_validate(state.get("extracted_data", {}))
-        payload_is_valid = not state.get("validation_errors", [])
-    except ValidationError:
-        payload_is_valid = False
+    payload_is_valid = _health_gate_payload_is_valid(state)
 
     print(
         f"\n--- [Health Router Audit] Score: {score:.2f} | "
@@ -303,39 +409,73 @@ def syntropic_health_router(state: SyntropicState) -> str:
     else:
         return "review"
 
+
+def _health_gate_payload_is_valid(state: SyntropicState) -> bool:
+    try:
+        ExtractedRFQ.model_validate(state.get("extracted_data", {}))
+        return not state.get("validation_errors", [])
+    except ValidationError:
+        return False
+
+
+def health_gate_node(state: SyntropicState) -> Dict[str, Any]:
+    """Record the health-gate inputs and routing decision as a traced node."""
+    decision = syntropic_health_router(state)
+    score = float(state.get("confidence_score", 0.0))
+    retries = state.get("retry_count", 0)
+    payload_is_valid = _health_gate_payload_is_valid(state)
+
+    message = (
+        f"Health gate decision: {decision} "
+        f"(confidence {score:.2f}/{CONFIDENCE_THRESHOLD:.2f}, "
+        f"payload {'valid' if payload_is_valid else 'invalid'}, "
+        f"retry {retries}/{MAX_HEALING_RETRIES})."
+    )
+    return {
+        "health_gate_decision": decision,
+        "health_gate_score": score,
+        "health_gate_threshold": CONFIDENCE_THRESHOLD,
+        "health_gate_payload_valid": payload_is_valid,
+        "execution_log": [message],
+    }
+
+
+def health_gate_router(state: SyntropicState) -> str:
+    """Route using the decision recorded by the observable health-gate node."""
+    decision = state.get("health_gate_decision")
+    if decision not in {"approve", "heal", "review"}:
+        raise ValueError("Health gate node did not record a valid decision.")
+    return decision
+
+
 # -------------------------------------------------------------------
 # 3. GRAPH COMPOSITION & COMPILATION
 # -------------------------------------------------------------------
 
 def build_syntropic_engine(checkpointer: Any = None):
+    settings.configure_langsmith_tracing()
     workflow = StateGraph(SyntropicState)
     catalog = _bootstrap_catalog()
 
     # Add Execution Nodes
     workflow.add_node("extraction", extraction_node)
     workflow.add_node("self_healing", self_healing_node)
+    workflow.add_node("normalize", normalization_node)
+    workflow.add_node("health_gate", health_gate_node)
     workflow.add_node("catalog_match", lambda state: catalog_match_node(state, catalog))
     workflow.add_node("hitl_queue", human_in_the_loop_node)
-    workflow.add_node("erp_push", erp_push_node)
+    workflow.add_node("erp_push", erp_sync_node)
 
     # Define Entry Edge
     workflow.add_edge(START, "extraction")
+    workflow.add_edge("extraction", "normalize")
 
-    # Add Conditional Health Routing Edges after Extraction
+    # Revalidate normalized attributes after both initial and healing extraction.
+    workflow.add_edge("self_healing", "normalize")
+    workflow.add_edge("normalize", "health_gate")
     workflow.add_conditional_edges(
-        "extraction",
-        syntropic_health_router,
-        {
-            "approve": "catalog_match",
-            "heal": "self_healing",
-            "review": "hitl_queue"
-        }
-    )
-
-    # Add Conditional Health Routing Edges after Self-Healing
-    workflow.add_conditional_edges(
-        "self_healing",
-        syntropic_health_router,
+        "health_gate",
+        health_gate_router,
         {
             "approve": "catalog_match",
             "heal": "self_healing",

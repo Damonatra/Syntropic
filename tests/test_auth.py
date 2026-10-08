@@ -53,6 +53,16 @@ def test_oidc_bearer_token_is_verified_and_claims_returned(oidc_keys):
     assert claims["sub"] == "reviewer-1"
 
 
+def test_oidc_identity_token_validates_client_audience_and_nonce(oidc_keys):
+    token = _token(oidc_keys, aud="syntropic-client", nonce="expected-nonce")
+
+    auth.verify_oidc_id_token(token, "expected-nonce", "syntropic-client")
+
+    with pytest.raises(HTTPException) as error:
+        auth.verify_oidc_id_token(token, "different-nonce", "syntropic-client")
+    assert error.value.status_code == 401
+
+
 @pytest.mark.parametrize(
     "claims",
     [

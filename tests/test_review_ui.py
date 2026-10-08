@@ -31,8 +31,16 @@ def test_pending_review_renders_correction_controls(monkeypatch):
                 "part_number": "VLV-SS-050",
                 "quantity": 2,
                 "line_items": [
-                    {"part_number": "VLV-SS-050", "quantity": 2},
-                    {"part_number": "PIPE-SS-100", "quantity": 3},
+                    {
+                        "part_number": "VLV-SS-050",
+                        "quantity": 2,
+                        "unit_of_measure": "EA",
+                    },
+                    {
+                        "part_number": "PIPE-SS-100",
+                        "quantity": 3,
+                        "unit_of_measure": "FT",
+                    },
                 ],
             },
             "execution_log": [
@@ -73,4 +81,6 @@ def test_pending_review_renders_correction_controls(monkeypatch):
     assert any(widget.label == "Part number 2" for widget in app.text_input)
     assert any(widget.label == "Quantity" for widget in app.number_input)
     assert any(widget.label == "Quantity 2" for widget in app.number_input)
+    assert any(widget.label == "Unit of measure" for widget in app.text_input)
+    assert any(widget.label == "Unit of measure 2" for widget in app.text_input)
     assert any(widget.label == "PDF page" for widget in app.selectbox)

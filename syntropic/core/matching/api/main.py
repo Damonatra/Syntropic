@@ -3,21 +3,39 @@
 from contextlib import asynccontextmanager
 import asyncio
 import json
+import logging
 import os
 from pathlib import Path, PureWindowsPath
+import secrets
 from typing import Any, AsyncGenerator, AsyncIterator, Dict, Literal, Optional
 import uuid
 
-from fastapi import Depends, FastAPI, UploadFile, File, HTTPException, Request
+from fastapi import Depends, FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
-from pypdf.errors import PdfReadError
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sse_starlette.sse import EventSourceResponse
 
-from syntropic.core.engine import build_syntropic_engine, erp_push_node
-from syntropic.core.matching.api.auth import require_authenticated_user
+from syntropic.core.engine import (
+    build_syntropic_engine,
+    erp_sync_node,
+    get_postgres_saver,
+    init_checkpointer_pool,
+)
+from syntropic.core.normalization import normalize_unit_of_measure
+from syntropic.core.matching.api.auth import (
+    OIDC_FLOW_COOKIE,
+    OIDC_FLOW_TTL_SECONDS,
+    _oidc_metadata,
+    _read_flow_state,
+    create_oidc_authorization_request,
+    exchange_oidc_code,
+    get_oidc_client_config,
+    require_authenticated_user,
+    verify_oidc_id_token,
+)
 from syntropic.core.matching.api.database import (
     Base,
     ReviewJob,
@@ -25,9 +43,25 @@ from syntropic.core.matching.api.database import (
     list_pending_review_jobs as fetch_pending_review_jobs,
     save_review_job as persist_review_job,
 )
-from syntropic.ingestion.parser import parse_pdf_text
+from syntropic.core.matching.api.webhook import (
+    deliver_webhook_outbox,
+    get_webhook_config,
+)
+from syntropic.ingestion.parser import PdfConversionError, parse_pdf_document
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+logger = logging.getLogger(__name__)
+
+
+def _report_webhook_worker_failure(worker: asyncio.Task[None]) -> None:
+    if worker.cancelled():
+        return
+    error = worker.exception()
+    if error is not None:
+        logger.error(
+            "Webhook delivery worker stopped unexpectedly.",
+            exc_info=(type(error), error, error.__traceback__),
+        )
 
 
 @asynccontextmanager
@@ -46,6 +80,8 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     application.state.session_factory = async_sessionmaker(
         engine, expire_on_commit=False
     )
+    checkpointer_pool = None
+    webhook_worker = None
 
     try:
         if testing:
@@ -54,19 +90,33 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
             application.state.graph_app = None
             yield
         else:
-            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-
-            checkpoint_url = database_url.replace(
-                "postgresql+asyncpg://", "postgresql://", 1
+            checkpointer_pool = await init_checkpointer_pool()
+            application.state.checkpointer_pool = checkpointer_pool
+            checkpointer = await get_postgres_saver(checkpointer_pool)
+            application.state.graph_app = build_syntropic_engine(checkpointer)
+            webhook_endpoint, webhook_secret = get_webhook_config()
+            webhook_worker = asyncio.create_task(
+                deliver_webhook_outbox(
+                    application.state.session_factory,
+                    webhook_endpoint,
+                    webhook_secret,
+                ),
+                name="syntropic-webhook-outbox",
             )
-            async with AsyncPostgresSaver.from_conn_string(
-                checkpoint_url
-            ) as checkpointer:
-                await checkpointer.setup()
-                application.state.graph_app = build_syntropic_engine(checkpointer)
-                yield
+            webhook_worker.add_done_callback(_report_webhook_worker_failure)
+            yield
     finally:
-        await engine.dispose()
+        try:
+            if webhook_worker is not None:
+                webhook_worker.cancel()
+                try:
+                    await webhook_worker
+                except asyncio.CancelledError:
+                    pass
+        finally:
+            if checkpointer_pool is not None:
+                await checkpointer_pool.close()
+            await engine.dispose()
 
 
 app = FastAPI(
@@ -79,7 +129,10 @@ app = FastAPI(
 # Enable CORS for local UI development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8501", "http://127.0.0.1:8501"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -109,6 +162,7 @@ class ReviewRequest(BaseModel):
 class ReviewLineItem(BaseModel):
     part_number: str = Field(min_length=1, max_length=100)
     quantity: int = Field(ge=1)
+    unit_of_measure: str | None = Field(default=None, min_length=1, max_length=16)
 
 
 class ReviewQueueItem(BaseModel):
@@ -155,9 +209,131 @@ async def _review_queue_event_stream(
         await asyncio.sleep(1)
 
 
+async def _authenticated_token_response(
+    token_response: dict[str, Any], nonce: str, client_id: str
+) -> JSONResponse:
+    access_token = token_response.get("access_token")
+    identity_token = token_response.get("id_token")
+    if not isinstance(access_token, str) or not isinstance(identity_token, str):
+        raise HTTPException(
+            status_code=502,
+            detail="The OIDC provider did not return the required tokens.",
+        )
+
+    await asyncio.to_thread(verify_oidc_id_token, identity_token, nonce, client_id)
+    claims = await asyncio.to_thread(
+        require_authenticated_user,
+        HTTPAuthorizationCredentials(scheme="Bearer", credentials=access_token),
+    )
+    response = JSONResponse(
+        {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "expires_in": token_response.get("expires_in"),
+            "authenticated_as": claims["sub"],
+        },
+        headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+    )
+    return response
+
+
+@app.get("/api/v1/auth/authorize", include_in_schema=False)
+async def begin_oidc_authorization():
+    config = get_oidc_client_config()
+    metadata = await _oidc_metadata(config["issuer"])
+    authorization_url, signed_state = create_oidc_authorization_request(
+        metadata, config
+    )
+    response = RedirectResponse(authorization_url, status_code=302)
+    response.set_cookie(
+        OIDC_FLOW_COOKIE,
+        signed_state,
+        max_age=OIDC_FLOW_TTL_SECONDS,
+        httponly=True,
+        secure=config["redirect_uri"].startswith("https://"),
+        samesite="lax",
+        path="/api/v1/auth/callback",
+    )
+    return response
+
+
+@app.get("/api/v1/auth/callback", include_in_schema=False)
+async def complete_oidc_authorization(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+):
+    if error:
+        raise HTTPException(
+            status_code=401, detail="OIDC authentication was not completed."
+        )
+    if not code or not state:
+        raise HTTPException(
+            status_code=400, detail="OIDC authorization code and state are required."
+        )
+
+    config = get_oidc_client_config()
+    cookie_value = request.cookies.get(OIDC_FLOW_COOKIE)
+    if not cookie_value:
+        raise HTTPException(
+            status_code=401, detail="The OIDC login state is missing or expired."
+        )
+    flow = _read_flow_state(cookie_value, config["state_secret"])
+    if not secrets.compare_digest(flow["state"], state):
+        raise HTTPException(
+            status_code=401, detail="The OIDC login state does not match."
+        )
+
+    metadata = await _oidc_metadata(config["issuer"])
+    token_response = await exchange_oidc_code(
+        code, flow["code_verifier"], config, metadata
+    )
+    response = await _authenticated_token_response(
+        token_response, flow["nonce"], config["client_id"]
+    )
+    response.delete_cookie(OIDC_FLOW_COOKIE, path="/api/v1/auth/callback")
+    return response
+
+
+@app.post("/api/v1/auth/token")
+async def exchange_oidc_authorization_code(
+    grant_type: str = Form(),
+    code: str = Form(),
+    code_verifier: str = Form(min_length=43, max_length=128),
+    nonce: str = Form(min_length=1),
+    redirect_uri: str = Form(),
+):
+    config = get_oidc_client_config()
+    if grant_type != "authorization_code" or not secrets.compare_digest(
+        redirect_uri, config["redirect_uri"]
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Only authorization-code exchange for the configured redirect URI is supported.",
+        )
+    metadata = await _oidc_metadata(config["issuer"])
+    token_response = await exchange_oidc_code(
+        code, code_verifier, config, metadata
+    )
+    return await _authenticated_token_response(
+        token_response, nonce, config["client_id"]
+    )
+
+
 @app.get("/health")
 def health_check():
     return {"status": "online", "engine": "Syntropic Core 1.0"}
+
+
+@app.get("/api/v1/health")
+async def authenticated_health_check(
+    current_user: dict[str, Any] = Depends(require_authenticated_user),
+):
+    return {
+        "status": "healthy",
+        "authenticated_as": current_user["sub"],
+    }
 
 
 @app.get(
@@ -258,9 +434,19 @@ async def review_rfq(
             existing_line_items = [extracted_data]
 
         if review.line_items is not None:
-            corrected_line_items = [
-                item.model_dump() for item in review.line_items
-            ]
+            corrected_line_items = []
+            for index, item in enumerate(review.line_items):
+                corrected_item = item.model_dump(exclude_none=True)
+                if "unit_of_measure" not in corrected_item:
+                    previous_item = (
+                        existing_line_items[index]
+                        if index < len(existing_line_items)
+                        else {}
+                    )
+                    corrected_item["unit_of_measure"] = previous_item.get(
+                        "unit_of_measure", "EA"
+                    )
+                corrected_line_items.append(corrected_item)
         else:
             corrected_line_items = [dict(item) for item in existing_line_items]
             if review.part_number is not None:
@@ -277,8 +463,17 @@ async def review_rfq(
                 status_code=422,
                 detail="Approval requires a part number and positive quantity for every line item.",
             )
-        for item in corrected_line_items:
+        for index, item in enumerate(corrected_line_items):
             item["part_number"] = str(item["part_number"]).strip()
+            normalized_unit = normalize_unit_of_measure(
+                item.get("unit_of_measure")
+            )
+            if normalized_unit is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Unsupported unit of measure for line item {index + 1}.",
+                )
+            item["unit_of_measure"] = normalized_unit
 
         previous_matches = execution_result.get("matched_catalog_items") or []
         if not previous_matches and execution_result.get("matched_catalog_item"):
@@ -326,9 +521,7 @@ async def review_rfq(
             f"Human reviewer approved {len(corrected_line_items)} RFQ line item(s)."
         )
         try:
-            execution_result["execution_log"].extend(
-                erp_push_node(execution_result).get("execution_log", [])
-            )
+            execution_result.update(erp_sync_node(execution_result))
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
         status = "completed"
@@ -364,7 +557,7 @@ async def process_rfq_document(
     session: AsyncSession = Depends(get_session),
 ):
     """
-    Inbound RFQ PDF endpoint. Extractable PDF text is passed to the
+    Inbound RFQ PDF endpoint. OCR text and spatial layout metadata enter the
     labeled-field extraction, catalog matching, and review workflow.
     """
     filename = PureWindowsPath(file.filename or "").name
@@ -381,7 +574,7 @@ async def process_rfq_document(
 
     try:
         saved_path.write_bytes(content)
-        pdf_text = parse_pdf_text(saved_path)
+        pdf_text, document_layout = parse_pdf_document(saved_path)
 
         # Initialize execution state
         initial_state = {
@@ -390,7 +583,8 @@ async def process_rfq_document(
             "confidence_score": 0.0,
             "validation_errors": [],
             "retry_count": 0,
-            "execution_log": [f"File uploaded: {filename}"]
+            "execution_log": [f"File uploaded: {filename}"],
+            "document_layout": document_layout,
         }
 
         graph_app = request.app.state.graph_app
@@ -399,7 +593,16 @@ async def process_rfq_document(
                 status_code=503, detail="Workflow execution is unavailable."
             )
         final_state = await graph_app.ainvoke(
-            initial_state, config={"configurable": {"thread_id": job_id}}
+            initial_state,
+            config={
+                "configurable": {"thread_id": job_id},
+                "run_name": "rfq-processing",
+                "tags": ["rfq", "enterprise"],
+                "metadata": {
+                    "job_id": job_id,
+                    "workflow": "rfq-processing",
+                },
+            },
         )
         status = _status_from_final_state(final_state)
         await persist_review_job(session, job_id, filename, status, final_state)
@@ -411,7 +614,7 @@ async def process_rfq_document(
             filename=filename,
             execution_result=final_state
         )
-    except PdfReadError as error:
+    except PdfConversionError as error:
         raise HTTPException(
             status_code=422, detail="Uploaded file is not a valid PDF."
         ) from error
