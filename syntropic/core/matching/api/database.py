@@ -8,6 +8,8 @@ from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, String, Text,
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from security.ast_veto import enforce_tenant_isolation
+
 
 class Base(DeclarativeBase):
     pass
@@ -83,6 +85,7 @@ def approved_webhook_payload(
     }
 
 
+@enforce_tenant_isolation
 async def save_review_job(
     session: AsyncSession,
     job_id: str,
@@ -130,6 +133,7 @@ async def save_review_job(
     return job
 
 
+@enforce_tenant_isolation
 async def get_review_job(
     session: AsyncSession, job_id: str, *, for_update: bool = False
 ) -> ReviewJob | None:
@@ -139,6 +143,7 @@ async def get_review_job(
     return await session.scalar(statement)
 
 
+@enforce_tenant_isolation
 async def list_pending_review_jobs(
     session: AsyncSession,
 ) -> list[dict[str, str]]:
