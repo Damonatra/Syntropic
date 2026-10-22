@@ -10,3 +10,8 @@ __pycache__/
 *.py[cod]
 node_modules/
 .next/
+*.tsbuildinfo
+devserver.log
+devserver.pid
+.pwtools/proxy.log
+.pwtools/proxy.pid
