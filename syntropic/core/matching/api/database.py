@@ -106,6 +106,12 @@ def approved_webhook_payload(
         # volume-tier opportunities, cost-sheet lag. Downstream ERP consumers
         # can act on margin leakage without re-deriving it from the catalog.
         "rebate_flags": execution_result.get("rebate_flags", []),
+        # Margin Defender decisions and per-line price deltas (quoted vs
+        # pushed vs cost vs floor) so ERP consumers see every enforcement
+        # action — including automatic repricing to floor — without
+        # re-deriving it from the catalog.
+        "margin_report": execution_result.get("margin_report", []),
+        "price_deltas": execution_result.get("price_deltas", []),
     }
 
 

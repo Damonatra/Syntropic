@@ -240,6 +240,38 @@ if "result" in st.session_state:
                 f"{flag.get('detail', '')}"
             )
 
+    margin_vetoes = exec_res.get("margin_veto_log_entries") or []
+    if margin_vetoes:
+        st.subheader("Margin defender veto")
+        st.error(
+            "The margin defender blocked ERP push for the quoted price(s) "
+            "below. Correct the pricing or attach an approved deviation "
+            "before re-approval."
+        )
+        for veto in margin_vetoes:
+            st.markdown(
+                f"**{veto.get('reason_code', 'UNKNOWN')}** — "
+                f"{veto.get('part_number', '')}: {veto.get('detail', '')}"
+            )
+
+    price_deltas = exec_res.get("price_deltas") or []
+    if price_deltas:
+        st.subheader("Price delta telemetry")
+        st.caption(
+            "Quoted vs pushed vs cost vs floor for every priced line; "
+            "repriced lines were corrected to the catalog floor automatically."
+        )
+        for delta in price_deltas:
+            repriced = " (repriced)" if delta.get("repriced") else ""
+            st.markdown(
+                f"**{delta.get('part_number', '')}**{repriced} — quoted "
+                f"{delta.get('quoted_price')}, pushed "
+                f"{delta.get('pushed_price')}, cost "
+                f"{delta.get('unit_cost')}, floor "
+                f"{delta.get('price_floor')}, margin at push "
+                f"{delta.get('margin_pct_at_push')}"
+            )
+
     if status in ("flagged_for_review", "pending_hitl"):
         st.subheader("Reviewer decision")
         st.caption(

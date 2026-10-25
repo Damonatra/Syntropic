@@ -24,6 +24,12 @@ from syntropic.core.engine import (
     get_postgres_saver,
     init_checkpointer_pool,
 )
+from syntropic.core.matching.margin_defender import (
+    DECISION_VETO,
+    MarginDefender,
+    apply_margin_decisions,
+    build_price_delta_telemetry,
+)
 from syntropic.core.normalization import normalize_unit_of_measure
 from syntropic.core.matching.api.auth import (
     OIDC_FLOW_COOKIE,
@@ -196,6 +202,10 @@ class ReviewQueueItem(BaseModel):
 
 def _status_from_final_state(final_state: Dict[str, Any]) -> str:
     if final_state.get("hitl_reason_code") == "below_confidence_floor":
+        return PENDING_HITL_STATUS
+    # Margin vetoes park the RFQ in the same pending-human queue: the
+    # margin defender refused the push and a human must decide.
+    if final_state.get("hitl_reason_code") == "margin_veto":
         return PENDING_HITL_STATUS
     execution_log = final_state.get("execution_log", [])
     if any(log.startswith("Flagged for Human Review:") for log in execution_log):
@@ -553,10 +563,100 @@ async def review_rfq(
         execution_result["execution_log"].append(
             f"Human reviewer approved {len(corrected_line_items)} RFQ line item(s)."
         )
+
+        # Margin defense gates the approval path too: the reviewer's push is
+        # an ERP push, so the same policy that guards the automated graph
+        # path applies here (a human approval cannot override the cost
+        # floor — only a conscious re-review with corrected pricing can).
+        defender = MarginDefender()
+        margin_report = defender.evaluate_matches(reviewed_matches)
+        margin_vetoes = [
+            entry for entry in margin_report if entry.get("decision") == DECISION_VETO
+        ]
+        if margin_vetoes:
+            for entry in margin_report:
+                execution_result["execution_log"].append(
+                    f"Margin defend [{entry['reason_code']}]: {entry['detail']}"
+                )
+            execution_result.update(
+                {
+                    "margin_report": margin_report,
+                    "margin_veto_log_entries": margin_vetoes,
+                    "hitl_reason_code": "margin_veto",
+                }
+            )
+            await persist_review_job(
+                session,
+                job_id,
+                job.filename,
+                job.status,
+                execution_result,
+                review.decision,
+                (review.note or "").strip() or None,
+            )
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "margin_veto",
+                    "message": (
+                        "Margin defender blocked the approved push: the quoted "
+                        "price breaches catalog cost/floor policy. The RFQ "
+                        "remains pending review with the veto recorded."
+                    ),
+                    "vetoes": [
+                        {
+                            "part_number": entry.get("part_number"),
+                            "reason_code": entry.get("reason_code"),
+                            "quoted_price": entry.get("quoted_price"),
+                            "unit_cost": entry.get("unit_cost"),
+                            "price_floor": entry.get("price_floor"),
+                            "detail": entry.get("detail"),
+                        }
+                        for entry in margin_vetoes
+                    ],
+                },
+            )
+
+        if any(entry.get("decision") == "reprice" for entry in margin_report):
+            apply_margin_decisions(extracted_data, reviewed_matches, margin_report)
+
+        execution_result.update(
+            {
+                "extracted_data": extracted_data,
+                "matched_catalog_items": reviewed_matches,
+                "margin_report": margin_report,
+            }
+        )
+        for entry in margin_report:
+            execution_result["execution_log"].append(
+                f"Margin defend [{entry['reason_code']}]: {entry['detail']}"
+            )
         try:
-            execution_result.update(erp_sync_node(execution_result))
+            erp_update = erp_sync_node(execution_result)
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
+        # Preserve the forensic execution log: erp_sync_node returns a fresh
+        # single-entry log, and outside the graph there is no add-reducer, so
+        # a naive dict.update() silently replaced the accumulated trail
+        # (upload -> extraction -> health gate -> catalog match -> human
+        # approval) with just the ERP message.
+        preserved_log = list(execution_result.get("execution_log", [])) + list(
+            erp_update.get("execution_log", [])
+        )
+        execution_result.update(erp_update)
+        execution_result["execution_log"] = preserved_log
+
+        # Delta telemetry on approval: per-line quoted vs pushed vs cost vs
+        # floor, so every margin decision is reconstructible after the fact.
+        price_deltas = build_price_delta_telemetry(
+            extracted_data, reviewed_matches, margin_report
+        )
+        execution_result["price_deltas"] = price_deltas
+        if price_deltas:
+            execution_result["execution_log"].append(
+                f"Price delta telemetry recorded for {len(price_deltas)} line item(s)."
+            )
+
         status = "completed"
         note = (review.note or "").strip()
 

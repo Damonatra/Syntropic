@@ -8,6 +8,12 @@ from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from syntropic.core.config import settings
 from syntropic.core.matching.catalog import QdrantHybridCatalog
+from syntropic.core.matching.margin_defender import (
+    DECISION_VETO,
+    MarginDefender,
+    apply_margin_decisions,
+    build_price_delta_telemetry,
+)
 from syntropic.core.matching.rebates import SPARebateInterceptor
 from syntropic.core.schemas import CanonicalSKU
 from syntropic.core.normalization import normalize_extracted_data
@@ -296,6 +302,8 @@ def _demo_catalog_items() -> List[Dict[str, Any]]:
             "part_number": "VALVE-SS-050",
             "description": "1/2 inch 316 Stainless Steel Ball Valve, Female NPT Thread",
             "unit_price": 42.00,
+            "unit_cost": 28.00,
+            "price_floor": 33.60,
             "category": "Valves",
             "currency": "USD",
             "rebate_schedule": {
@@ -314,6 +322,8 @@ def _demo_catalog_items() -> List[Dict[str, Any]]:
             "part_number": "VALVE-BR-050",
             "description": "1/2 inch Brass Gate Valve, Heavy Duty Duty Industrial",
             "unit_price": 18.50,
+            "unit_cost": 12.10,
+            "price_floor": 14.80,
             "category": "Valves",
             "currency": "USD",
             "rebate_schedule": None,
@@ -324,6 +334,8 @@ def _demo_catalog_items() -> List[Dict[str, Any]]:
             "part_number": "PIPE-SS-100",
             "description": "1 inch Seamless Stainless Steel Pipe 316L Schedule 40",
             "unit_price": 110.00,
+            "unit_cost": 77.00,
+            "price_floor": 88.00,
             "category": "Pipes",
             "currency": "USD",
             "rebate_schedule": {
@@ -386,8 +398,23 @@ def human_in_the_loop_node(state: SyntropicState) -> Dict[str, Any]:
     confidence = state.get("confidence_score", 0.0)
     match_score = state.get("catalog_match_score")
     match_confirmed = state.get("catalog_match_confirmed")
+    margin_report = state.get("margin_report", [])
+    margin_vetoes = [
+        entry for entry in margin_report if entry.get("decision") == DECISION_VETO
+    ]
 
-    if errors:
+    if margin_vetoes:
+        reason_code = "margin_veto"
+        blocked = ", ".join(
+            f"{entry.get('part_number') or 'unmatched line'} "
+            f"[{entry.get('reason_code')}]"
+            for entry in margin_vetoes
+        )
+        message = (
+            f"Pending HITL review: margin defender blocked ERP push for "
+            f"{len(margin_vetoes)} line item(s): {blocked}."
+        )
+    elif errors:
         reason_code = "validation_failed"
         message = f"Flagged for Human Review: {'; '.join(errors)}"
     elif float(confidence) < HITL_CONFIDENCE_FLOOR:
@@ -581,6 +608,74 @@ def spa_rebate_node(state: SyntropicState) -> Dict[str, Any]:
     }
 
 
+def margin_defend_node(state: SyntropicState) -> Dict[str, Any]:
+    """Veto / reprice / pass gate protecting margin before ERP routing.
+
+    Evaluates every catalog-matched line item against the defender policy
+    (hard breach below cost, soft breach below floor, fail-closed without a
+    cost basis), applies any repricing to the extracted payload and match
+    records, and records per-line decisions plus structured veto entries as
+    margin telemetry.
+    """
+    defender = MarginDefender()
+    matched_items = state.get("matched_catalog_items", [])
+    report = defender.evaluate_matches(matched_items)
+
+    execution_log: List[str] = []
+    for entry in report:
+        execution_log.append(
+            f"Margin defend [{entry['reason_code']}]: {entry['detail']}"
+        )
+
+    vetoes = [entry for entry in report if entry.get("decision") == DECISION_VETO]
+    repriced = [entry for entry in report if entry.get("decision") == "reprice"]
+
+    update: Dict[str, Any] = {
+        "margin_report": report,
+        "margin_veto_log_entries": vetoes,
+        "execution_log": execution_log,
+    }
+
+    if repriced:
+        extracted_data = dict(state.get("extracted_data", {}))
+        apply_margin_decisions(extracted_data, matched_items, report)
+        update["extracted_data"] = extracted_data
+        update["matched_catalog_items"] = matched_items
+        # Delta telemetry travels with the repricing: quoted vs pushed vs
+        # cost vs floor for every corrected line.
+        update["price_deltas"] = build_price_delta_telemetry(
+            extracted_data, matched_items, report
+        )
+
+    if vetoes:
+        update["hitl_reason_code"] = "margin_veto"
+        print(
+            f"[Syntropic Engine] MARGIN VETO: {len(vetoes)} line item(s) "
+            "blocked from ERP push."
+        )
+    elif repriced:
+        print(
+            f"[Syntropic Engine] Margin defender repriced "
+            f"{len(repriced)} line item(s) to floor."
+        )
+    return update
+
+
+def margin_defend_router(state: SyntropicState) -> str:
+    """Route after margin defense.
+
+    Any margin veto overrides every other signal: the RFQ is parked for
+    human review and nothing reaches ERP. Otherwise the standard
+    catalog-match routing (confidence floor + match confirmation) applies.
+    """
+    if any(
+        entry.get("decision") == DECISION_VETO
+        for entry in state.get("margin_report", [])
+    ):
+        return "review"
+    return catalog_match_router(state)
+
+
 def catalog_match_router(state: SyntropicState) -> str:
     """Route after catalog matching and SPA interception.
 
@@ -753,6 +848,7 @@ def build_syntropic_engine(checkpointer: Any = None):
     workflow.add_node("health_gate", health_gate_node)
     workflow.add_node("catalog_match", lambda state: catalog_match_node(state, catalog))
     workflow.add_node("spa_rebate", spa_rebate_node)
+    workflow.add_node("margin_defend", margin_defend_node)
     workflow.add_node("hitl_queue", human_in_the_loop_node)
     workflow.add_node("erp_push", erp_sync_node)
 
@@ -773,11 +869,13 @@ def build_syntropic_engine(checkpointer: Any = None):
         }
     )
 
-    # Intercept SPA rebate discrepancies between catalog matching and routing.
+    # Intercept SPA rebate discrepancies between catalog matching and
+    # routing, then enforce margin policy before anything reaches ERP.
     workflow.add_edge("catalog_match", "spa_rebate")
+    workflow.add_edge("spa_rebate", "margin_defend")
     workflow.add_conditional_edges(
-        "spa_rebate",
-        catalog_match_router,
+        "margin_defend",
+        margin_defend_router,
         {
             "approve": "erp_push",
             "review_floor": "hitl_queue",

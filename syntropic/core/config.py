@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = Field(default="syntropic_db")
     DATABASE_URL: str | None = None
 
+    # Margin Defender policy (Layer 3 V4). The floor price for a SKU is its
+    # explicit catalog `price_floor` when present, otherwise derived from
+    # unit_cost as cost / (1 - MARGIN_FLOOR_PCT). Quotes below unit_cost are
+    # always vetoed to human review; quotes below the floor are repriced up
+    # to the floor when MARGIN_REPRICE_ENABLED is set, otherwise vetoed.
+    MARGIN_FLOOR_PCT: float = Field(default=0.15, env="MARGIN_FLOOR_PCT")
+    MARGIN_REPRICE_ENABLED: bool = Field(default=True, env="MARGIN_REPRICE_ENABLED")
+
     # Qdrant hybrid catalog topology. An empty QDRANT_URL keeps the engine
     # on in-memory storage (development); a real URL targets the Qdrant
     # service deployed in docker-compose.

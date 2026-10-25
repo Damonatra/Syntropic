@@ -28,6 +28,14 @@ class SyntropicState(TypedDict):
     # Margin telemetry from the SPA rebate interceptor
     rebate_flags: NotRequired[List[Dict[str, Any]]]
 
+    # Margin Defender decisions (V4): one record per matched line item with
+    # the full price picture (quoted / effective / cost / floor / margins).
+    margin_report: NotRequired[List[Dict[str, Any]]]
+    # Structured veto records — only present when the defender blocked lines.
+    margin_veto_log_entries: NotRequired[List[Dict[str, Any]]]
+    # Per-line quoted-vs-pushed-vs-cost delta telemetry recorded at approval.
+    price_deltas: NotRequired[List[Dict[str, Any]]]
+
     # Structured human-review reason (e.g. 'below_confidence_floor')
     hitl_reason_code: NotRequired[str]
     health_gate_decision: NotRequired[Literal["approve", "heal", "review"]]

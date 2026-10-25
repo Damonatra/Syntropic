@@ -259,6 +259,8 @@ def _demo_catalog_items() -> List[Dict[str, Any]]:
             "part_number": "VALVE-SS-050",
             "description": "1/2 inch 316 Stainless Steel Ball Valve, Female NPT Thread",
             "unit_price": 42.00,
+            "unit_cost": 28.00,
+            "price_floor": 33.60,
             "category": "Valves",
             "currency": "USD",
             "rebate_schedule": {
@@ -277,6 +279,8 @@ def _demo_catalog_items() -> List[Dict[str, Any]]:
             "part_number": "VALVE-BR-050",
             "description": "1/2 inch Brass Gate Valve, Heavy Duty Duty Industrial",
             "unit_price": 18.50,
+            "unit_cost": 12.10,
+            "price_floor": 14.80,
             "category": "Valves",
             "currency": "USD",
             "rebate_schedule": None,
@@ -287,6 +291,8 @@ def _demo_catalog_items() -> List[Dict[str, Any]]:
             "part_number": "PIPE-SS-100",
             "description": "1 inch Seamless Stainless Steel Pipe 316L Schedule 40",
             "unit_price": 110.00,
+            "unit_cost": 77.00,
+            "price_floor": 88.00,
             "category": "Pipes",
             "currency": "USD",
             "rebate_schedule": {
