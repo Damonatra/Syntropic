@@ -38,6 +38,8 @@ from syntropic.core.matching.api.auth import (
 )
 from syntropic.core.matching.api.database import (
     Base,
+    PENDING_HITL_STATUS,
+    REVIEWABLE_STATUSES,
     ReviewJob,
     get_review_job as fetch_review_job,
     list_pending_review_jobs as fetch_pending_review_jobs,
@@ -171,6 +173,8 @@ class ReviewQueueItem(BaseModel):
 
 
 def _status_from_final_state(final_state: Dict[str, Any]) -> str:
+    if final_state.get("hitl_reason_code") == "below_confidence_floor":
+        return PENDING_HITL_STATUS
     execution_log = final_state.get("execution_log", [])
     if any(log.startswith("Flagged for Human Review:") for log in execution_log):
         return "flagged_for_review"
@@ -412,7 +416,7 @@ async def review_rfq(
     job = await fetch_review_job(session, job_id, for_update=True)
     if job is None:
         raise HTTPException(status_code=404, detail="RFQ job not found.")
-    if job.status != "flagged_for_review":
+    if job.status not in REVIEWABLE_STATUSES:
         raise HTTPException(status_code=409, detail="RFQ job is not awaiting review.")
 
     execution_result = dict(job.execution_result)
@@ -574,7 +578,10 @@ async def process_rfq_document(
 
     try:
         saved_path.write_bytes(content)
-        pdf_text, document_layout = parse_pdf_document(saved_path)
+        # Docling OCR + layout analysis is CPU-bound: run it off the event loop.
+        pdf_text, document_layout = await asyncio.to_thread(
+            parse_pdf_document, saved_path
+        )
 
         # Initialize execution state
         initial_state = {

@@ -11,12 +11,15 @@ def test_extraction_preserves_all_labeled_line_items():
         "Part Number: PIPE-SS-100\nQuantity: 3"
     )
 
-    assert confidence == 1.0
+    # Graded confidence: both items are missing a unit of measure (-0.06).
+    assert confidence == 0.94
     assert errors == []
-    assert extracted["line_items"] == [
-        {"part_number": "VALVE-SS-050", "quantity": 10},
-        {"part_number": "PIPE-SS-100", "quantity": 3},
-    ]
+    assert [
+        item["part_number"] for item in extracted["line_items"]
+    ] == ["VALVE-SS-050", "PIPE-SS-100"]
+    assert [
+        item["extraction_confidence"] for item in extracted["line_items"]
+    ] == [0.94, 0.94]
 
 
 def test_extraction_and_normalization_canonicalize_uom_aliases():
@@ -39,11 +42,13 @@ def test_extraction_and_normalization_canonicalize_uom_aliases():
             "part_number": "PIPE-SS-100",
             "quantity": 3,
             "unit_of_measure": "FT",
+            "extraction_confidence": 1.0,
         },
         {
             "part_number": "VALVE-SS-050",
             "quantity": 10,
             "unit_of_measure": "EA",
+            "extraction_confidence": 1.0,
         },
     ]
 

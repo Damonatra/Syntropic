@@ -15,6 +15,13 @@ class Base(DeclarativeBase):
     pass
 
 
+# Review-queue workflow statuses. PENDING_HITL jobs parked below the
+# confidence automation floor share the same reviewer queue as flagged jobs.
+FLAGGED_FOR_REVIEW_STATUS = "flagged_for_review"
+PENDING_HITL_STATUS = "pending_hitl"
+REVIEWABLE_STATUSES = (FLAGGED_FOR_REVIEW_STATUS, PENDING_HITL_STATUS)
+
+
 class ReviewJob(Base):
     __tablename__ = "rfq_jobs"
 
@@ -149,7 +156,7 @@ async def list_pending_review_jobs(
 ) -> list[dict[str, str]]:
     statement = (
         select(ReviewJob.job_id, ReviewJob.filename)
-        .where(ReviewJob.status == "flagged_for_review")
+        .where(ReviewJob.status.in_(REVIEWABLE_STATUSES))
         .order_by(ReviewJob.created_at)
     )
     return [

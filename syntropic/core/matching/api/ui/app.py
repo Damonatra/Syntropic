@@ -162,6 +162,11 @@ if "result" in st.session_state:
         st.success("Workflow complete. ERP push is simulated.")
     elif status == "flagged_for_review":
         st.warning("Human review required before this RFQ can proceed.")
+    elif status == "pending_hitl":
+        st.warning(
+            "Pending human review: extraction confidence is below the "
+            "0.95 automation floor."
+        )
     elif status == "rejected":
         st.error("This RFQ was rejected and will not be committed.")
     else:
@@ -221,7 +226,21 @@ if "result" in st.session_state:
     else:
         st.info("The source PDF is unavailable for this review.")
 
-    if status == "flagged_for_review":
+    rebate_flags = exec_res.get("rebate_flags") or []
+    if rebate_flags:
+        st.subheader("SPA rebate intercepts")
+        st.caption(
+            "Margin telemetry captured before ERP routing; reviewers "
+            "should confirm rebate application before approval."
+        )
+        for flag in rebate_flags:
+            reason = flag.get("reason_code", "UNKNOWN")
+            st.markdown(
+                f"**{reason}** — {flag.get('catalog_part_number', '')}: "
+                f"{flag.get('detail', '')}"
+            )
+
+    if status in ("flagged_for_review", "pending_hitl"):
         st.subheader("Reviewer decision")
         st.caption(
             "Suggested catalog matches are kept only when their part numbers match your corrections."

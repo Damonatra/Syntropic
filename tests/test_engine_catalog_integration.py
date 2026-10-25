@@ -6,7 +6,7 @@ from syntropic.core.engine import (
 from syntropic.core.matching.api.main import _status_from_final_state, app
 
 
-def test_workflow_matches_catalog_before_erp_push():
+def test_workflow_matches_catalog_then_parks_below_floor_as_pending_hitl():
     app = build_syntropic_engine()
 
     initial_state = {
@@ -20,11 +20,16 @@ def test_workflow_matches_catalog_before_erp_push():
 
     result = app.invoke(initial_state)
 
+    # Self-healing recovers abbreviated labels but the graded score (1.0 -
+    # 0.04 abbrev - 0.06 missing UoM = 0.90) sits below the 0.95 automation
+    # floor, so the document is parked as pending HITL after the catalog and
+    # rebate stages still enrich the review payload.
     assert result["matched_catalog_item"]["part_number"] == "VALVE-SS-050"
     assert result["catalog_match_score"] >= 0.5
-    assert result["webhook_dispatch_requested"] is True
-    assert result["health_gate_decision"] == "approve"
-    assert result["health_gate_payload_valid"] is True
+    assert result["confidence_score"] == 0.90
+    assert result["hitl_reason_code"] == "below_confidence_floor"
+    assert "webhook_dispatch_requested" not in result
+    assert result["rebate_flags"]
     assert any(
         "Health gate decision: heal" in entry for entry in result["execution_log"]
     )
@@ -33,10 +38,10 @@ def test_workflow_matches_catalog_before_erp_push():
         for entry in result["execution_log"]
     )
     assert any(
-        entry.startswith("ERP webhook queued")
+        entry.startswith("Pending HITL review:")
         for entry in result["execution_log"]
     )
-    assert result["execution_log"]
+    assert _status_from_final_state(result) == "pending_hitl"
 
 
 def test_api_import_does_not_initialize_engine_and_status_tracks_outcome():
@@ -50,9 +55,15 @@ def test_api_import_does_not_initialize_engine_and_status_tracks_outcome():
         "confidence_score": 1.0,
         "execution_log": ["Payload matched catalog item VALVE-SS-050 before ERP commit."],
     }
+    pending_state = {
+        "confidence_score": 0.94,
+        "hitl_reason_code": "below_confidence_floor",
+        "execution_log": ["Pending HITL review: below the automation floor."],
+    }
 
     assert _status_from_final_state(review_state) == "flagged_for_review"
     assert _status_from_final_state(completed_state) == "completed"
+    assert _status_from_final_state(pending_state) == "pending_hitl"
     assert getattr(app.state, "graph_app", None) is None
 
 

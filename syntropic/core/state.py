@@ -19,6 +19,14 @@ class SyntropicState(TypedDict):
     matched_catalog_item: NotRequired[Dict[str, Any] | None]
     matched_catalog_items: NotRequired[List[Dict[str, Any]]]
     catalog_match_score: NotRequired[float]
+    # True only when every line item confirmed an exact catalog part number.
+    catalog_match_confirmed: NotRequired[bool]
+
+    # Margin telemetry from the SPA rebate interceptor
+    rebate_flags: NotRequired[List[Dict[str, Any]]]
+
+    # Structured human-review reason (e.g. 'below_confidence_floor')
+    hitl_reason_code: NotRequired[str]
     health_gate_decision: NotRequired[Literal["approve", "heal", "review"]]
     health_gate_score: NotRequired[float]
     health_gate_threshold: NotRequired[float]

@@ -28,7 +28,7 @@ class EvaluationExample(BaseModel):
     raw_text: str | None = None
     pdf_path: str | None = None
     expected_line_items: list[EvaluationLineItem] = Field(min_length=1)
-    expected_status: Literal["completed", "flagged_for_review"]
+    expected_status: Literal["completed", "flagged_for_review", "pending_hitl"]
 
     @model_validator(mode="after")
     def has_one_input_source(self):
@@ -54,6 +54,20 @@ def _line_item_key(
         int(values.get("quantity", 0) or 0),
         str(values.get("unit_of_measure", "EA")).strip().upper(),
     )
+
+
+def predicted_workflow_status(prediction: dict[str, Any]) -> str:
+    """Derive workflow status from structured state instead of log text."""
+    if prediction.get("hitl_reason_code") == "below_confidence_floor":
+        return "pending_hitl"
+    if prediction.get("webhook_dispatch_requested"):
+        return "completed"
+    if any(
+        str(message).startswith("Flagged for Human Review:")
+        for message in prediction.get("execution_log", [])
+    ):
+        return "flagged_for_review"
+    return "completed"
 
 
 def score_predictions(
@@ -116,14 +130,7 @@ def score_predictions(
             catalog_items_correct += int(matched)
             catalog_correct_for_example = catalog_correct_for_example and matched
 
-        predicted_status = (
-            "flagged_for_review"
-            if any(
-                str(message).startswith("Flagged for Human Review:")
-                for message in prediction.get("execution_log", [])
-            )
-            else "completed"
-        )
+        predicted_status = predicted_workflow_status(prediction)
         status_correct = predicted_status == example.expected_status
         expected_status_matches += int(status_correct)
         if predicted_status == "completed":
@@ -230,8 +237,8 @@ def main() -> int:
     parser.add_argument(
         "--min-stp-accuracy",
         type=float,
-        default=0.85,
-        help="Minimum required STP accuracy as a fraction (default: 0.85).",
+        default=0.994,
+        help="Minimum required STP accuracy as a fraction (default: 0.994).",
     )
     args = parser.parse_args()
     if not 0.0 <= args.min_stp_accuracy <= 1.0:

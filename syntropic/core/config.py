@@ -17,6 +17,13 @@ class Settings(BaseSettings):
     POSTGRES_PORT: int = Field(default=5432)
     POSTGRES_DB: str = Field(default="syntropic_db")
     DATABASE_URL: str | None = None
+
+    # Qdrant hybrid catalog topology. An empty QDRANT_URL keeps the engine
+    # on in-memory storage (development); a real URL targets the Qdrant
+    # service deployed in docker-compose.
+    QDRANT_URL: str = Field(default="", env="QDRANT_URL")
+    QDRANT_SEED_DEMO: bool = Field(default=False, env="QDRANT_SEED_DEMO")
+
     LANGSMITH_TRACING: bool = False
     LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
     LANGSMITH_API_KEY: SecretStr | None = None

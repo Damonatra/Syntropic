@@ -46,6 +46,12 @@ class CanonicalSKU(BaseModel):
         default=None, 
         description="Unit price as float if present, otherwise None."
     )
+    currency: Optional[str] = Field(
+        default=None,
+        min_length=3,
+        max_length=3,
+        description="ISO 4217 currency code for the quoted unit price (e.g. 'USD').",
+    )
     specifications: Dict[str, str] = Field(
         default_factory=dict,
         description="Key-value pairs of technical specifications (e.g., {'material': '316 SS', 'size': '0.5 in'})."
