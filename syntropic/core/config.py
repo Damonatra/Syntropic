@@ -32,6 +32,16 @@ class Settings(BaseSettings):
     QDRANT_URL: str = Field(default="", env="QDRANT_URL")
     QDRANT_SEED_DEMO: bool = Field(default=False, env="QDRANT_SEED_DEMO")
 
+    # Taelin Memory Stream (Layer 4). Append-only, tenant-partitioned JSONL
+    # audit stream with tamper-evident hash chaining. Local filesystem by
+    # design: no tenant data leaves the deployment boundary (contrast the
+    # opt-in LangSmith tracing above). The <=30ms recall SLA for active
+    # tenant sessions is benchmarked in scripts/vector2_stream_benchmark.py.
+    STREAM_ENABLED: bool = Field(default=True, env="STREAM_ENABLED")
+    STREAM_ROOT: str = Field(default="data/streams", env="STREAM_ROOT")
+    STREAM_ROTATE_MB: int = Field(default=64, env="STREAM_ROTATE_MB")
+    STREAM_FSYNC: bool = Field(default=False, env="STREAM_FSYNC")
+
     LANGSMITH_TRACING: bool = False
     LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
     LANGSMITH_API_KEY: SecretStr | None = None

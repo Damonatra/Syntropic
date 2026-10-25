@@ -6,6 +6,7 @@ from typing import Any
 import uuid
 
 from syntropic.core.dispatch.draft_composer import extract_recipient_email
+from syntropic.core.stream import emit_event
 
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, String, Text, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -209,6 +210,47 @@ def approved_webhook_payload(
     }
 
 
+def margin_stream_payload(execution_result: dict[str, Any]) -> dict[str, Any] | None:
+    """Taelin stream payload for a processed RFQ's margin decisions.
+
+    Pure aggregation over the margin defender report and price-delta
+    telemetry. Carries SKU identifiers, decision counts and the total price
+    movement the defender applied — never raw supplier costs (the QLoRA
+    export allowlist enforces that downstream as well).
+
+    Returns ``None`` when the execution carried no margin report (nothing to
+    audit — e.g. a pre-margin failure path).
+    """
+    margin_report = execution_result.get("margin_report") or []
+    if not margin_report:
+        return None
+    decisions = [str(entry.get("decision", "")) for entry in margin_report]
+    deltas = execution_result.get("price_deltas") or []
+    margin_delta = 0.0
+    for delta in deltas:
+        pushed = delta.get("pushed_price")
+        quoted = delta.get("quoted_price")
+        if isinstance(pushed, (int, float)) and isinstance(quoted, (int, float)):
+            margin_delta += float(pushed) - float(quoted)
+    return {
+        "decision": (
+            "veto"
+            if "veto" in decisions
+            else "reprice"
+            if "reprice" in decisions
+            else "pass"
+        ),
+        "line_count": len(margin_report),
+        "repriced_count": decisions.count("reprice"),
+        "veto_count": decisions.count("veto"),
+        "margin_delta": round(margin_delta, 6),
+        "sku_ids": [
+            (entry.get("sku_id") or entry.get("part_number"))
+            for entry in margin_report
+        ][:50],
+    }
+
+
 @enforce_tenant_isolation
 async def save_review_job(
     session: AsyncSession,
@@ -252,6 +294,16 @@ async def save_review_job(
         job.execution_result = execution_result
         job.review_decision = review_decision
         job.review_note = review_note
+    # Taelin Memory Stream (Layer 4): durable delta-margin audit record for
+    # every processed RFQ (approved, repriced or vetoed). Fault-isolated.
+    margin_payload = margin_stream_payload(execution_result)
+    if margin_payload is not None:
+        emit_event(
+            "margin_adjusted",
+            tenant_id=tenant_id,
+            job_id=job_id,
+            payload=margin_payload,
+        )
     if status == "completed" and execution_result.get(
         "webhook_dispatch_requested"
     ):

@@ -2,6 +2,7 @@
 
 from contextlib import asynccontextmanager
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -57,6 +58,7 @@ from syntropic.core.matching.api.webhook import (
     get_webhook_config,
 )
 from syntropic.core.dispatch.graph_auth import GraphTokenManager
+from syntropic.core.stream import emit_event
 from syntropic.core.dispatch.outlook_dispatch import (
     deliver_dispatch_outbox,
     dispatch_enabled,
@@ -767,6 +769,32 @@ async def process_rfq_document(
         # Docling OCR + layout analysis is CPU-bound: run it off the event loop.
         pdf_text, document_layout = await asyncio.to_thread(
             parse_pdf_document, saved_path
+        )
+
+        # Taelin Memory Stream (Layer 4): durable tenant audit trail for the
+        # intake and OCR stages. Fault-isolated; never blocks the pipeline.
+        stream_tenant = get_current_tenant()
+        emit_event(
+            "rfq_ingested",
+            tenant_id=stream_tenant,
+            job_id=job_id,
+            payload={
+                "filename_ext": (
+                    filename.rsplit(".", 1)[-1].lower() if "." in filename else "pdf"
+                ),
+                "size_bytes": len(content),
+                "sha256_16": hashlib.sha256(content).hexdigest()[:16],
+            },
+        )
+        emit_event(
+            "ocr_extracted",
+            tenant_id=stream_tenant,
+            job_id=job_id,
+            payload={
+                "text_chars": len(pdf_text),
+                "tables": len(document_layout.get("tables", []) or []),
+                "text_blocks": len(document_layout.get("text_blocks", []) or []),
+            },
         )
 
         # Initialize execution state; the tenant bound by the request

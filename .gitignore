@@ -37,3 +37,6 @@ devserver.pid
 *.swp
 .idea/
 .vscode/
+
+# Taelin Memory Stream runtime data (Layer 4)
+data/streams/

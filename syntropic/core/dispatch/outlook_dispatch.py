@@ -49,6 +49,7 @@ from syntropic.core.dispatch.draft_composer import (
 )
 from syntropic.core.dispatch.graph_auth import DispatchAuthError, GraphTokenManager
 from syntropic.core.matching.api.database import DispatchOutbox
+from syntropic.core.stream import emit_event
 
 logger = logging.getLogger(__name__)
 
@@ -145,8 +146,12 @@ def _sla_breach_threshold() -> int:
 
 async def _claim_dispatch(
     session_factory: async_sessionmaker[AsyncSession],
-) -> tuple[str, dict[str, Any], int] | None:
-    """Lease-claim the oldest dispatchable event (mirrors webhook claim)."""
+) -> tuple[str, dict[str, Any], int, str] | None:
+    """Lease-claim the oldest dispatchable event (mirrors webhook claim).
+
+    Returns ``(event_id, payload, attempts, tenant_id)`` — the tenant id
+    threads the success path into the Taelin Memory Stream.
+    """
     now = datetime.now(timezone.utc)
     async with session_factory() as session:
         async with session.begin():
@@ -174,7 +179,7 @@ async def _claim_dispatch(
             event.status = STATUS_PROCESSING
             event.attempts += 1
             event.lease_until = now + timedelta(seconds=DISPATCH_LEASE_SECONDS)
-            return (event.event_id, dict(event.payload), event.attempts)
+            return (event.event_id, dict(event.payload), event.attempts, event.tenant_id)
 
 
 async def _mark_injected(
@@ -306,7 +311,7 @@ async def inject_draft_once(
     claimed = await _claim_dispatch(session_factory)
     if claimed is None:
         return "idle"
-    event_id, payload, attempts = claimed
+    event_id, payload, attempts, tenant_id = claimed
 
     # Compose from the frozen approved payload (pure, no I/O).
     try:
@@ -349,6 +354,22 @@ async def inject_draft_once(
                 except (TypeError, ValueError):
                     sla_ms = None
             await _mark_injected(session_factory, event_id, sla_ms)
+            # Taelin Memory Stream (Layer 4): durable draft-injection audit
+            # record with the measured 90-second SLA telemetry. Fault-isolated.
+            emit_event(
+                "draft_injected",
+                tenant_id=tenant_id,
+                job_id=payload.get("job_id"),
+                payload={
+                    "sla_ms": sla_ms,
+                    "sla_breached": bool(
+                        sla_ms is not None
+                        and sla_ms > _sla_breach_threshold() * 1000
+                    ),
+                    "line_count": draft["line_count"],
+                    "event_id": event_id,
+                },
+            )
             logger.info(
                 "Dispatch event %s: draft created in Drafts folder (%s line item(s)).",
                 event_id,
