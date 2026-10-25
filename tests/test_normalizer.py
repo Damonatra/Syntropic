@@ -37,7 +37,8 @@ def test_extract_dimensions_normalizes_fraction_decimal_and_metric_values():
 
 def test_catalog_match_receives_normalized_description_and_attributes():
     class Catalog:
-        def match_sku(self, sku, top_k):
+        def match_sku(self, sku, top_k, tenant_id=None):
+            assert tenant_id == "__bootstrap__"
             assert top_k == 3
             assert sku.description == "0.5 IN STAINLESS VALVE"
             assert sku.specifications == {"size_in": "0.5"}

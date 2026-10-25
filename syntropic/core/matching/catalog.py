@@ -4,6 +4,7 @@ import time
 from typing import List, Dict, Any, Optional
 from qdrant_client import QdrantClient, models
 from fastembed import TextEmbedding, SparseTextEmbedding
+from security.ast_veto import TenantIsolationViolationError, enforce_tenant_isolation
 from syntropic.core.config import settings
 from syntropic.core.schemas import CanonicalSKU
 
@@ -79,14 +80,22 @@ class QdrantHybridCatalog:
                 ),
             )
 
-    def index_catalog_items(self, items: List[Dict[str, Any]]) -> None:
+    @enforce_tenant_isolation
+    def index_catalog_items(
+        self, items: List[Dict[str, Any]], *, tenant_id: Optional[str] = None
+    ) -> None:
         """
-        Indexes a list of master catalog products into Qdrant.
+        Indexes a list of master catalog products into Qdrant for a tenant.
         Expects items with keys: 'sku_id', 'part_number', 'description',
         'unit_price', 'category'. Embeddings are batched and upserts are
         flushed in durable chunks (wait=True) so large catalogs cannot lose
-        tail points on interruption.
+        tail points on interruption. Every payload is tagged with the bound
+        tenant so hybrid queries can never leak across tenants.
         """
+        if not tenant_id:
+            raise TenantIsolationViolationError(
+                "Security Veto Triggered: index_catalog_items requires a tenant_id."
+            )
         if not items:
             return
 
@@ -115,6 +124,8 @@ class QdrantHybridCatalog:
                 indices=sparse_vector_raw.indices.tolist(),
                 values=sparse_vector_raw.values.tolist()
             )
+            tenant_payload = dict(item)
+            tenant_payload["tenant_id"] = tenant_id
             points.append(
                 models.PointStruct(
                     id=idx + 1,
@@ -122,7 +133,7 @@ class QdrantHybridCatalog:
                         "dense": dense_vectors[idx],
                         "sparse": sparse_vector
                     },
-                    payload=item
+                    payload=tenant_payload
                 )
             )
 
@@ -135,12 +146,24 @@ class QdrantHybridCatalog:
             )
         print(f"[Catalog Engine] Successfully indexed {len(items)} catalog items into Qdrant.")
 
-    def match_sku(self, extracted_sku: CanonicalSKU, top_k: int = 3) -> List[Dict[str, Any]]:
+    @enforce_tenant_isolation
+    def match_sku(
+        self,
+        extracted_sku: CanonicalSKU,
+        top_k: int = 3,
+        *,
+        tenant_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Performs hybrid search for an extracted CanonicalSKU payload.
         Fuses BM25 sparse keyword results with dense semantic results using RRF
-        and records per-query latency for SLA instrumentation.
+        and records per-query latency for SLA instrumentation. The query is
+        hard-filtered to the bound tenant so results can never cross tenants.
         """
+        if not tenant_id:
+            raise TenantIsolationViolationError(
+                "Security Veto Triggered: match_sku requires a tenant_id."
+            )
         search_query = f"{extracted_sku.part_number} {extracted_sku.description}"
 
         # 1. Embed query into dense and sparse representations
@@ -152,7 +175,8 @@ class QdrantHybridCatalog:
             values=sparse_query_raw.values.tolist()
         )
 
-        # 2. Execute Hybrid Prefetch + RRF Fusion Query (latency instrumented)
+        # 2. Execute Hybrid Prefetch + RRF Fusion Query (latency instrumented,
+        #    tenant-scoped via a mandatory payload filter).
         started = time.perf_counter()
         results = self.client.query_points(
             collection_name=self.COLLECTION_NAME,
@@ -160,14 +184,38 @@ class QdrantHybridCatalog:
                 models.Prefetch(
                     query=dense_query,
                     using="dense",
-                    limit=20
+                    limit=20,
+                    filter=models.Filter(
+                        must=[
+                            models.FieldCondition(
+                                key="tenant_id",
+                                match=models.MatchValue(value=tenant_id),
+                            )
+                        ]
+                    ),
                 ),
                 models.Prefetch(
                     query=sparse_query,
                     using="sparse",
-                    limit=20
+                    limit=20,
+                    filter=models.Filter(
+                        must=[
+                            models.FieldCondition(
+                                key="tenant_id",
+                                match=models.MatchValue(value=tenant_id),
+                            )
+                        ]
+                    ),
                 )
             ],
+            query_filter=models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="tenant_id",
+                        match=models.MatchValue(value=tenant_id),
+                    )
+                ]
+            ),
             # Fuse dense and sparse search rankings using Reciprocal Rank Fusion (RRF)
             query=models.FusionQuery(fusion=models.Fusion.RRF),
             limit=top_k
@@ -177,7 +225,8 @@ class QdrantHybridCatalog:
         )
         print(
             f"[Catalog Engine] Hybrid query latency: "
-            f"{self.last_query_latency_ms:.2f} ms ({extracted_sku.part_number})."
+            f"{self.last_query_latency_ms:.2f} ms "
+            f"({extracted_sku.part_number}, tenant={tenant_id})."
         )
 
         matches = []

@@ -300,3 +300,63 @@ def require_authenticated_user(
             detail="The bearer access token is invalid or expired.",
             headers={"WWW-Authenticate": "Bearer"},
         ) from error
+
+
+# ---------------------------------------------------------------------------
+# Tenant isolation binding
+# ---------------------------------------------------------------------------
+
+def extract_tenant_id(claims: dict[str, Any]) -> str:
+    """Resolve the tenant for authenticated claims via a fallback chain.
+
+    Explicit ``tenant_id`` claims win, then any namespaced tenant claim, then
+    ``tenant`` / ``org_id`` / ``organization_id``, and finally the subject
+    identifier. Production deployments should issue an explicit ``tenant_id``
+    claim so a single subject can never span organizations.
+    """
+    for key in ("tenant_id", "tenant", "org_id", "organization_id"):
+        value = claims.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    for key, value in claims.items():
+        if (
+            isinstance(key, str)
+            and key.lower().endswith("tenant_id")
+            and key.lower() != "tenant_id"
+            and isinstance(value, str)
+            and value.strip()
+        ):
+            return value.strip()
+    subject = claims.get("sub")
+    if isinstance(subject, str) and subject.strip():
+        return subject.strip()
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="The access token does not identify a tenant.",
+    )
+
+
+async def bind_tenant_context(
+    current_user: dict[str, Any] = Depends(require_authenticated_user),
+):
+    """Async yield dependency that binds the tenant for the duration of a request.
+
+    Every protected route uses this dependency so that the tenant-isolation
+    veto gate has a bound tenant for all database and vector store calls the
+    request performs. The context is reset when the request finishes.
+
+    This MUST be an async generator: FastAPI executes *sync* generator
+    dependencies through the threadpool, where ``set_current_tenant`` would
+    mutate a copied thread context that never reaches the request handler,
+    and whose reset token is invalid in the teardown context (raising
+    ``ValueError: ... created in a different Context``). Async generators run
+    inline in the request task, so binding and reset share one context.
+    """
+    from security.ast_veto import reset_current_tenant, set_current_tenant
+
+    tenant_id = extract_tenant_id(current_user)
+    token = set_current_tenant(tenant_id)
+    try:
+        yield current_user
+    finally:
+        reset_current_tenant(token)

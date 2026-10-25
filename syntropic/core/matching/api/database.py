@@ -8,12 +8,19 @@ from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, String, Text,
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from security.ast_veto import enforce_tenant_isolation
+from security.ast_veto import (
+    TenantIsolationViolationError,
+    enforce_tenant_isolation,
+)
 
 
 class Base(DeclarativeBase):
     pass
 
+
+# Sentinel tenant for rows written before tenant isolation existed. These
+# require operational reassignment before multi-tenant go-live.
+LEGACY_TENANT_ID = "__legacy__"
 
 # Review-queue workflow statuses. PENDING_HITL jobs parked below the
 # confidence automation floor share the same reviewer queue as flagged jobs.
@@ -24,8 +31,12 @@ REVIEWABLE_STATUSES = (FLAGGED_FOR_REVIEW_STATUS, PENDING_HITL_STATUS)
 
 class ReviewJob(Base):
     __tablename__ = "rfq_jobs"
+    __table_args__ = (
+        Index("ix_rfq_jobs_tenant_status", "tenant_id", "status"),
+    )
 
     job_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     execution_result: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
@@ -46,9 +57,11 @@ class WebhookOutbox(Base):
     __tablename__ = "webhook_outbox"
     __table_args__ = (
         Index("ix_webhook_outbox_status_available", "status", "available_at"),
+        Index("ix_webhook_outbox_tenant_status", "tenant_id", "status"),
     )
 
     event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
     job_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("rfq_jobs.job_id"), nullable=False, unique=True
     )
@@ -101,11 +114,23 @@ async def save_review_job(
     execution_result: dict[str, Any],
     review_decision: str | None = None,
     review_note: str | None = None,
-) -> ReviewJob:
+    *,
+    tenant_id: str | None = None,
+) -> ReviewJob | None:
+    """Create or update a review job scoped to the bound tenant.
+
+    Cross-tenant overwrite attempts return ``None`` without leaking the
+    existence of the other tenant's row.
+    """
+    if not tenant_id:
+        raise TenantIsolationViolationError(
+            "Security Veto Triggered: save_review_job requires a tenant_id."
+        )
     job = await session.get(ReviewJob, job_id)
     if job is None:
         job = ReviewJob(
             job_id=job_id,
+            tenant_id=tenant_id,
             filename=filename,
             status=status,
             execution_result=execution_result,
@@ -114,6 +139,10 @@ async def save_review_job(
         )
         session.add(job)
     else:
+        if job.tenant_id != tenant_id:
+            # Cross-tenant overwrite: reject silently (404 semantics at the
+            # API layer; no information about the other tenant leaks).
+            return None
         job.filename = filename
         job.status = status
         job.execution_result = execution_result
@@ -129,6 +158,7 @@ async def save_review_job(
             session.add(
                 WebhookOutbox(
                     event_id=event_id,
+                    tenant_id=tenant_id,
                     job_id=job_id,
                     payload=approved_webhook_payload(
                         job_id, filename, execution_result
@@ -142,9 +172,20 @@ async def save_review_job(
 
 @enforce_tenant_isolation
 async def get_review_job(
-    session: AsyncSession, job_id: str, *, for_update: bool = False
+    session: AsyncSession,
+    job_id: str,
+    *,
+    for_update: bool = False,
+    tenant_id: str | None = None,
 ) -> ReviewJob | None:
-    statement = select(ReviewJob).where(ReviewJob.job_id == job_id)
+    if not tenant_id:
+        raise TenantIsolationViolationError(
+            "Security Veto Triggered: get_review_job requires a tenant_id."
+        )
+    statement = select(ReviewJob).where(
+        ReviewJob.job_id == job_id,
+        ReviewJob.tenant_id == tenant_id,
+    )
     if for_update:
         statement = statement.with_for_update()
     return await session.scalar(statement)
@@ -153,10 +194,19 @@ async def get_review_job(
 @enforce_tenant_isolation
 async def list_pending_review_jobs(
     session: AsyncSession,
+    *,
+    tenant_id: str | None = None,
 ) -> list[dict[str, str]]:
+    if not tenant_id:
+        raise TenantIsolationViolationError(
+            "Security Veto Triggered: list_pending_review_jobs requires a tenant_id."
+        )
     statement = (
         select(ReviewJob.job_id, ReviewJob.filename)
-        .where(ReviewJob.status.in_(REVIEWABLE_STATUSES))
+        .where(
+            ReviewJob.status.in_(REVIEWABLE_STATUSES),
+            ReviewJob.tenant_id == tenant_id,
+        )
         .order_by(ReviewJob.created_at)
     )
     return [

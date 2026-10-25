@@ -11,6 +11,9 @@ class SyntropicState(TypedDict):
     document_layout: NotRequired[Dict[str, Any]]
     webhook_dispatch_requested: NotRequired[bool]
 
+    # Tenant isolation scope (bound per request by the API layer)
+    tenant_id: NotRequired[str]
+
     # Global Health Metrics (Syntropic Enhancement)
     confidence_score: float  # 0.0 to 1.0 threshold scale
     validation_errors: List[str]

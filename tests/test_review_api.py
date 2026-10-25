@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 import syntropic.core.matching.api.main as api
 from syntropic.core.matching.api import webhook
 from syntropic.core.matching.api.auth import require_authenticated_user
+from security.ast_veto import tenant_context
 
 
 @pytest.fixture
@@ -46,10 +47,11 @@ def _seed_pending_job(job_id="job-1", execution_result=None):
     with sqlite3.connect(api.app.state.test_db_path) as connection:
         connection.execute(
             """INSERT INTO rfq_jobs
-               (job_id, filename, status, execution_result)
-               VALUES (?, ?, ?, ?)""",
+               (job_id, tenant_id, filename, status, execution_result)
+               VALUES (?, ?, ?, ?, ?)""",
             (
                 job_id,
+                "test-reviewer",
                 "quote.pdf",
                 "flagged_for_review",
                 json.dumps(execution_result),
@@ -108,6 +110,30 @@ def test_authenticated_health_requires_bearer_token_and_returns_identity(
             "sub": "test-reviewer"
         }
     assert response.status_code == 401
+
+
+def test_tenant_context_is_bound_from_auth_claims_for_the_request(review_client):
+    """Regression: bind_tenant_context must bind INSIDE the request context.
+
+    FastAPI executes *sync* generator dependencies in the threadpool, where
+    the ContextVar mutation never reaches the handler. If this ever regresses,
+    the review queue handler runs tenant-less and the veto gate 403s. Seeding
+    a foreign-tenant row proves the queue is scoped to the authenticated
+    subject's tenant through the real HTTP stack.
+    """
+    _seed_pending_job("job-mine")
+    with sqlite3.connect(api.app.state.test_db_path) as connection:
+        connection.execute(
+            """INSERT INTO rfq_jobs
+               (job_id, tenant_id, filename, status, execution_result)
+               VALUES (?, ?, ?, ?, ?)""",
+            ("job-foreign", "acme-corp", "foreign.pdf", "flagged_for_review", "{}"),
+        )
+
+    response = review_client.get("/api/v1/rfq/reviews")
+
+    assert response.status_code == 200
+    assert response.json() == [{"job_id": "job-mine", "filename": "quote.pdf"}]
 
 
 def test_next_workstation_origin_is_allowed_by_cors(review_client):
@@ -659,13 +685,16 @@ def test_review_queue_event_stream_emits_initial_and_updated_snapshots(
     monkeypatch.setattr(asyncio, "sleep", no_wait)
 
     async def read_events():
-        events = api._review_queue_event_stream(
-            ConnectedRequest(), api.app.state.session_factory
-        )
-        initial_event = await anext(events)
-        _seed_pending_job("streamed-job")
-        updated_event = await anext(events)
-        await events.aclose()
+        # The stream generator is invoked directly here, bypassing the FastAPI
+        # dependency that would normally bind the tenant at handshake time.
+        with tenant_context("test-reviewer"):
+            events = api._review_queue_event_stream(
+                ConnectedRequest(), api.app.state.session_factory
+            )
+            initial_event = await anext(events)
+            _seed_pending_job("streamed-job")
+            updated_event = await anext(events)
+            await events.aclose()
         return initial_event, updated_event
 
     initial_event, updated_event = review_client.portal.call(read_events)

@@ -30,6 +30,7 @@ from syntropic.core.matching.api.auth import (
     OIDC_FLOW_TTL_SECONDS,
     _oidc_metadata,
     _read_flow_state,
+    bind_tenant_context,
     create_oidc_authorization_request,
     exchange_oidc_code,
     get_oidc_client_config,
@@ -50,8 +51,15 @@ from syntropic.core.matching.api.webhook import (
     get_webhook_config,
 )
 from syntropic.ingestion.parser import PdfConversionError, parse_pdf_document
+from security.ast_veto import (
+    TenantIsolationViolationError,
+    get_current_tenant,
+    set_current_tenant,
+    reset_current_tenant,
+)
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+VETO_BLOCKED_STATUS = "veto_blocked"
 logger = logging.getLogger(__name__)
 
 
@@ -140,6 +148,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.exception_handler(TenantIsolationViolationError)
+async def tenant_isolation_veto_handler(
+    request: Request, exc: TenantIsolationViolationError
+):
+    """Map tenant-isolation vetoes to 403 without leaking tenant data."""
+    logger.warning(
+        "Tenant isolation veto blocked a request to %s: %s", request.url.path, exc
+    )
+    return JSONResponse(
+        status_code=403,
+        content={"detail": str(exc), "code": VETO_BLOCKED_STATUS},
+    )
+
 # Global Storage Directory for Inbound RFQ PDFs
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "outputs/uploads"))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -200,10 +222,17 @@ async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
 async def _review_queue_event_stream(
     request: Request, session_factory: async_sessionmaker[AsyncSession]
 ):
+    # Background tasks do not inherit the request-scoped tenant context, so
+    # the handshake tenant is captured and re-bound for every queue poll.
+    handshake_tenant_id = get_current_tenant()
     previous_queue = None
     while not await request.is_disconnected():
-        async with session_factory() as session:
-            review_queue = await fetch_pending_review_jobs(session)
+        bind_token = set_current_tenant(handshake_tenant_id)
+        try:
+            async with session_factory() as session:
+                review_queue = await fetch_pending_review_jobs(session)
+        finally:
+            reset_current_tenant(bind_token)
         if review_queue != previous_queue:
             yield {
                 "event": "review_queue",
@@ -332,7 +361,7 @@ def health_check():
 
 @app.get("/api/v1/health")
 async def authenticated_health_check(
-    current_user: dict[str, Any] = Depends(require_authenticated_user),
+    current_user: dict[str, Any] = Depends(bind_tenant_context),
 ):
     return {
         "status": "healthy",
@@ -343,7 +372,7 @@ async def authenticated_health_check(
 @app.get(
     "/api/v1/rfq/reviews",
     response_model=list[ReviewQueueItem],
-    dependencies=[Depends(require_authenticated_user)],
+    dependencies=[Depends(bind_tenant_context)],
 )
 async def list_pending_reviews(session: AsyncSession = Depends(get_session)):
     return await fetch_pending_review_jobs(session)
@@ -351,7 +380,7 @@ async def list_pending_reviews(session: AsyncSession = Depends(get_session)):
 
 @app.get(
     "/api/v1/rfq/reviews/events",
-    dependencies=[Depends(require_authenticated_user)],
+    dependencies=[Depends(bind_tenant_context)],
 )
 async def stream_review_queue(request: Request):
     return EventSourceResponse(
@@ -363,7 +392,7 @@ async def stream_review_queue(request: Request):
 @app.get(
     "/api/v1/rfq/reviews/{job_id}",
     response_model=ProcessingResponse,
-    dependencies=[Depends(require_authenticated_user)],
+    dependencies=[Depends(bind_tenant_context)],
 )
 async def get_review_job(
     job_id: str, session: AsyncSession = Depends(get_session)
@@ -376,7 +405,7 @@ async def get_review_job(
 
 @app.get(
     "/api/v1/rfq/reviews/{job_id}/document",
-    dependencies=[Depends(require_authenticated_user)],
+    dependencies=[Depends(bind_tenant_context)],
 )
 async def get_review_document(
     job_id: str, session: AsyncSession = Depends(get_session)
@@ -406,7 +435,7 @@ async def get_review_document(
 @app.post(
     "/api/v1/rfq/{job_id}/review",
     response_model=ProcessingResponse,
-    dependencies=[Depends(require_authenticated_user)],
+    dependencies=[Depends(bind_tenant_context)],
 )
 async def review_rfq(
     job_id: str,
@@ -553,7 +582,7 @@ async def review_rfq(
 @app.post(
     "/api/v1/rfq/process",
     response_model=ProcessingResponse,
-    dependencies=[Depends(require_authenticated_user)],
+    dependencies=[Depends(bind_tenant_context)],
 )
 async def process_rfq_document(
     request: Request,
@@ -583,7 +612,9 @@ async def process_rfq_document(
             parse_pdf_document, saved_path
         )
 
-        # Initialize execution state
+        # Initialize execution state; the tenant bound by the request
+        # dependency threads through the graph so catalog and persistence
+        # layers stay tenant-scoped.
         initial_state = {
             "raw_input": pdf_text,
             "extracted_data": {},
@@ -592,6 +623,7 @@ async def process_rfq_document(
             "retry_count": 0,
             "execution_log": [f"File uploaded: {filename}"],
             "document_layout": document_layout,
+            "tenant_id": get_current_tenant(),
         }
 
         graph_app = request.app.state.graph_app
@@ -641,7 +673,7 @@ import asyncio
 
 @app.get(
     "/api/v1/rfq/stream/{job_id}",
-    dependencies=[Depends(require_authenticated_user)],
+    dependencies=[Depends(bind_tenant_context)],
 )
 async def stream_rfq_execution(job_id: str):
     """

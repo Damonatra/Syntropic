@@ -65,6 +65,25 @@ def test_verify_query_safety_accepts_keyword_argument_named_tenant_id():
     assert verify_query_safety("search(query='valve', status='open')") is False
 
 
+def test_verify_query_safety_rejects_substring_in_comment():
+    # 'tenant_id' lives only inside a SQL comment; sqlglot strips comments
+    # during parsing so the mention can never vouch for isolation.
+    query = (
+        "SELECT * FROM rfq_jobs WHERE status = 'open' "
+        "-- tenant_id is set elsewhere"
+    )
+    assert verify_query_safety(query) is False
+
+
+def test_verify_query_safety_rejects_misnamed_column():
+    # A column that merely contains 'tenant_id' as a substring is not the
+    # isolation column and must never satisfy the inspector.
+    assert (
+        verify_query_safety("SELECT * FROM rfq_jobs WHERE tenant_id_hint = $1")
+        is False
+    )
+
+
 def test_verify_query_has_tenant_isolation_returns_true_when_isolated():
     assert (
         verify_query_has_tenant_isolation(
@@ -128,15 +147,62 @@ def test_decorator_vetoes_unsegmented_query_and_skips_execution(caplog):
 
 def test_decorator_allows_tenant_isolated_query(caplog):
     calls = []
-    with caplog.at_level(logging.CRITICAL, logger="syntropic.security.ast_veto"):
-        result = asyncio.run(
-            _execute_query(
-                query="SELECT * FROM rfq_jobs WHERE tenant_id = $1", calls=calls
+    with tenant_context("tenant-acme"):
+        with caplog.at_level(logging.CRITICAL, logger="syntropic.security.ast_veto"):
+            result = asyncio.run(
+                _execute_query(
+                    query="SELECT * FROM rfq_jobs WHERE tenant_id = $1", calls=calls
+                )
             )
-        )
     assert result == "executed"
     assert len(calls) == 1
     assert "[SECURITY VETO]" not in caplog.text
+
+
+def test_decorator_vetoes_when_no_tenant_context_bound(caplog):
+    """Fail closed: even a structurally isolated query is vetoed without a bound tenant."""
+    calls = []
+    with caplog.at_level(logging.CRITICAL, logger="syntropic.security.ast_veto"):
+        with pytest.raises(
+            TenantIsolationViolationError, match="no tenant_id context is bound"
+        ):
+            asyncio.run(
+                _execute_query(
+                    query="SELECT * FROM rfq_jobs WHERE tenant_id = $1", calls=calls
+                )
+            )
+    assert calls == []
+    assert "[SECURITY VETO]" in caplog.text
+
+
+def test_decorator_injects_tenant_id_into_kwargs():
+    received = {}
+
+    @enforce_tenant_isolation
+    async def load_items(*, tenant_id=None):
+        received["tenant_id"] = tenant_id
+        return "ok"
+
+    with tenant_context("tenant-injected"):
+        assert asyncio.run(load_items()) == "ok"
+    assert received["tenant_id"] == "tenant-injected"
+
+
+def test_decorator_works_on_sync_functions():
+    received = {}
+
+    @enforce_tenant_isolation
+    def sync_lookup(*, tenant_id=None):
+        received["tenant_id"] = tenant_id
+        return "sync-ok"
+
+    with tenant_context("tenant-sync"):
+        assert sync_lookup() == "sync-ok"
+    assert received["tenant_id"] == "tenant-sync"
+
+    with pytest.raises(TenantIsolationViolationError, match="no tenant_id context"):
+        sync_lookup()
+    assert received["tenant_id"] == "tenant-sync"
 
 
 def test_decorator_vetoes_filter_dictionary_without_tenant():
@@ -148,9 +214,10 @@ def test_decorator_vetoes_filter_dictionary_without_tenant():
 
 def test_decorator_accepts_filter_dictionary_with_tenant_key():
     calls = []
-    result = asyncio.run(
-        _execute_query(query={"tenant_id": "acme-corp"}, calls=calls)
-    )
+    with tenant_context("tenant-acme"):
+        result = asyncio.run(
+            _execute_query(query={"tenant_id": "acme-corp"}, calls=calls)
+        )
     assert result == "executed"
     assert calls == [{"tenant_id": "acme-corp"}]
 
@@ -178,14 +245,6 @@ def test_decorator_logs_audited_tenant_context_on_veto(caplog):
                 )
     assert "tenant-acme" in caplog.text
     assert get_current_tenant() is None
-
-
-def test_decorator_passes_through_functions_without_a_query_argument():
-    @enforce_tenant_isolation
-    async def load_job(session, job_id):
-        return f"job:{job_id}"
-
-    assert asyncio.run(load_job(object(), "job-1")) == "job:job-1"
 
 
 def test_decorator_vetoes_empty_filter_dictionary():
@@ -241,7 +300,97 @@ def test_gated_database_wrappers_still_execute_end_to_end():
         await engine.dispose()
         return job, pending
 
-    job, pending = asyncio.run(round_trip())
+    with tenant_context("tenant-gated"):
+        job, pending = asyncio.run(round_trip())
     assert job is not None
     assert job.filename == "quote.pdf"
+    assert job.tenant_id == "tenant-gated"
     assert pending == [{"job_id": "job-gated", "filename": "quote.pdf"}]
+
+
+def test_database_wrappers_veto_without_tenant_context():
+    """Every gated wrapper refuses to run when no tenant context is bound."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from syntropic.core.matching.api import database
+
+    async def attempt():
+        engine = create_async_engine("sqlite+aiosqlite://")
+        async with engine.begin() as conn:
+            await conn.run_sync(database.Base.metadata.create_all)
+        session_factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with session_factory() as session:
+            with pytest.raises(TenantIsolationViolationError, match="tenant_id"):
+                await database.save_review_job(
+                    session, "job-x", "q.pdf", "flagged_for_review", {}
+                )
+            with pytest.raises(TenantIsolationViolationError, match="tenant_id"):
+                await database.get_review_job(session, "job-x")
+            with pytest.raises(TenantIsolationViolationError, match="tenant_id"):
+                await database.list_pending_review_jobs(session)
+        await engine.dispose()
+
+    asyncio.run(attempt())
+
+
+def test_cross_tenant_get_review_job_returns_none():
+    """Tenant B must not read tenant A's job: filtered out, not an error."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from syntropic.core.matching.api import database
+
+    async def round_trip():
+        engine = create_async_engine("sqlite+aiosqlite://")
+        async with engine.begin() as conn:
+            await conn.run_sync(database.Base.metadata.create_all)
+        session_factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with session_factory() as session:
+            with tenant_context("tenant-a"):
+                await database.save_review_job(
+                    session, "job-iso", "tenant-a.pdf", "flagged_for_review", {}
+                )
+            with tenant_context("tenant-b"):
+                stolen = await database.get_review_job(session, "job-iso")
+                visible = await database.list_pending_review_jobs(session)
+        await engine.dispose()
+        return stolen, visible
+
+    stolen, visible = asyncio.run(round_trip())
+    assert stolen is None
+    assert visible == []
+
+
+def test_cross_tenant_overwrite_blocked():
+    """Tenant B cannot overwrite tenant A's job; the row is preserved intact."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from syntropic.core.matching.api import database
+
+    async def round_trip():
+        engine = create_async_engine("sqlite+aiosqlite://")
+        async with engine.begin() as conn:
+            await conn.run_sync(database.Base.metadata.create_all)
+        session_factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with session_factory() as session:
+            with tenant_context("tenant-a"):
+                await database.save_review_job(
+                    session,
+                    "job-ow",
+                    "tenant-a-original.pdf",
+                    "flagged_for_review",
+                    {},
+                )
+            with tenant_context("tenant-b"):
+                overwritten = await database.save_review_job(
+                    session, "job-ow", "tenant-b-hijack.pdf", "completed", {}
+                )
+            with tenant_context("tenant-a"):
+                preserved = await database.get_review_job(session, "job-ow")
+        await engine.dispose()
+        return overwritten, preserved
+
+    overwritten, preserved = asyncio.run(round_trip())
+    assert overwritten is None
+    assert preserved.filename == "tenant-a-original.pdf"
+    assert preserved.status == "flagged_for_review"
+    assert preserved.tenant_id == "tenant-a"

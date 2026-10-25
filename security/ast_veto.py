@@ -1,13 +1,26 @@
 """Agent 6 — AST-based tenant isolation veto gate.
 
 In enterprise B2B deployments an accidental cross-tenant read is catastrophic.
-This module inspects database (PostgreSQL) and vector store (Qdrant) query
-structures *before* dispatch, using Python's :mod:`ast` module, and vetoes any
-call whose query does not carry the mandatory ``tenant_id`` segmentation filter.
+This module enforces tenant isolation on every decorated database or vector
+store operation:
+
+1. Fail-closed tenant resolution: a call without a bound tenant context (and
+   without an explicit ``tenant_id`` argument) is vetoed *before* dispatch.
+2. Automatic tenant injection: the resolved tenant is injected as the
+   ``tenant_id`` keyword argument so the wrapped function MUST filter on it.
+3. Structural query inspection: raw SQL is parsed with sqlglot so
+   ``tenant_id`` must appear as an actual column reference — mentions inside
+   comments, string literals, or misnamed columns (``tenant_id_hint``) are
+   rejected. Qdrant filter payloads are walked recursively, and Python
+   expression strings are inspected with the stdlib :mod:`ast` visitor.
 """
 
 import ast
+import asyncio
+import inspect
 import logging
+import sqlglot
+from sqlglot import expressions as exp
 from collections.abc import Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
@@ -19,6 +32,11 @@ logger = logging.getLogger("syntropic.security.ast_veto")
 VETO_MESSAGE = (
     "Security Veto Triggered: Query missing mandatory 'tenant_id' isolation filter."
 )
+NO_TENANT_MESSAGE = (
+    "Security Veto Triggered: no tenant_id context is bound; refusing to execute."
+)
+
+TENANT_ID_COLUMN = "tenant_id"
 
 # The tenant bound to the active request context (set by the API layer per request).
 current_tenant_id: ContextVar[str | None] = ContextVar(
@@ -56,33 +74,37 @@ def tenant_context(tenant_id: str) -> Iterator[str]:
         reset_current_tenant(token)
 
 
+# ---------------------------------------------------------------------------
+# Structural inspection
+# ---------------------------------------------------------------------------
+
 class TenantIsolationVisitor(ast.NodeVisitor):
-    """AST Visitor that checks for the presence of 'tenant_id' in SQL/filter expressions."""
+    """AST Visitor that checks for the presence of 'tenant_id' in Python expressions."""
 
     def __init__(self):
         self.has_tenant_filter = False
 
     @staticmethod
     def _mentions_tenant(value: Any) -> bool:
-        return isinstance(value, str) and "tenant_id" in value.lower()
+        return isinstance(value, str) and TENANT_ID_COLUMN in value.lower()
 
     def visit_Compare(self, node: ast.Compare):
         # Look for comparisons involving 'tenant_id'
         for target in [node.left] + node.comparators:
-            if isinstance(target, ast.Name) and "tenant_id" in target.id.lower():
+            if isinstance(target, ast.Name) and TENANT_ID_COLUMN in target.id.lower():
                 self.has_tenant_filter = True
-            elif isinstance(target, ast.Attribute) and "tenant_id" in target.attr.lower():
+            elif isinstance(target, ast.Attribute) and TENANT_ID_COLUMN in target.attr.lower():
                 self.has_tenant_filter = True
             elif isinstance(target, ast.Subscript) and self._mentions_tenant(
                 target.slice.value if isinstance(target.slice, ast.Constant) else None
             ):
                 self.has_tenant_filter = True
-            elif isinstance(target, ast.Constant) and isinstance(target.value, str) and "tenant_id" in target.value.lower():
+            elif isinstance(target, ast.Constant) and isinstance(target.value, str) and TENANT_ID_COLUMN in target.value.lower():
                 self.has_tenant_filter = True
         self.generic_visit(node)
 
     def visit_Keyword(self, node: ast.keyword):
-        if node.arg and "tenant_id" in node.arg.lower():
+        if node.arg and TENANT_ID_COLUMN in node.arg.lower():
             self.has_tenant_filter = True
         elif self._mentions_tenant(
             node.value.value if isinstance(node.value, ast.Constant) else None
@@ -106,6 +128,48 @@ class TenantIsolationVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
 
+def _sql_has_tenant_filter(query_text: str) -> bool:
+    """Require ``tenant_id`` as a real column reference in parsed SQL.
+
+    sqlglot strips comments during parsing, so a ``tenant_id`` mention that
+    lives only in a comment never becomes a column node. Misnamed columns
+    such as ``tenant_id_hint`` do not match. Parse failures fail closed.
+    """
+    if TENANT_ID_COLUMN not in query_text.lower():
+        return False
+    try:
+        parsed = sqlglot.parse_one(query_text, read="postgres")
+    except (sqlglot.errors.ParseError, ValueError):
+        # Fail closed: unparseable SQL can never prove tenant isolation.
+        return False
+
+    for node in parsed.find_all(exp.Column):
+        if node.name and node.name.lower() == TENANT_ID_COLUMN:
+            return True
+    for node in parsed.find_all(exp.Parameter):
+        name = getattr(getattr(node, "this", None), "name", "")
+        if name and name.lower() == TENANT_ID_COLUMN:
+            return True
+    return False
+
+
+def _filter_dict_has_tenant(payload: Any) -> bool:
+    """Recursively walk Qdrant-style filter payloads looking for tenant scope."""
+    if isinstance(payload, Mapping):
+        for key, value in payload.items():
+            if isinstance(key, str) and key.lower() == TENANT_ID_COLUMN:
+                return True
+            if isinstance(value, str) and value.lower() == TENANT_ID_COLUMN:
+                # Qdrant FieldCondition payloads: {"key": "tenant_id", ...}
+                return True
+            if _filter_dict_has_tenant(value):
+                return True
+        return False
+    if isinstance(payload, (list, tuple)):
+        return any(_filter_dict_has_tenant(item) for item in payload)
+    return False
+
+
 def _stringify_query(query: Any) -> str:
     """Render a query argument (raw SQL text or filter mapping) as inspectable text."""
     if isinstance(query, str):
@@ -115,31 +179,35 @@ def _stringify_query(query: Any) -> str:
     return str(query)
 
 
-def verify_query_safety(query_str: str) -> bool:
+def verify_query_safety(query: Any) -> bool:
     """
-    Parses a query string into an AST and verifies tenant isolation compliance.
+    Structurally verifies tenant isolation for SQL text, filter mappings,
+    or Python expression strings.
 
-    Accepts raw SQL text or a filter mapping; returns ``False`` whenever no
-    ``tenant_id`` filter can be established (fail closed).
+    Returns ``False`` whenever no ``tenant_id`` filter can be established in
+    the query structure (fail closed): comments, string literals, and
+    misnamed columns do not count.
     """
-    query_str = _stringify_query(query_str)
+    if isinstance(query, Mapping):
+        return _filter_dict_has_tenant(query)
 
-    # For raw SQL queries, perform a substring check as a fast fallback
-    if "tenant_id" not in query_str.lower():
-        return False
+    query_text = _stringify_query(query)
 
+    # Python expressions (ORM fragments, Qdrant payload reprs) inspect via ast.
     try:
-        tree = ast.parse(query_str)
+        tree = ast.parse(query_text)
     except (SyntaxError, ValueError):
-        # If it's a parameterized SQL string, check presence of keyword
-        return "tenant_id" in query_str.lower()
+        tree = None
+    if tree is not None:
+        visitor = TenantIsolationVisitor()
+        visitor.visit(tree)
+        return visitor.has_tenant_filter
 
-    visitor = TenantIsolationVisitor()
-    visitor.visit(tree)
-    return visitor.has_tenant_filter
+    # Raw SQL: sqlglot structural parse (comments stripped, columns required).
+    return _sql_has_tenant_filter(query_text)
 
 
-def verify_query_has_tenant_isolation(query_string: str) -> bool:
+def verify_query_has_tenant_isolation(query_string: Any) -> bool:
     """
     Parses incoming SQL strings or filter dictionaries to verify the presence of
     the mandatory ``tenant_id`` segmentation parameter.
@@ -156,35 +224,97 @@ def verify_query_has_tenant_isolation(query_string: str) -> bool:
     raise TenantIsolationViolationError(VETO_MESSAGE)
 
 
+# ---------------------------------------------------------------------------
+# Decorator
+# ---------------------------------------------------------------------------
+
+_QUERY_KWARG_NAMES = ("query", "sql", "query_filter")
+
+
+def _find_query_candidate(args: tuple, kwargs: dict) -> Any:
+    """Locate the query-like argument a call is attempting to dispatch."""
+    for name in _QUERY_KWARG_NAMES:
+        if name in kwargs:
+            return kwargs[name]
+    if args and isinstance(args[0], (str, Mapping)):
+        return args[0]
+    return None
+
+
+def _resolve_tenant_or_raise(
+    func: Callable[..., Any],
+    accepts_tenant_kwarg: bool,
+    args: tuple,
+    kwargs: dict,
+) -> str:
+    """Resolve the tenant for this call or veto it (fail closed)."""
+    tenant_id = None
+    if accepts_tenant_kwarg and isinstance(kwargs.get("tenant_id"), str):
+        tenant_id = kwargs["tenant_id"]
+    if not tenant_id:
+        tenant_id = get_current_tenant()
+    if not tenant_id:
+        query_candidate = _find_query_candidate(args, kwargs)
+        logger.critical(
+            "[SECURITY VETO] Blocked tenant-less execution of %s: no tenant "
+            "context is bound and no explicit tenant_id was provided "
+            "(query=%s).",
+            getattr(func, "__name__", repr(func)),
+            _stringify_query(query_candidate) if query_candidate is not None else "<none>",
+        )
+        raise TenantIsolationViolationError(NO_TENANT_MESSAGE)
+    return tenant_id
+
+
+def _prepare_isolated_call(
+    func: Callable[..., Any],
+    accepts_tenant_kwarg: bool,
+    args: tuple,
+    kwargs: dict,
+) -> tuple:
+    """Shared guard: resolve tenant, inspect queries, inject the tenant kwarg."""
+    tenant_id = _resolve_tenant_or_raise(func, accepts_tenant_kwarg, args, kwargs)
+
+    query_candidate = _find_query_candidate(args, kwargs)
+    if query_candidate is not None and not verify_query_safety(query_candidate):
+        logger.critical(
+            "[SECURITY VETO] Blocked unsegmented query: %s (operation=%s, tenant_context=%s)",
+            _stringify_query(query_candidate),
+            getattr(func, "__name__", repr(func)),
+            tenant_id,
+        )
+        raise TenantIsolationViolationError(VETO_MESSAGE)
+
+    if accepts_tenant_kwarg:
+        kwargs.setdefault("tenant_id", tenant_id)
+    return args, kwargs
+
+
 def enforce_tenant_isolation(func: Callable[..., Any]) -> Callable[..., Any]:
     """
     Decorator that vetoes any database or vector operation lacking tenant isolation.
 
-    Extracts the tenant_id bound to the active request context, validates the
-    query AST before dispatching to PostgreSQL or Qdrant, and instantly halts
-    execution with a security audit warning when the check fails.
+    The decorator resolves the tenant bound to the active request context (or
+    an explicit ``tenant_id`` keyword argument), fails closed when neither is
+    available, structurally inspects any query argument, and automatically
+    injects the resolved tenant so the wrapped function filters on it. Both
+    coroutine and synchronous functions are supported.
     """
+    signature = inspect.signature(func)
+    accepts_tenant_kwarg = "tenant_id" in signature.parameters
+
+    if asyncio.iscoroutinefunction(func):
+
+        @wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            _prepare_isolated_call(func, accepts_tenant_kwarg, args, kwargs)
+            return await func(*args, **kwargs)
+
+        return async_wrapper
 
     @wraps(func)
-    async def wrapper(*args, **kwargs):
-        # Extract tenant_id from the active request context for the audit trail.
-        tenant_id = get_current_tenant()
-        if tenant_id is None and isinstance(kwargs.get("tenant_id"), str):
-            tenant_id = kwargs["tenant_id"]
+    def sync_wrapper(*args, **kwargs):
+        _prepare_isolated_call(func, accepts_tenant_kwarg, args, kwargs)
+        return func(*args, **kwargs)
 
-        # Inspect query arguments passed to the function
-        query_arg = kwargs.get("query")
-        if query_arg is None and args and isinstance(args[0], (str, Mapping)):
-            query_arg = args[0]
-
-        if query_arg is not None and not verify_query_safety(str(query_arg)):
-            logger.critical(
-                "[SECURITY VETO] Blocked unsegmented query: %s (operation=%s, tenant_context=%s)",
-                str(query_arg),
-                getattr(func, "__name__", repr(func)),
-                tenant_id,
-            )
-            raise TenantIsolationViolationError(VETO_MESSAGE)
-
-        return await func(*args, **kwargs)
-    return wrapper
+    return sync_wrapper

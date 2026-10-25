@@ -358,10 +358,11 @@ def test_review_queue_and_decision_guard_accept_pending_hitl(review_client):
     with sqlite3.connect(api.app.state.test_db_path) as connection:
         connection.execute(
             """INSERT INTO rfq_jobs
-               (job_id, filename, status, execution_result)
-               VALUES (?, ?, ?, ?)""",
+               (job_id, tenant_id, filename, status, execution_result)
+               VALUES (?, ?, ?, ?, ?)""",
             (
                 "job-pending",
+                "test-reviewer",
                 "quote.pdf",
                 "pending_hitl",
                 json.dumps(execution_result),

@@ -13,6 +13,7 @@ from syntropic.core.schemas import CanonicalSKU
 from syntropic.core.normalization import normalize_extracted_data
 from syntropic.core.normalizer import TradeAttributeNormalizer
 from syntropic.core.state import SyntropicState
+from security.ast_veto import get_current_tenant, tenant_context
 
 
 async def init_checkpointer_pool() -> AsyncConnectionPool:
@@ -272,7 +273,16 @@ def normalization_node(state: SyntropicState) -> Dict[str, Any]:
     }
 
 
+# Sentinel tenant used to seed the demo catalog when no tenant context is
+# bound (local graph builds, evaluations). Production requests always carry
+# a real tenant via process_rfq_document, so this fallback never fires there.
+BOOTSTRAP_TENANT_ID = "__bootstrap__"
+
+
 def _bootstrap_catalog() -> QdrantHybridCatalog:
+    if get_current_tenant() is None:
+        with tenant_context(BOOTSTRAP_TENANT_ID):
+            return _bootstrap_catalog()
     catalog = QdrantHybridCatalog()
     if not settings.QDRANT_URL or settings.QDRANT_SEED_DEMO:
         catalog.index_catalog_items(_demo_catalog_items())
@@ -418,6 +428,14 @@ def catalog_match_node(
     if catalog is None:
         catalog = _bootstrap_catalog()
 
+    tenant_id = state.get("tenant_id") or get_current_tenant()
+    if tenant_id is None:
+        print(
+            "[Syntropic Engine] catalog_match_node: no tenant in state or "
+            "context; falling back to __bootstrap__ demo scope."
+        )
+        tenant_id = BOOTSTRAP_TENANT_ID
+
     extracted = state.get("extracted_data", {})
     line_items = extracted.get("line_items") or [extracted]
     raw_input = state.get("raw_input", "")
@@ -475,7 +493,7 @@ def catalog_match_node(
             currency=line_item.get("currency"),
             provenance=line_item.get("provenance") or [],
         )
-        matches = catalog.match_sku(sku, top_k=3)
+        matches = catalog.match_sku(sku, top_k=3, tenant_id=tenant_id)
         if not matches:
             matched_items.append({
                 "extracted_item": normalized_line_item,
