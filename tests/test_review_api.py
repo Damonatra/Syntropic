@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import sqlite3
+import time
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -617,24 +618,38 @@ def test_webhook_worker_posts_hmac_signed_payload_and_marks_delivered(
     asyncio.run(deliver_once())
     assert captured_request["endpoint"] == "https://erp.example.test/webhook"
     assert captured_request["headers"]["X-Syntropic-Event-ID"] == event["event_id"]
-    expected_signature = hmac.new(
-        secret.encode(), captured_request["content"], hashlib.sha256
-    ).hexdigest()
-    assert captured_request["headers"]["X-Syntropic-Signature"] == (
-        f"sha256={expected_signature}"
+    assert webhook.verify_webhook_signature(
+        captured_request["content"],
+        captured_request["headers"]["X-Syntropic-Signature"],
+        captured_request["headers"]["X-Syntropic-Timestamp"],
+        secret,
     )
     assert _read_outbox("job-webhook-send")["status"] == "delivered"
 
 
-def test_webhook_signature_is_hmac_sha256_over_canonical_json():
+def test_webhook_signature_is_hmac_sha256_over_timestamped_body():
     payload = {"event": "rfq.approved", "job_id": "job-1"}
     secret = "independent-webhook-secret-with-32-bytes"
 
-    body, signature = webhook.sign_webhook_payload(payload, secret)
+    body, signature, timestamp = webhook.sign_webhook_payload(payload, secret)
 
     assert json.loads(body) == payload
-    expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    # Signature covers {timestamp}.{body} (Stripe scheme), not the body alone.
+    expected = hmac.new(
+        secret.encode(), f"{timestamp}.".encode() + body, hashlib.sha256
+    ).hexdigest()
     assert signature == f"sha256={expected}"
+
+    # Receiver-side round trip + freshness window + replay rejection.
+    assert webhook.verify_webhook_signature(body, signature, timestamp, secret)
+    stale_timestamp = str(int(time.time()) - 3600)
+    assert not webhook.verify_webhook_signature(
+        body, signature, stale_timestamp, secret
+    )
+    assert not webhook.verify_webhook_signature(
+        body, "sha256=" + "0" * 64, timestamp, secret
+    )
+    assert not webhook.verify_webhook_signature(body, signature, "not-a-number", secret)
 
 
 def test_review_document_is_available_only_for_a_persisted_job(

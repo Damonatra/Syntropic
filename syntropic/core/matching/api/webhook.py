@@ -7,6 +7,7 @@ import hmac
 import json
 import logging
 import os
+import time
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -22,14 +23,49 @@ MAX_DELIVERY_ATTEMPTS = 8
 MAX_RETRY_DELAY_SECONDS = 60 * 60
 WEBHOOK_LEASE_SECONDS = 60
 WEBHOOK_POLL_SECONDS = 1
+SIGNATURE_TIMESTAMP_TOLERANCE_SECONDS = 300
 
 
 def sign_webhook_payload(
-    payload: dict[str, Any], secret: str
-) -> tuple[bytes, str]:
+    payload: dict[str, Any], secret: str, timestamp: int | None = None
+) -> tuple[bytes, str, str]:
+    """Sign canonical JSON with replay protection.
+
+    The signature covers ``{unix_timestamp}.{body}`` (Stripe scheme) and the
+    timestamp travels in its own header, so captured (body, signature) pairs
+    expire after SIGNATURE_TIMESTAMP_TOLERANCE_SECONDS. Returns the body, the
+    ``sha256=...`` signature header value, and the timestamp header value.
+    """
+    if timestamp is None:
+        timestamp = int(time.time())
     body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
-    signature = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
-    return body, f"sha256={signature}"
+    signed_material = f"{timestamp}.".encode("utf-8") + body
+    signature = hmac.new(
+        secret.encode("utf-8"), signed_material, hashlib.sha256
+    ).hexdigest()
+    return body, f"sha256={signature}", str(timestamp)
+
+
+def verify_webhook_signature(
+    body: bytes,
+    signature_header: str,
+    timestamp_header: str,
+    secret: str,
+    tolerance_seconds: int = SIGNATURE_TIMESTAMP_TOLERANCE_SECONDS,
+) -> bool:
+    """Receiver-side verification: constant-time compare + freshness window."""
+    try:
+        timestamp = int(str(timestamp_header).strip())
+    except (TypeError, ValueError):
+        return False
+    if abs(time.time() - timestamp) > tolerance_seconds:
+        return False
+    expected = "sha256=" + hmac.new(
+        secret.encode("utf-8"),
+        f"{timestamp}.".encode("utf-8") + body,
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(expected, str(signature_header).strip())
 
 
 def get_webhook_config() -> tuple[str, str]:
@@ -153,7 +189,7 @@ async def deliver_webhook_outbox(
                 continue
 
             event_id, payload, attempts = claimed
-            body, signature = sign_webhook_payload(payload, secret)
+            body, signature, timestamp = sign_webhook_payload(payload, secret)
             error_message = None
             try:
                 response = await client.post(
@@ -163,6 +199,7 @@ async def deliver_webhook_outbox(
                         "Content-Type": "application/json",
                         "X-Syntropic-Event-ID": event_id,
                         "X-Syntropic-Signature": signature,
+                        "X-Syntropic-Timestamp": timestamp,
                     },
                 )
                 if not response.is_success:

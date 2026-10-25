@@ -109,9 +109,13 @@ def test_hmac_webhook_signature_against_local_http_listener(monkeypatch):
     assert delivered["request_line"].startswith("POST /webhook_receiver ")
     assert delivered["headers"]["x-syntropic-event-id"] == event_id
     assert json.loads(delivered["body"]) == payload
-    expected_signature = hmac.new(
-        secret.encode("utf-8"), delivered["body"], hashlib.sha256
-    ).hexdigest()
-    assert delivered["headers"]["x-syntropic-signature"] == (
-        f"sha256={expected_signature}"
+    # Signature covers {timestamp}.{body} (Stripe scheme) and must verify
+    # receiver-side within the freshness window.
+    from syntropic.core.matching.api.webhook import verify_webhook_signature
+
+    assert verify_webhook_signature(
+        delivered["body"],
+        delivered["headers"]["x-syntropic-signature"],
+        delivered["headers"]["x-syntropic-timestamp"],
+        secret,
     )
