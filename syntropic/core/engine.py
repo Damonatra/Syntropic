@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, ValidationError
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from syntropic.core.config import settings
-from syntropic.matching.catalog import QdrantHybridCatalog
+from syntropic.core.matching.catalog import QdrantHybridCatalog
 from syntropic.core.schemas import CanonicalSKU
 from syntropic.core.normalization import normalize_extracted_data
 from syntropic.core.normalizer import TradeAttributeNormalizer

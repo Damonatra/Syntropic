@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY alembic.ini ./
 COPY migrations ./migrations
+COPY security ./security
 COPY syntropic ./syntropic
 
 RUN mkdir -p /app/outputs/uploads

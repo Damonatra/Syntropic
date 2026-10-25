@@ -1,17 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Runtime artifacts
 outputs/review_queue.sqlite3
 outputs/review_queue.sqlite3-shm
 outputs/review_queue.sqlite3-wal
+outputs/uploads/
+outputs/*.json
+outputs/*.pdf
+
+# Environment
 .env
 .env.*
 !.env.example
-.venv/
-.pytest_cache/
-__pycache__/
-*.py[cod]
+
+# Node / Next.js
 node_modules/
 .next/
 *.tsbuildinfo
+npm-debug.log*
+
+# Dev tooling
 devserver.log
 devserver.pid
 .pwtools/proxy.log
 .pwtools/proxy.pid
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/

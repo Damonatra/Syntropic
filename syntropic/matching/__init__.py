@@ -1,1 +1,0 @@
-"""Catalog matching package."""
