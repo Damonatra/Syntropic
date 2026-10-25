@@ -56,6 +56,12 @@ from syntropic.core.matching.api.webhook import (
     deliver_webhook_outbox,
     get_webhook_config,
 )
+from syntropic.core.dispatch.graph_auth import GraphTokenManager
+from syntropic.core.dispatch.outlook_dispatch import (
+    deliver_dispatch_outbox,
+    dispatch_enabled,
+    get_dispatch_config,
+)
 from syntropic.ingestion.parser import PdfConversionError, parse_pdf_document
 from security.ast_veto import (
     TenantIsolationViolationError,
@@ -80,6 +86,17 @@ def _report_webhook_worker_failure(worker: asyncio.Task[None]) -> None:
         )
 
 
+def _report_dispatch_worker_failure(worker: asyncio.Task[None]) -> None:
+    if worker.cancelled():
+        return
+    error = worker.exception()
+    if error is not None:
+        logger.error(
+            "Draft dispatch worker stopped unexpectedly.",
+            exc_info=(type(error), error, error.__traceback__),
+        )
+
+
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     database_url = os.getenv("DATABASE_URL", "").strip()
@@ -98,6 +115,8 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     )
     checkpointer_pool = None
     webhook_worker = None
+    dispatch_worker = None
+    dispatch_token_manager = None
 
     try:
         if testing:
@@ -120,6 +139,34 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
                 name="syntropic-webhook-outbox",
             )
             webhook_worker.add_done_callback(_report_webhook_worker_failure)
+            # Zero-UI draft dispatch (Layer 4): same durable-outbox pattern,
+            # Drafts-folder-only. Disabled or misconfigured deployments skip
+            # the worker and quotes stay in the review queue.
+            if dispatch_enabled():
+                try:
+                    dispatch_config = get_dispatch_config()
+                    dispatch_token_manager = GraphTokenManager(
+                        dispatch_config.tenant_id,
+                        dispatch_config.client_id,
+                        dispatch_config.client_secret,
+                    )
+                    dispatch_worker = asyncio.create_task(
+                        deliver_dispatch_outbox(
+                            application.state.session_factory,
+                            dispatch_config,
+                            dispatch_token_manager,
+                        ),
+                        name="syntropic-dispatch-outbox",
+                    )
+                    dispatch_worker.add_done_callback(
+                        _report_dispatch_worker_failure
+                    )
+                except (RuntimeError, ValueError):
+                    logger.error(
+                        "Draft dispatch enabled but misconfigured; "
+                        "draft injection disabled for this run.",
+                        exc_info=True,
+                    )
             yield
     finally:
         try:
@@ -130,9 +177,19 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
                 except asyncio.CancelledError:
                     pass
         finally:
-            if checkpointer_pool is not None:
-                await checkpointer_pool.close()
-            await engine.dispose()
+            try:
+                if dispatch_worker is not None:
+                    dispatch_worker.cancel()
+                    try:
+                        await dispatch_worker
+                    except asyncio.CancelledError:
+                        pass
+            finally:
+                if dispatch_token_manager is not None:
+                    await dispatch_token_manager.aclose()
+                if checkpointer_pool is not None:
+                    await checkpointer_pool.close()
+                await engine.dispose()
 
 
 app = FastAPI(
