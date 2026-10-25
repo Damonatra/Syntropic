@@ -97,3 +97,44 @@ def test_oidc_configuration_missing_fails_closed(oidc_keys, monkeypatch):
     with pytest.raises(HTTPException) as error:
         auth.require_authenticated_user(credentials)
     assert error.value.status_code == 503
+
+
+# --- Tenant claim resolution -------------------------------------------------
+
+
+def test_extract_tenant_id_prefers_explicit_claims_over_subject():
+    claims = {"sub": "reviewer-1", "tenant": "fallback-org", "tenant_id": "acme"}
+    assert auth.extract_tenant_id(claims) == "acme"
+    assert auth.extract_tenant_id({"sub": "reviewer-1", "tenant": "fallback-org"}) == (
+        "fallback-org"
+    )
+    assert auth.extract_tenant_id({"sub": "reviewer-1", "org_id": "org-77"}) == "org-77"
+    assert auth.extract_tenant_id(
+        {"sub": "reviewer-1", "https://identity.example.com/tenant_id": "ns-tenant"}
+    ) == "ns-tenant"
+
+
+def test_extract_tenant_id_subject_fallback_by_default(monkeypatch):
+    monkeypatch.delenv("REQUIRE_TENANT_CLAIM", raising=False)
+    assert auth.extract_tenant_id({"sub": "reviewer-1"}) == "reviewer-1"
+
+
+def test_extract_tenant_id_rejects_subject_fallback_in_strict_mode(monkeypatch):
+    monkeypatch.setenv("REQUIRE_TENANT_CLAIM", "true")
+    with pytest.raises(HTTPException) as error:
+        auth.extract_tenant_id({"sub": "reviewer-1"})
+    assert error.value.status_code == 403
+    assert "explicit tenant claim" in error.value.detail
+
+
+def test_extract_tenant_id_strict_mode_accepts_explicit_claims(monkeypatch):
+    monkeypatch.setenv("REQUIRE_TENANT_CLAIM", "true")
+    assert auth.extract_tenant_id({"sub": "reviewer-1", "tenant_id": "acme"}) == "acme"
+    assert auth.extract_tenant_id({"sub": "reviewer-1", "org_id": "org-77"}) == "org-77"
+
+
+def test_extract_tenant_id_fails_closed_without_any_identity(monkeypatch):
+    monkeypatch.delenv("REQUIRE_TENANT_CLAIM", raising=False)
+    with pytest.raises(HTTPException) as error:
+        auth.extract_tenant_id({})
+    assert error.value.status_code == 401

@@ -311,8 +311,12 @@ def extract_tenant_id(claims: dict[str, Any]) -> str:
 
     Explicit ``tenant_id`` claims win, then any namespaced tenant claim, then
     ``tenant`` / ``org_id`` / ``organization_id``, and finally the subject
-    identifier. Production deployments should issue an explicit ``tenant_id``
-    claim so a single subject can never span organizations.
+    identifier.
+
+    Production hardening: setting ``REQUIRE_TENANT_CLAIM=true`` disables the
+    subject fallback — a token without an explicit tenant claim is rejected
+    with HTTP 403 so a single subject can never span organizations. Deploy
+    the IdP change (issue ``tenant_id``) BEFORE flipping the flag.
     """
     for key in ("tenant_id", "tenant", "org_id", "organization_id"):
         value = claims.get(key)
@@ -329,10 +333,29 @@ def extract_tenant_id(claims: dict[str, Any]) -> str:
             return value.strip()
     subject = claims.get("sub")
     if isinstance(subject, str) and subject.strip():
+        if _require_tenant_claim():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "The access token must carry an explicit tenant claim "
+                    "(tenant_id / tenant / org_id / organization_id); the "
+                    "subject fallback is disabled in this deployment."
+                ),
+            )
         return subject.strip()
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="The access token does not identify a tenant.",
+    )
+
+
+def _require_tenant_claim() -> bool:
+    """Return True when the deployment forbids the sub fallback for tenants."""
+    return os.getenv("REQUIRE_TENANT_CLAIM", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
     )
 
 
