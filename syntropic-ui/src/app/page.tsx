@@ -750,7 +750,9 @@ export default function Home() {
             <div className="welcome-state">
               <span className="welcome-icon">S</span>
               <span className="eyebrow">ENTERPRISE RFQ AUTOMATION</span>
-              <h1>Audit with full context.</h1>
+              <h1>
+                Audit with <em>full context.</em>
+              </h1>
               <p>
                 Process an RFQ, inspect extraction provenance on the source
                 document, and resolve uncertain catalog matches.

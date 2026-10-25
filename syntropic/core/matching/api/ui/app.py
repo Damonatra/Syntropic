@@ -19,7 +19,7 @@ def render_pdf_page(
         image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
         draw = ImageDraw.Draw(image)
 
-        for value, color in ((part_number, "#e5484d"), (quantity, "#168a63")):
+        for value, color in ((part_number, "#5d2a1a"), (quantity, "#17191c")):
             if not value:
                 continue
             for rect in page.search_for(value):
@@ -215,7 +215,7 @@ if "result" in st.session_state:
                 str(extracted.get("quantity", "")),
             )
             st.image(page_image, width="stretch")
-            st.caption(":red[Part number]  :green[Quantity]")
+            st.caption(":#5d2a1a[Part number]  :#17191c[Quantity]")
         except (fitz.FileDataError, ValueError) as error:
             st.warning(f"The source PDF could not be displayed: {error}")
     else:
