@@ -81,6 +81,18 @@ class QdrantHybridCatalog:
                 ),
             )
 
+        # Tenant filter index — REQUIRED for the 45ms@500k SLA. Without a
+        # KEYWORD payload index on tenant_id, filtered hybrid search at
+        # 500k-scale degrades to p50=166ms / p99=3.5s on exact part-number
+        # queries (measured: real Qdrant 1.14.1, 500k points, 400k-point
+        # worst-case tenant). With the index: p50=13.6ms / p99=42.9ms.
+        # Idempotent — also patches collections created before this fix.
+        self.client.create_payload_index(
+            collection_name=self.COLLECTION_NAME,
+            field_name="tenant_id",
+            field_schema=models.PayloadSchemaType.KEYWORD,
+        )
+
     @enforce_tenant_isolation
     def index_catalog_items(
         self, items: List[Dict[str, Any]], *, tenant_id: Optional[str] = None

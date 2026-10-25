@@ -218,3 +218,55 @@ def test_reindexing_same_sku_is_idempotent():
     matches = [r for r in results if r["catalog_item"]["sku_id"] == "CAT-001"]
     assert len(matches) == 1, "re-indexed SKU must appear exactly once"
     assert matches[0]["catalog_item"]["unit_price"] == 45.00
+
+
+# ---------------------------------------------------------------------------
+# Gate C3 remediation regression: tenant_id KEYWORD payload index.
+# The 500k native-server load test (scripts/vector2_500k_probe.py) proved the
+# as-shipped code misses the 45ms SLA by 3.7x on exact part-number queries
+# (p50=166ms) because filtered hybrid search had no tenant payload index to
+# lean on. Declaring the index restores p50=13.6ms / p99=42.9ms. Local-mode
+# Qdrant cannot introspect payload schema, so we spy on the client contract.
+# ---------------------------------------------------------------------------
+
+
+def _spy_payload_index_calls(monkeypatch):
+    from qdrant_client import QdrantClient
+
+    calls = []
+    original = QdrantClient.create_payload_index
+
+    def spy(self, collection_name, field_name, field_schema):
+        calls.append((collection_name, field_name, field_schema))
+        return original(self, collection_name, field_name, field_schema)
+
+    monkeypatch.setattr(QdrantClient, "create_payload_index", spy)
+    return calls
+
+
+def test_tenant_payload_index_declared_on_collection_create(monkeypatch):
+    from qdrant_client import models
+
+    calls = _spy_payload_index_calls(monkeypatch)
+    QdrantHybridCatalog(location=":memory:")
+
+    assert len(calls) == 1
+    collection, field, schema = calls[0]
+    assert collection == QdrantHybridCatalog.COLLECTION_NAME
+    assert field == "tenant_id"
+    assert schema == models.PayloadSchemaType.KEYWORD
+
+
+def test_tenant_payload_index_self_heals_pre_existing_collections(monkeypatch):
+    """Startup against a collection created before the fix must also declare
+    the tenant index (create_payload_index is idempotent server-side)."""
+    from qdrant_client import models
+
+    calls = _spy_payload_index_calls(monkeypatch)
+    catalog = QdrantHybridCatalog(location=":memory:")
+    assert len(calls) == 1  # fresh-create branch
+
+    catalog._ensure_collection_exists()  # now the exists-branch
+    assert len(calls) == 2
+    assert calls[1][1] == "tenant_id"
+    assert calls[1][2] == models.PayloadSchemaType.KEYWORD
