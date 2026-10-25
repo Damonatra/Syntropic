@@ -166,7 +166,10 @@ def compose_quote_draft(payload: dict[str, Any]) -> dict[str, Any]:
         reprice_note = ""
         if row["repriced"]:
             reprice_note = (
-                "<div class=\"note\">"
+                # Inline style only: Outlook's Word rendering engine ignores
+                # <style> blocks inconsistently, so this draft ships zero
+                # class references and zero external CSS.
+                "<div style=\"color:#b45309;font-size:0.9em;margin-top:4px\">"
                 + html.escape(
                     _REPRICED_NOTE.format(quoted=_money(row["quoted_price"]))
                 )
@@ -176,10 +179,12 @@ def compose_quote_draft(payload: dict[str, Any]) -> dict[str, Any]:
             "<tr>"
             f"<td>{html.escape(row['part_number'])}</td>"
             f"<td>{html.escape(row['description'])}{reprice_note}</td>"
-            f"<td class=\"num\">{row['quantity']:g}</td>"
+            # align="right" is the legacy attribute Outlook's Word engine
+            # honors deterministically (class-based CSS does not).
+            f"<td align=\"right\">{row['quantity']:g}</td>"
             f"<td>{html.escape(row['unit_of_measure'])}</td>"
-            f"<td class=\"num\">{_money(row['unit_price'])}</td>"
-            f"<td class=\"num\">{_money(row['extended'])}</td>"
+            f"<td align=\"right\">{_money(row['unit_price'])}</td>"
+            f"<td align=\"right\">{_money(row['extended'])}</td>"
             "</tr>"
         )
 
@@ -208,7 +213,7 @@ Ingested: {html.escape(ingested_at)}</p>
 </tbody>
 <tfoot>
 <tr><td colspan="5"><strong>Total</strong></td>
-<td class="num"><strong>{_money(total)}</strong></td></tr>
+<td align="right"><strong>{_money(total)}</strong></td></tr>
 </tfoot>
 </table>
 {margin_block}
