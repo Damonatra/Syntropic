@@ -350,6 +350,15 @@ def test_review_queue_and_decision_guard_accept_pending_hitl(review_client):
         "hitl_reason_code": "below_confidence_floor",
         "extracted_data": {"part_number": "VALVE-SS-050", "quantity": 2},
         "validation_errors": [],
+        "rebate_flags": [
+            {
+                "reason_code": "UNAPPLIED_REBATE",
+                "sku_id": "CAT-001",
+                "catalog_part_number": "VALVE-SS-050",
+                "line_part_number": "VALVE-SS-050",
+                "detail": "quoted price 42.00 exceeds the rebated price 39.90",
+            }
+        ],
         "execution_log": [
             "Pending HITL review: extraction confidence 0.94 is below the "
             "0.95 automation floor."
@@ -382,6 +391,17 @@ def test_review_queue_and_decision_guard_accept_pending_hitl(review_client):
     assert response.status_code == 200
     assert response.json()["status"] == "completed"
     assert review_client.get("/api/v1/rfq/reviews").json() == []
+
+    # Margin telemetry must survive the approval path into the ERP outbox.
+    with sqlite3.connect(api.app.state.test_db_path) as connection:
+        connection.row_factory = sqlite3.Row
+        row = connection.execute(
+            "SELECT payload FROM webhook_outbox WHERE job_id = ?",
+            ("job-pending",),
+        ).fetchone()
+    assert row is not None
+    payload = json.loads(row["payload"])
+    assert payload["rebate_flags"][0]["reason_code"] == "UNAPPLIED_REBATE"
 
 
 # ---------------------------------------------------------------------

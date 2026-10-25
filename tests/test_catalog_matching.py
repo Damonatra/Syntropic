@@ -138,4 +138,83 @@ def test_catalog_matches_expected_sku():
     assert results[0]["catalog_item"]["sku_id"] == "CAT-001"
     assert results[0]["catalog_item"]["part_number"] == "VALVE-SS-050"
     assert results[0]["rrf_score"] >= 0.95
-    assert len(results) == 2
+
+
+def test_incremental_indexing_never_overwrites_earlier_skus():
+    """Regression: point ids must derive from tenant+SKU identity.
+
+    Positional ids (idx+1) meant a second index_catalog_items call silently
+    overwrote the first batch's points — incremental catalog syncs lost data.
+    """
+    catalog = QdrantHybridCatalog(location=":memory:")
+    first = [
+        {
+            "sku_id": "CAT-001",
+            "part_number": "VALVE-SS-050",
+            "description": "1/2 inch 316 Stainless Steel Ball Valve, Female NPT Thread",
+            "unit_price": 42.00,
+            "category": "Valves",
+        },
+        {
+            "sku_id": "CAT-002",
+            "part_number": "VALVE-BR-050",
+            "description": "1/2 inch Brass Gate Valve, Heavy Duty Industrial",
+            "unit_price": 18.50,
+            "category": "Valves",
+        },
+    ]
+    second = [
+        {
+            "sku_id": "CAT-003",
+            "part_number": "PIPE-SS-100",
+            "description": "1 inch Seamless Stainless Steel Pipe 316L Schedule 40",
+            "unit_price": 110.00,
+            "category": "Pipes",
+        },
+    ]
+    catalog.index_catalog_items(first, tenant_id="tenant-catalog")
+    catalog.index_catalog_items(second, tenant_id="tenant-catalog")
+
+    for item in first + second:
+        query = CanonicalSKU(
+            part_number=item["part_number"],
+            description=item["description"],
+            quantity=1,
+            unit_of_measure="EA",
+            source_row_index=0,
+            extraction_confidence=0.9,
+        )
+        results = catalog.match_sku(query, top_k=3, tenant_id="tenant-catalog")
+        top_parts = [r["catalog_item"]["part_number"] for r in results]
+        assert item["part_number"] in top_parts, (
+            f"{item['part_number']} lost after incremental indexing; "
+            f"top = {top_parts}"
+        )
+
+
+def test_reindexing_same_sku_is_idempotent():
+    """Re-indexing a SKU must upsert in place, not duplicate or shift points."""
+    catalog = QdrantHybridCatalog(location=":memory:")
+    item = {
+        "sku_id": "CAT-001",
+        "part_number": "VALVE-SS-050",
+        "description": "1/2 inch 316 Stainless Steel Ball Valve, Female NPT Thread",
+        "unit_price": 42.00,
+        "category": "Valves",
+    }
+    catalog.index_catalog_items([item], tenant_id="tenant-catalog")
+    catalog.index_catalog_items([dict(item, unit_price=45.00)], tenant_id="tenant-catalog")
+
+    query = CanonicalSKU(
+        part_number="VLV-SS-050",
+        description="half in stnls steel ball valve",
+        quantity=1,
+        unit_of_measure="EA",
+        source_row_index=0,
+        extraction_confidence=0.9,
+    )
+    results = catalog.match_sku(query, top_k=3, tenant_id="tenant-catalog")
+    assert len(results) >= 1
+    matches = [r for r in results if r["catalog_item"]["sku_id"] == "CAT-001"]
+    assert len(matches) == 1, "re-indexed SKU must appear exactly once"
+    assert matches[0]["catalog_item"]["unit_price"] == 45.00

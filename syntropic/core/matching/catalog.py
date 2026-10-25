@@ -1,6 +1,7 @@
 # syntropic/matching/catalog.py
 
 import time
+import uuid
 from typing import List, Dict, Any, Optional
 from qdrant_client import QdrantClient, models
 from fastembed import TextEmbedding, SparseTextEmbedding
@@ -126,9 +127,16 @@ class QdrantHybridCatalog:
             )
             tenant_payload = dict(item)
             tenant_payload["tenant_id"] = tenant_id
+            # Deterministic point id derived from the tenant + SKU identity:
+            # re-indexing the same SKU is an idempotent upsert, and
+            # incremental syncs can never overwrite a different SKU's point
+            # (positional ids did exactly that — data loss across calls).
+            point_id = str(
+                uuid.uuid5(uuid.NAMESPACE_URL, f"syntropic:catalog:{tenant_id}:{item['sku_id']}")
+            )
             points.append(
                 models.PointStruct(
-                    id=idx + 1,
+                    id=point_id,
                     vector={
                         "dense": dense_vectors[idx],
                         "sparse": sparse_vector

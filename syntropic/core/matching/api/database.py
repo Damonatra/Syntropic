@@ -102,6 +102,10 @@ def approved_webhook_payload(
         "confidence_score": execution_result.get("confidence_score"),
         "line_items": line_items,
         "matched_catalog_items": matched_items,
+        # Margin telemetry from the SPA rebate interceptor: unapplied rebates,
+        # volume-tier opportunities, cost-sheet lag. Downstream ERP consumers
+        # can act on margin leakage without re-deriving it from the catalog.
+        "rebate_flags": execution_result.get("rebate_flags", []),
     }
 
 
