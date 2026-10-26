@@ -302,6 +302,15 @@ def build_price_delta_telemetry(
         price_floor = _as_float(catalog_item.get("price_floor"))
         if price_floor is None and decision.get("price_floor") is not None:
             price_floor = _as_float(decision.get("price_floor"))
+        # ISO 4217 currency of THIS line (Layer 5): money math must never sum
+        # across currencies. Resolution order honours the most specific
+        # source first: reviewer decision > extracted line item > catalog.
+        currency = (
+            decision.get("currency")
+            or (extracted_item or {}).get("currency")
+            or catalog_item.get("currency")
+        )
+        currency = str(currency).upper()[:3] if isinstance(currency, str) else None
         deltas.append(
             {
                 "line_index": index,
@@ -312,6 +321,7 @@ def build_price_delta_telemetry(
                 "pushed_price": pushed_price,
                 "unit_cost": unit_cost,
                 "price_floor": price_floor,
+                "currency": currency,
                 "margin_pct_at_push": _margin_pct(pushed_price, unit_cost),
                 "repriced": bool(decision.get("repriced", False)),
                 "reason_code": decision.get("reason_code"),

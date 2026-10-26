@@ -42,6 +42,17 @@ class Settings(BaseSettings):
     STREAM_ROTATE_MB: int = Field(default=64, env="STREAM_ROTATE_MB")
     STREAM_FSYNC: bool = Field(default=False, env="STREAM_FSYNC")
 
+    # Commercial instrumentation (Layer 5). The ROI value ledger records
+    # every margin-defender intervention as immutable per-job money math;
+    # the revenue-share statement is the contractual surface for the
+    # 20%-of-net-margin billing model. Share math is currency-scoped —
+    # statements never sum across ISO codes; the reporting currency is the
+    # deployment's primary billing currency.
+    ROI_LEDGER_ENABLED: bool = Field(default=True, env="ROI_LEDGER_ENABLED")
+    ROI_SHARE_PCT: float = Field(default=0.20, env="ROI_SHARE_PCT")
+    ROI_DEPLOYMENT_COST: float = Field(default=50_000.0, env="ROI_DEPLOYMENT_COST")
+    ROI_REPORTING_CURRENCY: str = Field(default="USD", env="ROI_REPORTING_CURRENCY")
+
     LANGSMITH_TRACING: bool = False
     LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
     LANGSMITH_API_KEY: SecretStr | None = None

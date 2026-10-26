@@ -2,6 +2,7 @@
 
 from contextlib import asynccontextmanager
 import asyncio
+from datetime import datetime
 import hashlib
 import json
 import logging
@@ -59,6 +60,12 @@ from syntropic.core.matching.api.webhook import (
 )
 from syntropic.core.dispatch.graph_auth import GraphTokenManager
 from syntropic.core.stream import emit_event
+from syntropic.core.config import settings
+from syntropic.core.roi.reporting import (
+    monthly_statement,
+    roi_summary,
+    verify_statement,
+)
 from syntropic.core.dispatch.outlook_dispatch import (
     deliver_dispatch_outbox,
     dispatch_enabled,
@@ -880,3 +887,79 @@ async def stream_rfq_execution(job_id: str):
         yield {"event": "complete", "data": json.dumps({"status": "finished", "job_id": job_id})}
 
     return EventSourceResponse(event_generator())
+
+
+# --------------------------------------------------------------------- ROI
+# Layer 5 — commercial instrumentation. Every response is tenant-scoped by
+# the bound tenant context and currency-scoped by ISO bucket.
+
+
+@app.get(
+    "/api/v1/roi/summary",
+    dependencies=[Depends(bind_tenant_context)],
+)
+async def get_roi_summary(
+    session: AsyncSession = Depends(get_session),
+    start: str | None = None,
+    end: str | None = None,
+):
+    """Cumulative value captured for the bound tenant.
+
+    Optional ``start``/``end`` ISO-8601 bounds (half-open: ``end`` is
+    exclusive). Payback progress is computed strictly against the
+    reporting-currency bucket — never a blind cross-currency sum.
+    """
+
+    def _parse_bound(name: str, raw: str) -> datetime:
+        try:
+            return datetime.fromisoformat(raw)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid ISO-8601 timestamp for '{name}': {raw!r}.",
+            )
+
+    start_dt = _parse_bound("start", start) if start else None
+    end_dt = _parse_bound("end", end) if end else None
+    return await roi_summary(
+        session,
+        get_current_tenant(),
+        start=start_dt,
+        end=end_dt,
+        share_pct=settings.ROI_SHARE_PCT,
+        deployment_cost=settings.ROI_DEPLOYMENT_COST,
+        reporting_currency=settings.ROI_REPORTING_CURRENCY,
+    )
+
+
+@app.get(
+    "/api/v1/roi/statement/{year}/{month}",
+    dependencies=[Depends(bind_tenant_context)],
+)
+async def get_roi_statement(
+    year: int,
+    month: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """Contractual revenue-share statement for one calendar month (UTC).
+
+    Deterministic and hash-bound: ``statement_hash`` covers every money
+    field, count and stream anchor, so the client (and their auditor) can
+    independently prove the statement was not altered after issuance via
+    the same canonical-JSON recomputation.
+    """
+    try:
+        statement = await monthly_statement(
+            session,
+            get_current_tenant(),
+            year,
+            month,
+            share_pct=settings.ROI_SHARE_PCT,
+            reporting_currency=settings.ROI_REPORTING_CURRENCY,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    # ``hash_verified`` sits OUTSIDE the hashed payload so the client (and
+    # their auditor) can recompute ``statement_hash`` over the untouched
+    # statement via verify_statement() with no key-stripping.
+    return {"statement": statement, "hash_verified": verify_statement(statement)}
