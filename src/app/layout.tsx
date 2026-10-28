@@ -3,9 +3,9 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {
-  title: "Vertebra — Syntropic Lead & Intelligence Engine",
+  title: "Vertebra Command Centre — Syntropic",
   description:
-    "Autonomous lead generation, Quote Leakage Vulnerability scoring and dual-channel dispatch for US & Canada industrial distributors.",
+    "1-of-1 executive command centre: live telemetry radar, ranked strike queue, spatial theatres, reply-agent triage and engine health for the Syntropic lead & intelligence engine.",
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
   },
@@ -27,7 +27,7 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="antialiased min-h-screen flex flex-col bg-white text-[#17191c]">
+      <body className="antialiased min-h-screen flex flex-col bg-[#0a0a0b] text-[#f2f2f4]">
         {children}
         <Toaster position="bottom-right" />
       </body>

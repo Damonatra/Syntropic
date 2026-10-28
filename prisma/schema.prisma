@@ -51,6 +51,7 @@ model Prospect {
   telemetryEvents    TelemetryEvent[]
   intentAlerts       IntentAlert[]
   inboundReplies     InboundReply[]
+  operatorActions    OperatorAction[]
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -101,6 +102,7 @@ model Dispatch {
   provider      String?
   providerMsgId String?
   footerApplied String?
+  scheduledAt   DateTime? // Module 4/9: sequence step schedule (OOO replies push this forward)
   error         String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -210,6 +212,18 @@ model InboundReply {
   drafts           AgentDraft[]
 
   @@index([processedAt])
+  @@index([prospectId])
+}
+
+// Command centre — operator decision log (call / defer / snooze / triage moves).
+model OperatorAction {
+  id         String   @id @default(cuid())
+  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  prospectId String
+  action     String // called | deferred | snoozed | booked | note
+  note       String?
+  createdAt  DateTime @default(now())
+
   @@index([prospectId])
 }
 

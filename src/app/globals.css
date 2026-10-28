@@ -262,3 +262,64 @@ body {
 .field:focus {
   border-color: #17191c;
 }
+
+/* ------------------------------------------------------------------ */
+/* Command Centre — dark scope, luminance-as-priority, soft-tactile   */
+/* ------------------------------------------------------------------ */
+
+.command-root {
+  --background: #0a0a0b;
+  --foreground: #f2f2f4;
+  --card: #121214;
+  --card-foreground: #f2f2f4;
+  --popover: #161619;
+  --popover-foreground: #f2f2f4;
+  --primary: #f2f2f4;
+  --primary-foreground: #0a0a0b;
+  --secondary: #1a1a1e;
+  --secondary-foreground: #f2f2f4;
+  --muted: #1a1a1e;
+  --muted-foreground: #8b8b93;
+  --accent: #1e1e22;
+  --accent-foreground: #f2f2f4;
+  --destructive: #26262b;
+  --border: #232327;
+  --input: #232327;
+  --ring: #3a3a41;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+@keyframes cc-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(250, 250, 250, 0.22); }
+  70% { box-shadow: 0 0 0 7px rgba(250, 250, 250, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(250, 250, 250, 0); }
+}
+@keyframes cc-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes cc-toast {
+  from { opacity: 0; transform: translateX(18px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes cc-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+@keyframes cc-svg-pulse {
+  0% { r: 4; opacity: 0.85; }
+  100% { r: 18; opacity: 0; }
+}
+
+.cc-rise { animation: cc-rise 0.35s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+.cc-toast { animation: cc-toast 0.28s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+.cc-blink { animation: cc-blink 1.6s ease-in-out infinite; }
+.cc-pulse-dot { animation: cc-pulse 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+.cc-svg-pulse { animation: cc-svg-pulse 2s ease-out infinite; transform-origin: center; transform-box: fill-box; }
+
+.cc-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.cc-scroll::-webkit-scrollbar-thumb { background: #232327; border-radius: 8px; }
+.cc-scroll::-webkit-scrollbar-thumb:hover { background: #2e2e33; }
+.cc-scroll::-webkit-scrollbar-track { background: transparent; }
+.cc-scroll { scrollbar-width: thin; scrollbar-color: #232327 transparent; }

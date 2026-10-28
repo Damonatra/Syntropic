@@ -1,0 +1,12 @@
+{
+  "name": "vertebra-telemetry-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vertebra command bridge — live telemetry simulator (stand-in for vertebra/telemetry/intent_tracker.py collectors) and socket.io broadcaster for the Executive Enclave.",
+  "scripts": {
+    "dev": "bun --hot index.ts"
+  },
+  "dependencies": {
+    "socket.io": "^4.8.4"
+  }
+}
