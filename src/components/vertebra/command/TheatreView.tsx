@@ -2,8 +2,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Chip, EmptyHint, SectionLabel, SoftCard } from "./bits";
-import { heatLevel, money, type ClusterShape, type CommandLead, type CommandSnapshot } from "@/lib/vertebra/command";
+import { Chip, EmptyHint, GeoBadge, HudMeta, SectionLabel, SoftCard } from "./bits";
+import { HEAT_FILL, heatLevel, money, type ClusterShape, type CommandLead, type CommandSnapshot } from "@/lib/vertebra/command";
 
 const W = 1200;
 const H = 640;
@@ -26,12 +26,8 @@ const CORRIDOR: Array<[number, number]> = [
   [-0.3031, 36.08], // Nakuru
 ];
 
-const HEAT_FILL: Record<ReturnType<typeof heatLevel>, string> = {
-  critical: "#fafafa",
-  hot: "#c9c9d0",
-  warm: "#8b8b93",
-  cool: "#4a4a52",
-};
+/** Geo-IP monitoring ring — the four regional telemetry nodes on the board. */
+const GEO_NODES = ["Houston", "Chicago", "Toronto", "Vancouver"] as const;
 
 export function TheatreView({
   snap,
@@ -65,49 +61,65 @@ export function TheatreView({
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <SectionLabel>Theatre board — Module 7 spatial clusters</SectionLabel>
-          <p className="mt-2 font-serif text-[22px] tracking-[-0.01em] text-[#f2f2f4]">
-            Four theatres · {leadsWithGeo.length} plotted leads · {money(totalStake)} at stake
+          <p className="mt-2 font-display text-[22px] font-semibold tracking-[-0.03em] text-[#08080A]">
+            Four theatres · {leadsWithGeo.length} plotted distributors · {money(totalStake)} leakage exposed
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => setSelected(null)}
-            className={`h-8 rounded-xl px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-colors ${
-              selected == null ? "bg-[#fafafa] text-[#0a0a0b]" : "border border-[#232327] text-[#8b8b93] hover:text-[#d6d6db]"
-            }`}
-          >
-            All theatres
-          </button>
-          {snap.clusters.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => setSelected(c.id === selected ? null : c.id)}
-              className={`h-8 rounded-xl px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-colors ${
-                selected === c.id ? "bg-[#fafafa] text-[#0a0a0b]" : "border border-[#232327] text-[#8b8b93] hover:text-[#d6d6db]"
-              }`}
-            >
-              {c.clusterName}
-            </button>
-          ))}
+        <div className="flex items-center gap-3">
+          <HudMeta node="AST-07" hash="41c9" />
         </div>
       </div>
 
-      <SoftCard className="mt-5 shrink-0 overflow-hidden p-2">
+      {/* Geo-IP monitoring ring */}
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        {GEO_NODES.map((city) => (
+          <GeoBadge key={city} city={city} />
+        ))}
+        <span className="ml-auto font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#A6ABB2]">geo-ip ingress · 4 regional nodes</span>
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button
+          onClick={() => setSelected(null)}
+          className={`h-8 rounded-full px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-all ${
+            selected == null
+              ? "bg-[#08080A] text-white shadow-[3px_3px_8px_rgba(0,0,0,0.18)]"
+              : "border border-black/[0.07] bg-white text-[#5F646D] shadow-[2px_2px_6px_rgba(0,0,0,0.04),-2px_-2px_6px_rgba(255,255,255,0.9)] hover:text-[#08080A]"
+          }`}
+        >
+          All theatres
+        </button>
+        {snap.clusters.map((c) => (
+          <button
+            key={c.id}
+            onClick={() => setSelected(c.id === selected ? null : c.id)}
+            className={`h-8 rounded-full px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-all ${
+              selected === c.id
+                ? "bg-[#08080A] text-white shadow-[3px_3px_8px_rgba(0,0,0,0.18)]"
+                : "border border-black/[0.07] bg-white text-[#5F646D] shadow-[2px_2px_6px_rgba(0,0,0,0.04),-2px_-2px_6px_rgba(255,255,255,0.9)] hover:text-[#08080A]"
+            }`}
+          >
+            {c.clusterName}
+          </button>
+        ))}
+      </div>
+
+      <SoftCard className="mt-4 shrink-0 overflow-hidden p-2.5">
         <svg viewBox={`0 0 ${W} ${H}`} className="block w-full select-none" style={{ aspectRatio: "1200 / 640" }} role="img" aria-label="Tactical cluster map">
           <defs>
             <radialGradient id="ringGlow" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#fafafa" stopOpacity="0.05" />
-              <stop offset="100%" stopColor="#fafafa" stopOpacity="0" />
+              <stop offset="0%" stopColor="#08080A" stopOpacity="0.04" />
+              <stop offset="100%" stopColor="#08080A" stopOpacity="0" />
             </radialGradient>
           </defs>
 
-          <rect x="0" y="0" width={W} height={H} fill="#0d0d0f" rx="14" />
+          <rect x="0" y="0" width={W} height={H} fill="#FBFBFC" rx="16" />
 
           {/* graticule */}
           {graticule.map((g, i) => (
             <g key={i}>
-              <line x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} stroke="#17171a" strokeWidth="1" />
-              <text x={g.lx} y={g.ly} fill="#33333a" fontSize="10" fontFamily="ui-monospace, monospace" textAnchor="middle">
+              <line x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} stroke="#E7E9EC" strokeWidth="1" />
+              <text x={g.lx} y={g.ly} fill="#A6ABB2" fontSize="10" fontFamily="JetBrains Mono, monospace" textAnchor="middle">
                 {g.label}
               </text>
             </g>
@@ -117,11 +129,11 @@ export function TheatreView({
           <polyline
             points={CORRIDOR.map(([lat, lng]) => `${px(lng)},${py(lat)}`).join(" ")}
             fill="none"
-            stroke="#2e2e34"
+            stroke="#C6CAD0"
             strokeWidth="1.5"
             strokeDasharray="5 6"
           />
-          <text x={px(37.2)} y={py(-0.9)} fill="#3f3f46" fontSize="9.5" fontFamily="ui-monospace, monospace" letterSpacing="2" transform={`rotate(-24 ${px(37.2)} ${py(-0.9)})`}>
+          <text x={px(37.2)} y={py(-0.9)} fill="#A6ABB2" fontSize="9.5" fontFamily="JetBrains Mono, monospace" letterSpacing="2" transform={`rotate(-24 ${px(37.2)} ${py(-0.9)})`}>
             LAPPSET CORRIDOR
           </text>
 
@@ -132,11 +144,11 @@ export function TheatreView({
             const r = Math.max(26, Math.sqrt(c.memberIds.length + 2) * 15);
             const active = selected == null || selected === c.id;
             return (
-              <g key={c.id} opacity={active ? 1 : 0.22} onClick={() => setSelected(c.id === selected ? null : c.id)} className="cursor-pointer">
+              <g key={c.id} opacity={active ? 1 : 0.25} onClick={() => setSelected(c.id === selected ? null : c.id)} className="cursor-pointer">
                 <circle cx={cx} cy={cy} r={r * 1.9} fill="url(#ringGlow)" />
-                <circle cx={cx} cy={cy} r={r} fill="none" stroke="#3a3a41" strokeWidth="1.2" strokeDasharray="3 4" />
-                <circle cx={cx} cy={cy} r={4} fill="#8b8b93" />
-                <text x={cx} y={cy - r - 10} fill={selected === c.id ? "#fafafa" : "#8b8b93"} fontSize="11" fontFamily="ui-monospace, monospace" letterSpacing="1.5" textAnchor="middle">
+                <circle cx={cx} cy={cy} r={r} fill="none" stroke="#3A3F46" strokeWidth="1.2" strokeDasharray="3 4" />
+                <circle cx={cx} cy={cy} r={4} fill="#08080A" />
+                <text x={cx} y={cy - r - 10} fill={selected === c.id ? "#08080A" : "#5F646D"} fontSize="11" fontFamily="JetBrains Mono, monospace" letterSpacing="1.5" textAnchor="middle">
                   {c.clusterName.toUpperCase()}
                 </text>
                 <title>{`${c.clusterName} — ${c.memberIds.length} members`}</title>
@@ -144,7 +156,7 @@ export function TheatreView({
             );
           })}
 
-          {/* lead dots */}
+          {/* lead dots — ink density ladder */}
           {leadsWithGeo.map((lead) => {
             const heat = heatLevel(lead.score?.qlvScore ?? null);
             const active = selected == null || (lead.clusterId != null && lead.clusterId === selected);
@@ -153,7 +165,7 @@ export function TheatreView({
             return (
               <g
                 key={lead.id}
-                opacity={active ? 1 : 0.18}
+                opacity={active ? 1 : 0.2}
                 className="cursor-pointer"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -161,22 +173,22 @@ export function TheatreView({
                   if (l) onOpenDossier(l);
                 }}
               >
-                {heat === "critical" && <circle cx={x} cy={y} r={4} fill="none" stroke="#fafafa" strokeWidth="1" className="cc-svg-pulse" />}
-                <circle cx={x} cy={y} r={heat === "critical" ? 5.5 : 4.5} fill={HEAT_FILL[heat]} stroke="#0a0a0b" strokeWidth="1.5" />
+                {heat === "critical" && <circle cx={x} cy={y} r={4} fill="none" stroke="#08080A" strokeWidth="1" className="cc-svg-pulse" />}
+                <circle cx={x} cy={y} r={heat === "critical" ? 5.5 : 4.5} fill={HEAT_FILL[heat]} stroke="#FFFFFF" strokeWidth="1.5" />
                 <title>{`${lead.name} — QLV ${lead.score?.qlvScore ?? "—"} — ${lead.clusterName ?? "unclustered"}`}</title>
               </g>
             );
           })}
 
-          {/* luminance legend */}
-          <g fontFamily="ui-monospace, monospace" fontSize="9.5" letterSpacing="1">
-            <text x={W - PAD} y={PAD - 26} fill="#5c5c64" textAnchor="end">
+          {/* ink-density legend */}
+          <g fontFamily="JetBrains Mono, monospace" fontSize="9.5" letterSpacing="1">
+            <text x={W - PAD} y={PAD - 26} fill="#5F646D" textAnchor="end">
               QLV LADDER
             </text>
             {(["critical", "hot", "warm", "cool"] as const).map((h, i) => (
               <g key={h} transform={`translate(${W - PAD - 210 + i * 56}, ${PAD - 14})`}>
                 <circle cx={0} cy={0} r={3.5} fill={HEAT_FILL[h]} />
-                <text x={9} y={3.5} fill="#4a4a52">
+                <text x={9} y={3.5} fill="#5F646D">
                   {h === "critical" ? "85+" : h === "hot" ? "72+" : h === "warm" ? "50+" : "<50"}
                 </text>
               </g>
@@ -187,43 +199,43 @@ export function TheatreView({
 
       {/* readout */}
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <SoftCard className="px-5 py-4">
+        <SoftCard className="px-6 py-5">
           {cluster ? (
             <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
               <div>
                 <SectionLabel>Selected theatre</SectionLabel>
-                <p className="mt-1.5 font-serif text-[19px] text-[#f2f2f4]">{cluster.clusterName}</p>
+                <p className="mt-1.5 font-display text-[19px] font-semibold tracking-[-0.02em] text-[#08080A]">{cluster.clusterName}</p>
               </div>
               <div>
                 <SectionLabel>Anchor</SectionLabel>
-                <p className="mt-1.5 font-mono text-[13px] text-[#d6d6db]">
+                <p className="mt-1.5 font-mono text-[13px] text-[#1A1D21]">
                   {cluster.anchorCity ?? "—"}, {cluster.anchorCountry ?? "—"}
                 </p>
               </div>
               <div>
                 <SectionLabel>Density</SectionLabel>
-                <p className="mt-1.5 font-mono text-[13px] tabular-nums text-[#d6d6db]">{cluster.memberIds.length} leads · {Math.round(cluster.radiusM / 1000)}km radius</p>
+                <p className="mt-1.5 font-mono text-[13px] tabular-nums text-[#1A1D21]">{cluster.memberIds.length} leads · {Math.round(cluster.radiusM / 1000)}km radius</p>
               </div>
               <div>
                 <SectionLabel>Critical band</SectionLabel>
-                <p className="mt-1.5 font-mono text-[13px] tabular-nums text-[#d6d6db]">{cluster.hotCount}</p>
+                <p className="mt-1.5 font-mono text-[13px] tabular-nums text-[#1A1D21]">{cluster.hotCount}</p>
               </div>
               <div>
                 <SectionLabel>Leakage at stake</SectionLabel>
-                <p className="mt-1.5 font-mono text-[13px] tabular-nums text-[#fafafa]">{money(cluster.leakageUsd)}</p>
+                <p className="mt-1.5 font-mono text-[13px] tabular-nums font-medium text-[#08080A]">{money(cluster.leakageUsd)}</p>
               </div>
             </div>
           ) : (
-            <p className="text-[13px] leading-relaxed text-[#8b8b93]">
-              Select a theatre — Houston PVF, Midwest Electrical, the Greater Toronto HVAC arc, or the LAPPSET corridor — to focus the board.
+            <p className="text-[13px] leading-relaxed text-[#5F646D]">
+              Select a theatre — Gulf Coast PVF, Midwest Electrical, the Greater Toronto HVAC arc, or the LAPPSET corridor — to focus the board.
               Cluster hooks localize outreach: &ldquo;we&rsquo;re onboarding two PVF distributors in the Gulf Coast corridor this month.&rdquo;
             </p>
           )}
         </SoftCard>
-        <SoftCard className="px-5 py-4">
+        <SoftCard className="px-6 py-5">
           <SectionLabel className="mb-2">Outreach hook · localized</SectionLabel>
           {cluster ? (
-            <p className="font-serif text-[14.5px] italic leading-relaxed text-[#d6d6db]">
+            <p className="font-display text-[14.5px] leading-relaxed tracking-[-0.01em] text-[#1A1D21]">
               &ldquo;Hey [Name], we&rsquo;re onboarding two {cluster.verticalFocus?.replace(/_/g, " ") ?? "distribution"} companies in the{" "}
               {cluster.clusterName} region this month — worth 15 minutes to see what their quote flow looks like?&rdquo;
             </p>
@@ -234,11 +246,11 @@ export function TheatreView({
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2 pb-2">
-        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#3f3f46]">members:</span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#A6ABB2]">members:</span>
         {(cluster ? snap.leads.filter((l) => l.clusterId === cluster.id) : snap.clusters.flatMap((c) => snap.leads.filter((l) => l.clusterId === c.id)))
           .slice(0, 24)
           .map((l) => (
-            <Chip key={l.id} tone={heatLevel(l.score?.qlvScore ?? null) === "critical" ? "inverted" : "outline"} className="cursor-pointer" >
+            <Chip key={l.id} tone={heatLevel(l.score?.qlvScore ?? null) === "critical" ? "inverted" : "outline"} className="cursor-pointer">
               <span onClick={() => onOpenDossier(l)}>{l.name}</span>
             </Chip>
           ))}

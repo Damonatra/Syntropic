@@ -329,7 +329,7 @@ export function relTime(ms: number, nowMs: number): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-/** Luminance ladder — hottest leads render brightest against the near-black canvas. */
+/** Heat ladder — light theme: priority reads as ink density (darker = hotter). */
 export function heatLevel(qlvScore: number | null): "critical" | "hot" | "warm" | "cool" {
   if (qlvScore == null) return "cool";
   if (qlvScore >= 85) return "critical";
@@ -339,15 +339,23 @@ export function heatLevel(qlvScore: number | null): "critical" | "hot" | "warm" 
 }
 
 export const HEAT_TEXT: Record<ReturnType<typeof heatLevel>, string> = {
-  critical: "text-[#fafafa]",
-  hot: "text-[#e4e4e8]",
-  warm: "text-[#b6b6bd]",
-  cool: "text-[#8b8b93]",
+  critical: "text-[#08080A]",
+  hot: "text-[#2A2E33]",
+  warm: "text-[#5F646D]",
+  cool: "text-[#A6ABB2]",
 };
 
 export const HEAT_BAR: Record<ReturnType<typeof heatLevel>, string> = {
-  critical: "bg-[#fafafa]",
-  hot: "bg-[#c9c9d0]",
-  warm: "bg-[#8b8b93]",
-  cool: "bg-[#4a4a52]",
+  critical: "bg-[#08080A]",
+  hot: "bg-[#3A3F46]",
+  warm: "bg-[#82878F]",
+  cool: "bg-[#C6CAD0]",
+};
+
+/** SVG fills for the theatre board — ink density ladder on white. */
+export const HEAT_FILL: Record<ReturnType<typeof heatLevel>, string> = {
+  critical: "#08080A",
+  hot: "#3A3F46",
+  warm: "#82878F",
+  cool: "#C6CAD0",
 };
