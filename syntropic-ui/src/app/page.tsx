@@ -128,6 +128,7 @@ export default function Home() {
   const [pageCount, setPageCount] = useState(0);
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
   const [reviewNote, setReviewNote] = useState("");
+  const [liveStreamEvents, setLiveStreamEvents] = useState<string[]>([]);
 
   const boxes = useMemo(() => provenanceBoxes(result), [result]);
   const extracted = result?.execution_result?.extracted_data;
@@ -233,6 +234,42 @@ export default function Home() {
     return () => {
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [result?.job_id, token]);
+
+  useEffect(() => {
+    const jobId = result?.job_id;
+    if (!jobId || !token) {
+      setLiveStreamEvents([]);
+      return;
+    }
+
+    let es: EventSource | null = null;
+    try {
+      const sseUrl = `${API_BASE}/rfq/stream/${encodeURIComponent(jobId)}`;
+      es = new EventSource(sseUrl);
+      es.addEventListener("status", (event) => {
+        try {
+          const parsed = JSON.parse(event.data);
+          if (parsed.message) {
+            setLiveStreamEvents((prev) => [...prev, parsed.message]);
+          }
+        } catch {
+          // Event parsing fallback
+        }
+      });
+      es.addEventListener("complete", () => {
+        if (es) es.close();
+      });
+      es.onerror = () => {
+        if (es) es.close();
+      };
+    } catch {
+      // EventSource connection error fallback
+    }
+
+    return () => {
+      if (es) es.close();
     };
   }, [result?.job_id, token]);
 
@@ -751,14 +788,18 @@ export default function Home() {
                       </div>
                     </div>
                     <ol className="execution-log">
-                      {(result.execution_result?.execution_log ?? []).map(
-                        (message, index) => (
-                          <li key={`${index}-${message}`}>
-                            <span className="log-index">{String(index + 1).padStart(2, "0")}</span>
-                            <span>{message}</span>
-                          </li>
-                        ),
-                      )}
+                      {(
+                        liveStreamEvents.length > 0
+                          ? liveStreamEvents
+                          : result.execution_result?.execution_log ?? []
+                      ).map((message, index) => (
+                        <li key={`${index}-${message}`}>
+                          <span className="log-index">
+                            {String(index + 1).padStart(2, "0")}
+                          </span>
+                          <span>{message}</span>
+                        </li>
+                      ))}
                     </ol>
                   </section>
                 </div>
