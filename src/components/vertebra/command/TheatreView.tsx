@@ -61,7 +61,7 @@ export function TheatreView({
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <SectionLabel>Theatre board — Module 7 spatial clusters</SectionLabel>
-          <p className="mt-2 font-display text-[22px] font-semibold tracking-[-0.03em] text-[#08080A]">
+          <p className="mt-2 font-display text-[22px] font-semibold tracking-[-0.03em] text-[#F4F5F2]">
             Four theatres · {leadsWithGeo.length} plotted distributors · {money(totalStake)} leakage exposed
           </p>
         </div>
@@ -75,7 +75,7 @@ export function TheatreView({
         {GEO_NODES.map((city) => (
           <GeoBadge key={city} city={city} />
         ))}
-        <span className="ml-auto font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#A6ABB2]">geo-ip ingress · 4 regional nodes</span>
+        <span className="ml-auto font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#5F6460]">geo-ip ingress · 4 regional nodes</span>
       </div>
 
       <div className="mt-2 flex flex-wrap gap-2">
@@ -83,8 +83,8 @@ export function TheatreView({
           onClick={() => setSelected(null)}
           className={`h-8 rounded-full px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-all ${
             selected == null
-              ? "bg-[#08080A] text-white shadow-[3px_3px_8px_rgba(0,0,0,0.18)]"
-              : "border border-black/[0.07] bg-white text-[#5F646D] shadow-[2px_2px_6px_rgba(0,0,0,0.04),-2px_-2px_6px_rgba(255,255,255,0.9)] hover:text-[#08080A]"
+              ? "bg-[#F4F5F2] text-[#0B0C0B]"
+              : "border border-white/[0.12] bg-[#131513] text-[#8E9194] hover:text-[#F4F5F2]"
           }`}
         >
           All theatres
@@ -95,8 +95,8 @@ export function TheatreView({
             onClick={() => setSelected(c.id === selected ? null : c.id)}
             className={`h-8 rounded-full px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-all ${
               selected === c.id
-                ? "bg-[#08080A] text-white shadow-[3px_3px_8px_rgba(0,0,0,0.18)]"
-                : "border border-black/[0.07] bg-white text-[#5F646D] shadow-[2px_2px_6px_rgba(0,0,0,0.04),-2px_-2px_6px_rgba(255,255,255,0.9)] hover:text-[#08080A]"
+                ? "bg-[#F4F5F2] text-[#0B0C0B]"
+                : "border border-white/[0.12] bg-[#131513] text-[#8E9194] hover:text-[#F4F5F2]"
             }`}
           >
             {c.clusterName}
@@ -108,18 +108,18 @@ export function TheatreView({
         <svg viewBox={`0 0 ${W} ${H}`} className="block w-full select-none" style={{ aspectRatio: "1200 / 640" }} role="img" aria-label="Tactical cluster map">
           <defs>
             <radialGradient id="ringGlow" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#08080A" stopOpacity="0.04" />
-              <stop offset="100%" stopColor="#08080A" stopOpacity="0" />
+              <stop offset="0%" stopColor="#F4F5F2" stopOpacity="0.06" />
+              <stop offset="100%" stopColor="#F4F5F2" stopOpacity="0" />
             </radialGradient>
           </defs>
 
-          <rect x="0" y="0" width={W} height={H} fill="#FBFBFC" rx="16" />
+          <rect x="0" y="0" width={W} height={H} fill="#0E100E" rx="8" />
 
           {/* graticule */}
           {graticule.map((g, i) => (
             <g key={i}>
-              <line x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} stroke="#E7E9EC" strokeWidth="1" />
-              <text x={g.lx} y={g.ly} fill="#A6ABB2" fontSize="10" fontFamily="JetBrains Mono, monospace" textAnchor="middle">
+              <line x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} stroke="#222522" strokeWidth="1" />
+              <text x={g.lx} y={g.ly} fill="#5F6460" fontSize="10" fontFamily="JetBrains Mono, monospace" textAnchor="middle">
                 {g.label}
               </text>
             </g>
@@ -129,11 +129,11 @@ export function TheatreView({
           <polyline
             points={CORRIDOR.map(([lat, lng]) => `${px(lng)},${py(lat)}`).join(" ")}
             fill="none"
-            stroke="#C6CAD0"
+            stroke="#5F6460"
             strokeWidth="1.5"
             strokeDasharray="5 6"
           />
-          <text x={px(37.2)} y={py(-0.9)} fill="#A6ABB2" fontSize="9.5" fontFamily="JetBrains Mono, monospace" letterSpacing="2" transform={`rotate(-24 ${px(37.2)} ${py(-0.9)})`}>
+          <text x={px(37.2)} y={py(-0.9)} fill="#6E736E" fontSize="9.5" fontFamily="JetBrains Mono, monospace" letterSpacing="2" transform={`rotate(-24 ${px(37.2)} ${py(-0.9)})`}>
             LAPPSET CORRIDOR
           </text>
 
@@ -146,9 +146,9 @@ export function TheatreView({
             return (
               <g key={c.id} opacity={active ? 1 : 0.25} onClick={() => setSelected(c.id === selected ? null : c.id)} className="cursor-pointer">
                 <circle cx={cx} cy={cy} r={r * 1.9} fill="url(#ringGlow)" />
-                <circle cx={cx} cy={cy} r={r} fill="none" stroke="#3A3F46" strokeWidth="1.2" strokeDasharray="3 4" />
-                <circle cx={cx} cy={cy} r={4} fill="#08080A" />
-                <text x={cx} y={cy - r - 10} fill={selected === c.id ? "#08080A" : "#5F646D"} fontSize="11" fontFamily="JetBrains Mono, monospace" letterSpacing="1.5" textAnchor="middle">
+                <circle cx={cx} cy={cy} r={r} fill="none" stroke="#8E9194" strokeWidth="1.2" strokeDasharray="3 4" />
+                <circle cx={cx} cy={cy} r={4} fill="#F4F5F2" />
+                <text x={cx} y={cy - r - 10} fill={selected === c.id ? "#F4F5F2" : "#8E9194"} fontSize="11" fontFamily="JetBrains Mono, monospace" letterSpacing="1.5" textAnchor="middle">
                   {c.clusterName.toUpperCase()}
                 </text>
                 <title>{`${c.clusterName} — ${c.memberIds.length} members`}</title>
@@ -173,8 +173,8 @@ export function TheatreView({
                   if (l) onOpenDossier(l);
                 }}
               >
-                {heat === "critical" && <circle cx={x} cy={y} r={4} fill="none" stroke="#08080A" strokeWidth="1" className="cc-svg-pulse" />}
-                <circle cx={x} cy={y} r={heat === "critical" ? 5.5 : 4.5} fill={HEAT_FILL[heat]} stroke="#FFFFFF" strokeWidth="1.5" />
+                {heat === "critical" && <circle cx={x} cy={y} r={4} fill="none" stroke="#F4F5F2" strokeWidth="1" className="cc-svg-pulse" />}
+                <circle cx={x} cy={y} r={heat === "critical" ? 5.5 : 4.5} fill={HEAT_FILL[heat]} stroke="#0B0C0B" strokeWidth="1.5" />
                 <title>{`${lead.name} — QLV ${lead.score?.qlvScore ?? "—"} — ${lead.clusterName ?? "unclustered"}`}</title>
               </g>
             );
@@ -182,13 +182,13 @@ export function TheatreView({
 
           {/* ink-density legend */}
           <g fontFamily="JetBrains Mono, monospace" fontSize="9.5" letterSpacing="1">
-            <text x={W - PAD} y={PAD - 26} fill="#5F646D" textAnchor="end">
+            <text x={W - PAD} y={PAD - 26} fill="#8E9194" textAnchor="end">
               QLV LADDER
             </text>
             {(["critical", "hot", "warm", "cool"] as const).map((h, i) => (
               <g key={h} transform={`translate(${W - PAD - 210 + i * 56}, ${PAD - 14})`}>
                 <circle cx={0} cy={0} r={3.5} fill={HEAT_FILL[h]} />
-                <text x={9} y={3.5} fill="#5F646D">
+                <text x={9} y={3.5} fill="#8E9194">
                   {h === "critical" ? "85+" : h === "hot" ? "72+" : h === "warm" ? "50+" : "<50"}
                 </text>
               </g>
@@ -204,29 +204,29 @@ export function TheatreView({
             <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
               <div>
                 <SectionLabel>Selected theatre</SectionLabel>
-                <p className="mt-1.5 font-display text-[19px] font-semibold tracking-[-0.02em] text-[#08080A]">{cluster.clusterName}</p>
+                <p className="mt-1.5 font-display text-[19px] font-semibold tracking-[-0.02em] text-[#F4F5F2]">{cluster.clusterName}</p>
               </div>
               <div>
                 <SectionLabel>Anchor</SectionLabel>
-                <p className="mt-1.5 font-mono text-[13px] text-[#1A1D21]">
+                <p className="mt-1.5 font-mono text-[13px] text-[#E9EBE7]">
                   {cluster.anchorCity ?? "—"}, {cluster.anchorCountry ?? "—"}
                 </p>
               </div>
               <div>
                 <SectionLabel>Density</SectionLabel>
-                <p className="mt-1.5 font-mono text-[13px] tabular-nums text-[#1A1D21]">{cluster.memberIds.length} leads · {Math.round(cluster.radiusM / 1000)}km radius</p>
+                <p className="mt-1.5 font-mono text-[13px] tabular-nums text-[#E9EBE7]">{cluster.memberIds.length} leads · {Math.round(cluster.radiusM / 1000)}km radius</p>
               </div>
               <div>
                 <SectionLabel>Critical band</SectionLabel>
-                <p className="mt-1.5 font-mono text-[13px] tabular-nums text-[#1A1D21]">{cluster.hotCount}</p>
+                <p className="mt-1.5 font-mono text-[13px] tabular-nums text-[#E9EBE7]">{cluster.hotCount}</p>
               </div>
               <div>
                 <SectionLabel>Leakage at stake</SectionLabel>
-                <p className="mt-1.5 font-mono text-[13px] tabular-nums font-medium text-[#08080A]">{money(cluster.leakageUsd)}</p>
+                <p className="mt-1.5 font-mono text-[13px] tabular-nums font-medium text-[#F4F5F2]">{money(cluster.leakageUsd)}</p>
               </div>
             </div>
           ) : (
-            <p className="text-[13px] leading-relaxed text-[#5F646D]">
+            <p className="text-[13px] leading-relaxed text-[#8E9194]">
               Select a theatre — Gulf Coast PVF, Midwest Electrical, the Greater Toronto HVAC arc, or the LAPPSET corridor — to focus the board.
               Cluster hooks localize outreach: &ldquo;we&rsquo;re onboarding two PVF distributors in the Gulf Coast corridor this month.&rdquo;
             </p>
@@ -235,7 +235,7 @@ export function TheatreView({
         <SoftCard className="px-6 py-5">
           <SectionLabel className="mb-2">Outreach hook · localized</SectionLabel>
           {cluster ? (
-            <p className="font-display text-[14.5px] leading-relaxed tracking-[-0.01em] text-[#1A1D21]">
+            <p className="font-display text-[14.5px] leading-relaxed tracking-[-0.01em] text-[#E9EBE7]">
               &ldquo;Hey [Name], we&rsquo;re onboarding two {cluster.verticalFocus?.replace(/_/g, " ") ?? "distribution"} companies in the{" "}
               {cluster.clusterName} region this month — worth 15 minutes to see what their quote flow looks like?&rdquo;
             </p>
@@ -246,7 +246,7 @@ export function TheatreView({
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2 pb-2">
-        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#A6ABB2]">members:</span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#5F6460]">members:</span>
         {(cluster ? snap.leads.filter((l) => l.clusterId === cluster.id) : snap.clusters.flatMap((c) => snap.leads.filter((l) => l.clusterId === c.id)))
           .slice(0, 24)
           .map((l) => (

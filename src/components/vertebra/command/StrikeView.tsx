@@ -1,4 +1,4 @@
-/** STRIKE — the ranked margin-recovery queue. Neumorphic target cards, keyboard loop. */
+/** STRIKE — the ranked margin-recovery queue. Luminance target cards, keyboard loop. */
 "use client";
 
 import { useMemo } from "react";
@@ -56,10 +56,10 @@ export function StrikeView({
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <SectionLabel>Strike queue — ranked by effective priority</SectionLabel>
-          <p className="mt-2 font-display text-[22px] font-semibold tracking-[-0.03em] text-[#08080A]">
-            {ranked.length} recovery targets · <span className="underline decoration-black/20 underline-offset-4">{money(stake)}</span> leakage at stake
+          <p className="mt-2 font-display text-[22px] font-semibold tracking-[-0.03em] text-[#F4F5F2]">
+            {ranked.length} recovery targets · <span className="underline decoration-white/30 underline-offset-4">{money(stake)}</span> leakage at stake
           </p>
-          <p className="mt-1 font-mono text-[10.5px] uppercase tracking-[0.14em] text-[#A6ABB2]">
+          <p className="mt-1 font-mono text-[10.5px] uppercase tracking-[0.14em] text-[#5F6460]">
             j / k move · enter dossier · c call · x defer · s snooze
           </p>
         </div>
@@ -77,8 +77,8 @@ export function StrikeView({
               onClick={() => onFilter(key)}
               className={`h-8 rounded-full px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-all ${
                 filter === key
-                  ? "bg-[#08080A] text-white shadow-[3px_3px_8px_rgba(0,0,0,0.18)]"
-                  : "border border-black/[0.07] bg-white text-[#5F646D] shadow-[2px_2px_6px_rgba(0,0,0,0.04),-2px_-2px_6px_rgba(255,255,255,0.9)] hover:text-[#08080A]"
+                  ? "bg-[#F4F5F2] text-[#0B0C0B]"
+                  : "border border-white/[0.12] bg-[#131513] text-[#8E9194] hover:text-[#F4F5F2]"
               }`}
             >
               {label}
@@ -135,9 +135,9 @@ function StrikeCard({
       onClick={onFocus}
       className={`cc-rise px-6 py-5 transition-all duration-150 ${
         focused
-          ? "!border-black/25 shadow-[12px_14px_30px_rgba(0,0,0,0.10),-12px_-12px_24px_rgba(255,255,255,1),0_0_0_1.5px_#08080A]"
+          ? "border-white/45 shadow-[0_0_0_1px_rgba(244,245,242,0.55)]"
           : ""
-      } ${lead.highIntentNow ? "border-black/[0.14]" : ""}`}
+      } ${lead.highIntentNow ? "border-white/[0.24]" : ""}`}
     >
       {/* telemetry overlay */}
       <div className="mb-4 flex items-center justify-end gap-4">
@@ -149,19 +149,19 @@ function StrikeCard({
           <ScoreBlock score={lead.score?.qlvScore ?? null} band={lead.score?.band ?? null} />
           <div className="w-full">
             <PriorityBar value={lead.priority} max={maxPriority} heat={heat} />
-            <p className="mt-1.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-[#A6ABB2]">pri {Math.round(lead.priority)}</p>
+            <p className="mt-1.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-[#5F6460]">pri {Math.round(lead.priority)}</p>
           </div>
         </div>
 
         <div className="min-w-0" onMouseEnter={onFocus}>
           <div className="flex flex-wrap items-center gap-2">
-            <p className={`font-display text-[16.5px] font-semibold tracking-[-0.02em] ${heat === "critical" ? "text-[#08080A]" : "text-[#1A1D21]"}`}>
+            <p className={`font-display text-[16.5px] font-semibold tracking-[-0.02em] ${heat === "critical" ? "text-white" : "text-[#E9EBE7]"}`}>
               {lead.name}
             </p>
             {lead.highIntentNow && (
               <span className="inline-flex items-center gap-1.5">
                 <LiveDot level="live" />
-                <span className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#08080A]">on board now</span>
+                <span className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#F4F5F2]">on board now</span>
               </span>
             )}
             {lead.pendingDrafts > 0 && <Chip tone="raised">{lead.pendingDrafts} draft{lead.pendingDrafts > 1 ? "s" : ""} pending</Chip>}
@@ -169,7 +169,7 @@ function StrikeCard({
             {lead.dispatch?.status === "stopped" && <Chip tone="outline">stopped</Chip>}
           </div>
 
-          <p className="mt-1 text-[13px] text-[#3A3F46]">
+          <p className="mt-1 text-[13px] text-[#C9CCC7]">
             {lead.contact ? (
               <>
                 {lead.contact.name} · {lead.contact.titleRaw} ·{" "}
@@ -177,20 +177,20 @@ function StrikeCard({
                   <a
                     href={`tel:${lead.contact.phone.replace(/\s/g, "")}`}
                     onClick={(e) => e.stopPropagation()}
-                    className="font-mono text-[12.5px] text-[#08080A] underline decoration-black/20 underline-offset-4 transition-colors hover:decoration-black/60"
+                    className="font-mono text-[12.5px] text-[#F4F5F2] underline decoration-white/30 underline-offset-4 transition-colors hover:decoration-white/70"
                   >
                     {lead.contact.phone}
                   </a>
                 ) : (
-                  <span className="text-[#8A8F97]">direct line pending</span>
+                  <span className="text-[#6E736E]">direct line pending</span>
                 )}
               </>
             ) : (
-              <span className="text-[#8A8F97]">No contact resolved</span>
+              <span className="text-[#6E736E]">No contact resolved</span>
             )}
           </p>
 
-          <p className="mt-1.5 text-[12.5px] text-[#5F646D]">{trigger}</p>
+          <p className="mt-1.5 text-[12.5px] text-[#8E9194]">{trigger}</p>
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Chip tone="well">{verticalLabel(lead.vertical)}</Chip>
@@ -213,13 +213,13 @@ function StrikeCard({
           <div className="flex gap-1.5">
             <button
               onClick={() => onAction(lead.id, "deferred")}
-              className="tactile-btn h-8 rounded-full border border-black/[0.07] bg-white px-3 font-mono text-[10px] uppercase tracking-[0.12em] text-[#5F646D] shadow-[2px_2px_6px_rgba(0,0,0,0.04),-2px_-2px_6px_rgba(255,255,255,0.9)] hover:text-[#08080A]"
+              className="tactile-btn h-8 rounded-full border border-white/[0.12] bg-[#131513] px-3 font-mono text-[10px] uppercase tracking-[0.12em] text-[#8E9194] hover:text-[#F4F5F2]"
             >
               Defer
             </button>
             <button
               onClick={() => onAction(lead.id, "snoozed", undefined)}
-              className="tactile-btn h-8 rounded-full border border-black/[0.07] bg-white px-3 font-mono text-[10px] uppercase tracking-[0.12em] text-[#5F646D] shadow-[2px_2px_6px_rgba(0,0,0,0.04),-2px_-2px_6px_rgba(255,255,255,0.9)] hover:text-[#08080A]"
+              className="tactile-btn h-8 rounded-full border border-white/[0.12] bg-[#131513] px-3 font-mono text-[10px] uppercase tracking-[0.12em] text-[#8E9194] hover:text-[#F4F5F2]"
             >
               Snooze
             </button>

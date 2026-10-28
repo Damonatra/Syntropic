@@ -27,7 +27,7 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="antialiased min-h-screen flex flex-col bg-[#F4F5F7] text-[#08080A]">
+      <body className="antialiased min-h-screen flex flex-col bg-[#0B0C0B] text-[#F4F5F2]">
         {children}
         <Toaster position="bottom-right" />
       </body>

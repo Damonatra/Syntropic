@@ -24,7 +24,7 @@ export function PipelineView({
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <SectionLabel>Pipeline — the machine, zoomed out</SectionLabel>
-          <p className="mt-2 font-display text-[22px] font-semibold tracking-[-0.03em] text-[#08080A]">
+          <p className="mt-2 font-display text-[22px] font-semibold tracking-[-0.03em] text-[#F4F5F2]">
             {snap.leads.length} distributors in the corridor · {money(snap.funnel[0]?.leakageUsd ?? 0)} leakage exposed
           </p>
         </div>
@@ -40,8 +40,8 @@ export function PipelineView({
               onClick={() => setTab(key)}
               className={`h-8 rounded-full px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-all ${
                 tab === key
-                  ? "bg-[#08080A] text-white shadow-[3px_3px_8px_rgba(0,0,0,0.18)]"
-                  : "border border-black/[0.07] bg-white text-[#5F646D] shadow-[2px_2px_6px_rgba(0,0,0,0.04),-2px_-2px_6px_rgba(255,255,255,0.9)] hover:text-[#08080A]"
+                  ? "bg-[#F4F5F2] text-[#0B0C0B]"
+                  : "border border-white/[0.12] bg-[#131513] text-[#8E9194] hover:text-[#F4F5F2]"
               }`}
             >
               {label}
@@ -54,12 +54,12 @@ export function PipelineView({
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
         {snap.funnel.map((stage) => (
           <SoftCard key={stage.stage} className="px-4 py-3.5">
-            <p className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[#5F646D]">{stage.label}</p>
-            <p className="mt-1.5 font-display text-[24px] font-semibold leading-none tracking-[-0.03em] tabular-nums text-[#08080A]">{stage.count}</p>
-            <div className="mt-2.5 h-[3px] w-full overflow-hidden rounded-full bg-[#E4E6EA]">
-              <div className="h-full rounded-full bg-[#08080A]" style={{ width: `${Math.max(6, (stage.count / maxCount) * 100)}%` }} />
+            <p className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[#8E9194]">{stage.label}</p>
+            <p className="mt-1.5 font-display text-[24px] font-semibold leading-none tracking-[-0.03em] tabular-nums text-[#F4F5F2]">{stage.count}</p>
+            <div className="mt-2.5 h-[3px] w-full overflow-hidden rounded-full bg-[#232623]">
+              <div className="h-full rounded-full bg-[#F4F5F2]" style={{ width: `${Math.max(6, (stage.count / maxCount) * 100)}%` }} />
             </div>
-            <p className="mt-2 font-mono text-[10.5px] tabular-nums text-[#5F646D]">{money(stage.leakageUsd)} exposed</p>
+            <p className="mt-2 font-mono text-[10.5px] tabular-nums text-[#8E9194]">{money(stage.leakageUsd)} exposed</p>
           </SoftCard>
         ))}
       </div>
@@ -70,7 +70,7 @@ export function PipelineView({
           <section className="flex min-w-0 flex-col gap-3">
             <div className="flex items-center justify-between">
               <SectionLabel>Drafts pending review — tier 2 · human gate</SectionLabel>
-              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[#A6ABB2]">a = approve top</span>
+              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[#5F6460]">a = approve top</span>
             </div>
             {snap.triage.pending.length === 0 && <EmptyHint>Agent queue clear — every judgment call is yours</EmptyHint>}
             {snap.triage.pending.map((item) => (
@@ -86,15 +86,15 @@ export function PipelineView({
               <SoftCard key={item.replyId} className="cc-rise px-5 py-3.5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate text-[13.5px] font-medium text-[#1A1D21]">{item.prospectName}</p>
-                    <p className="mt-0.5 font-mono text-[10.5px] uppercase tracking-[0.1em] text-[#5F646D]">
+                    <p className="truncate text-[13.5px] font-medium text-[#E9EBE7]">{item.prospectName}</p>
+                    <p className="mt-0.5 font-mono text-[10.5px] uppercase tracking-[0.1em] text-[#8E9194]">
                       {INTENT_LABELS[item.intent]} · {item.draftStatus?.replace(/_/g, " ") ?? "no draft"}
                     </p>
                   </div>
-                  <span className="shrink-0 font-mono text-[10px] tabular-nums text-[#8A8F97]">{relTime(item.receivedAtMs, now)}</span>
+                  <span className="shrink-0 font-mono text-[10px] tabular-nums text-[#6E736E]">{relTime(item.receivedAtMs, now)}</span>
                 </div>
                 {item.rescheduledToMs && (
-                  <p className="mt-1.5 font-mono text-[10.5px] text-[#5F646D]">sequence pushed to {new Date(item.rescheduledToMs).toLocaleDateString()}</p>
+                  <p className="mt-1.5 font-mono text-[10.5px] text-[#8E9194]">sequence pushed to {new Date(item.rescheduledToMs).toLocaleDateString()}</p>
                 )}
               </SoftCard>
             ))}
@@ -104,7 +104,7 @@ export function PipelineView({
                 <SectionLabel className="mt-2">Closed</SectionLabel>
                 {snap.triage.closed.map((item) => (
                   <SoftCard key={item.replyId} className="px-5 py-3 opacity-55">
-                    <p className="truncate text-[12.5px] text-[#5F646D]">
+                    <p className="truncate text-[12.5px] text-[#8E9194]">
                       {item.prospectName} · {item.draftStatus?.replace(/_/g, " ")}
                     </p>
                   </SoftCard>
@@ -121,11 +121,11 @@ export function PipelineView({
               {Object.entries(channelStatusCounts(snap)).map(([status, count]) => (
                 <div key={status} className="flex items-center justify-between">
                   <Chip tone={status === "clicked" || status === "replied" ? "inverted" : "outline"}>{status}</Chip>
-                  <span className="font-mono text-[13px] tabular-nums text-[#1A1D21]">{count}</span>
+                  <span className="font-mono text-[13px] tabular-nums text-[#E9EBE7]">{count}</span>
                 </div>
               ))}
             </div>
-            <p className="mt-4 border-t border-black/[0.06] pt-3 text-[12px] leading-relaxed text-[#5F646D]">
+            <p className="mt-4 border-t border-white/[0.08] pt-3 text-[12px] leading-relaxed text-[#8E9194]">
               {snap.ops.channelACount} sequence rows total · {snap.ops.dispatchesSent24h} touched in the last 24h. Outbox:{" "}
               {snap.ops.outboxPending} pending / {snap.ops.outboxPublished} published.
             </p>
@@ -140,10 +140,10 @@ export function PipelineView({
                   <button
                     key={l.id}
                     onClick={() => onOpenDossierId(l.id)}
-                    className="flex items-center justify-between rounded-full border border-black/[0.06] bg-white px-4 py-2.5 text-left shadow-[2px_2px_6px_rgba(0,0,0,0.04),-2px_-2px_6px_rgba(255,255,255,0.9)] transition-all hover:-translate-y-[1px]"
+                    className="flex items-center justify-between rounded-full border border-white/[0.12] bg-[#131513] px-4 py-2.5 text-left transition-all hover:-translate-y-[1px] hover:border-white/25"
                   >
-                    <span className="truncate text-[13px] text-[#1A1D21]">{l.name}</span>
-                    <span className="font-mono text-[11px] tabular-nums text-[#5F646D]">
+                    <span className="truncate text-[13px] text-[#E9EBE7]">{l.name}</span>
+                    <span className="font-mono text-[11px] tabular-nums text-[#8E9194]">
                       QLV {l.highTouch?.qlvScore}
                       {l.highTouch?.exportedAtMs ? " · exported" : " · queued"}
                     </span>
@@ -182,37 +182,37 @@ function TriageCard({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <button onClick={() => onOpenDossierId(item.prospectId)} className="font-display text-[14.5px] font-semibold tracking-[-0.01em] text-[#08080A] hover:underline">
+            <button onClick={() => onOpenDossierId(item.prospectId)} className="font-display text-[14.5px] font-semibold tracking-[-0.01em] text-[#F4F5F2] hover:underline">
               {item.prospectName}
             </button>
             <Chip tone="raised">{INTENT_LABELS[item.intent as ReplyIntent] ?? item.intent}</Chip>
             {item.qlvScore != null && <Chip tone="well">QLV {item.qlvScore}</Chip>}
             {item.confidence != null && <Chip tone="outline">conf {Math.round(item.confidence * 100)}%</Chip>}
           </div>
-          <p className="mt-1.5 truncate text-[12px] text-[#5F646D]">
+          <p className="mt-1.5 truncate text-[12px] text-[#8E9194]">
             {item.fromEmail} · {relTime(item.receivedAtMs, now)}
           </p>
         </div>
       </div>
 
       {/* inbound — pressed well */}
-      <div className="neu-well mt-3 rounded-2xl px-4 py-3">
-        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[#5F646D]">inbound</p>
-        <p className="mt-1 text-[13px] text-[#1A1D21]">{item.subject || "(no subject)"}</p>
-        <p className="mt-1.5 text-[12.5px] leading-relaxed text-[#5F646D]">{item.body}</p>
+      <div className="neu-well mt-3 rounded-lg px-4 py-3">
+        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[#8E9194]">inbound</p>
+        <p className="mt-1 text-[13px] text-[#E9EBE7]">{item.subject || "(no subject)"}</p>
+        <p className="mt-1.5 text-[12.5px] leading-relaxed text-[#8E9194]">{item.body}</p>
       </div>
 
       {/* agent draft — machine voice on deep onyx */}
       {item.draftBody && (
-        <div className="ink mt-2.5 rounded-2xl px-4 py-3.5">
+        <div className="ink mt-2.5 rounded-lg px-4 py-3.5">
           <div className="flex items-center justify-between">
-            <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/50">agent draft — {item.draftSubject}</p>
-            <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-white/35">langgraph · reply agent</span>
+            <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/70">agent draft — {item.draftSubject}</p>
+            <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-white/55">langgraph · reply agent</span>
           </div>
-          <p className="mt-1.5 text-[12.5px] leading-relaxed text-white/90">{item.draftBody}</p>
+          <p className="mt-1.5 text-[12.5px] leading-relaxed text-white/95">{item.draftBody}</p>
         </div>
       )}
-      {item.rationale && <p className="mt-2 text-[11.5px] italic leading-relaxed text-[#8A8F97]">{item.rationale}</p>}
+      {item.rationale && <p className="mt-2 text-[11.5px] italic leading-relaxed text-[#6E736E]">{item.rationale}</p>}
 
       <div className="mt-3.5 flex gap-2">
         <PillButton tone="dark" onClick={() => item.draftId && onTriage(item.draftId, "approved")} disabled={!item.draftId}>

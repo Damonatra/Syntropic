@@ -19,7 +19,7 @@ export function PortalView({ snap }: { snap: CommandSnapshot }) {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <SectionLabel>Margin Defense Portal — executive entry</SectionLabel>
-          <p className="mt-2 font-display text-[22px] font-semibold tracking-[-0.03em] text-[#08080A]">
+          <p className="mt-2 font-display text-[22px] font-semibold tracking-[-0.03em] text-[#F4F5F2]">
             Diagnose the leak · defend the margin · pay out of recovery
           </p>
         </div>
@@ -45,10 +45,10 @@ export function PortalView({ snap }: { snap: CommandSnapshot }) {
             ["03 · net-margin rev-share", "20%", "The engine participates in recovered margin only. The distributor keeps 80% of every dollar closed."],
           ] as Array<[string, string, string]>
         ).map(([label, value, body]) => (
-          <div key={label} className="neu rounded-2xl px-6 py-5">
-            <p className="font-mono text-[9.5px] uppercase tracking-[0.18em] text-[#5F646D]">{label}</p>
-            <p className="mt-2 font-display text-[28px] font-semibold leading-none tracking-[-0.03em] text-[#08080A]">{value}</p>
-            <p className="mt-2.5 text-[12px] leading-relaxed text-[#5F646D]">{body}</p>
+          <div key={label} className="neu rounded-lg px-6 py-5">
+            <p className="font-mono text-[9.5px] uppercase tracking-[0.18em] text-[#8E9194]">{label}</p>
+            <p className="mt-2 font-display text-[28px] font-semibold leading-none tracking-[-0.03em] text-[#F4F5F2]">{value}</p>
+            <p className="mt-2.5 text-[12px] leading-relaxed text-[#8E9194]">{body}</p>
           </div>
         ))}
       </div>

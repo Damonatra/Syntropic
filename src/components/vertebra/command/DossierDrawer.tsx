@@ -1,4 +1,4 @@
-/** Dossier drawer — full operator context before a call. Light sheet, ink threat matrix. */
+/** Dossier drawer — full operator context before a call. Obsidian sheet, graphite threat matrix. */
 "use client";
 
 import { useEffect, useState } from "react";
@@ -89,24 +89,24 @@ export function DossierDrawer({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="cc-scroll w-full overflow-y-auto border-l border-black/[0.08] bg-[#F4F5F7] p-0 sm:max-w-[560px]">
+      <SheetContent side="right" className="cc-scroll w-full overflow-y-auto border-l border-white/[0.10] bg-[#0B0C0B] p-0 sm:max-w-[560px]">
         {loading || !data ? (
           <div className="flex h-full flex-col items-center justify-center gap-3">
             <SheetHeader className="sr-only">
               <SheetTitle>Loading dossier</SheetTitle>
             </SheetHeader>
-            <span className="size-2 rounded-full bg-[#00C853] cc-pulse-dot" />
-            <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-[#5F646D]">Loading dossier…</p>
+            <span className="size-2 rounded-full bg-[#F4F5F2] cc-pulse-dot" />
+            <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-[#8E9194]">Loading dossier…</p>
           </div>
         ) : (
           <div className="flex flex-col gap-6 p-6 pb-8">
             <SheetHeader className="p-0">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <SheetTitle className="font-display text-[24px] font-semibold leading-tight tracking-[-0.03em] text-[#08080A]">
+                  <SheetTitle className="font-display text-[24px] font-semibold leading-tight tracking-[-0.03em] text-[#F4F5F2]">
                     {data.prospect.name}
                   </SheetTitle>
-                  <p className="mt-1 font-mono text-[12px] text-[#5F646D]">
+                  <p className="mt-1 font-mono text-[12px] text-[#8E9194]">
                     {data.prospect.domain ?? "domain unknown"} · {data.prospect.city ?? "—"}
                     {data.prospect.stateProvince ? `, ${data.prospect.stateProvince}` : ""} · {data.prospect.country ?? "—"}
                   </p>
@@ -132,7 +132,7 @@ export function DossierDrawer({
                     k={c.titleRaw ?? c.role}
                     v={
                       c.phone ? (
-                        <a href={`tel:${c.phone.replace(/\s/g, "")}`} className="underline decoration-black/20 underline-offset-4 hover:text-[#08080A]">
+                        <a href={`tel:${c.phone.replace(/\s/g, "")}`} className="underline decoration-white/30 underline-offset-4 hover:text-white">
                           {c.phone}
                         </a>
                       ) : (
@@ -156,19 +156,19 @@ export function DossierDrawer({
                     {score.factors.map((f) => (
                       <div key={f.key}>
                         <div className="flex items-baseline justify-between">
-                          <span className="text-[13px] text-[#1A1D21]">{FACTOR_LABELS[f.key] ?? f.key}</span>
-                          <span className="font-mono text-[11px] tabular-nums text-[#5F646D]">
+                          <span className="text-[13px] text-[#E9EBE7]">{FACTOR_LABELS[f.key] ?? f.key}</span>
+                          <span className="font-mono text-[11px] tabular-nums text-[#8E9194]">
                             {Math.round(f.points)} × {f.weight.toFixed(2)}
                           </span>
                         </div>
-                        <div className="mt-1.5 h-[3px] w-full overflow-hidden rounded-full bg-[#E4E6EA]">
-                          <div className="h-full rounded-full bg-[#08080A]" style={{ width: `${Math.min(100, f.points)}%` }} />
+                        <div className="mt-1.5 h-[3px] w-full overflow-hidden rounded-full bg-[#232623]">
+                          <div className="h-full rounded-full bg-[#F4F5F2]" style={{ width: `${Math.min(100, f.points)}%` }} />
                         </div>
-                        <p className="mt-1.5 text-[12px] leading-relaxed text-[#5F646D]">{f.evidence}</p>
+                        <p className="mt-1.5 text-[12px] leading-relaxed text-[#8E9194]">{f.evidence}</p>
                       </div>
                     ))}
                   </div>
-                  <p className="mt-4 border-t border-black/[0.06] pt-3 text-[12.5px] leading-relaxed text-[#3A3F46]">{score.rationale}</p>
+                  <p className="mt-4 border-t border-white/[0.08] pt-3 text-[12.5px] leading-relaxed text-[#C9CCC7]">{score.rationale}</p>
                 </SoftCard>
               </section>
             )}
@@ -186,10 +186,10 @@ export function DossierDrawer({
                 <Kv k="Quote portal" v={PORTAL_LABELS[data.prospect.quotePortalType ?? ""] ?? data.prospect.quotePortalType ?? "—"} mono={false} />
                 <Kv k="Job signals" v={erp?.job_signal_count ?? 0} />
                 {erp?.evidence?.job_posts && erp.evidence.job_posts.length > 0 && (
-                  <div className="mt-2 flex flex-col gap-1.5 border-t border-black/[0.06] pt-3">
+                  <div className="mt-2 flex flex-col gap-1.5 border-t border-white/[0.08] pt-3">
                     {erp.evidence.job_posts.map((j, i) => (
-                      <p key={i} className="text-[12px] text-[#5F646D]">
-                        <span className="text-[#1A1D21]">{j.title}</span> — {j.board}, &ldquo;{j.keyword}&rdquo;
+                      <p key={i} className="text-[12px] text-[#8E9194]">
+                        <span className="text-[#E9EBE7]">{j.title}</span> — {j.board}, &ldquo;{j.keyword}&rdquo;
                       </p>
                     ))}
                   </div>
@@ -201,8 +201,8 @@ export function DossierDrawer({
             {erp?.recommended_pitch_angle && (
               <section>
                 <SectionLabel className="mb-2">Recommended pitch angle</SectionLabel>
-                <blockquote className="neu-well rounded-2xl px-5 py-4">
-                  <p className="font-display text-[15.5px] leading-relaxed tracking-[-0.01em] text-[#08080A]">
+                <blockquote className="neu-well rounded-lg px-5 py-4">
+                  <p className="font-display text-[15.5px] leading-relaxed tracking-[-0.01em] text-[#F4F5F2]">
                     &ldquo;{erp.recommended_pitch_angle}&rdquo;
                   </p>
                 </blockquote>
@@ -212,26 +212,26 @@ export function DossierDrawer({
             {/* Quote Defense Threat Matrix (Module 6) — deep onyx */}
             <section>
               <SectionLabel className="mb-2">Quote defense threat matrix · Module 6</SectionLabel>
-              <div className="ink rounded-3xl px-5 py-5">
+              <div className="ink rounded-lg px-5 py-5">
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-white/45">node // ast-06 · audit engine</span>
-                  <span className="inline-flex items-center gap-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-white/45">
-                    <span className="size-1.5 rounded-full bg-[#00C853] cc-pulse-dot" /> enclave: secure
+                  <span className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-white/65">node // ast-06 · audit engine</span>
+                  <span className="inline-flex items-center gap-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-white/65">
+                    <span className="size-1.5 rounded-full bg-[#F4F5F2] cc-pulse-dot" /> enclave: secure
                   </span>
                 </div>
-                <div className="mt-4 flex flex-col gap-0.5 border-b border-white/10 pb-4">
+                <div className="mt-4 flex flex-col gap-0.5 border-b border-white/20 pb-4">
                   <Kv k="Revenue estimate" v={<span className="text-white/90">{money(data.prospect.revenueEstimateUsd)}</span>} />
                   <Kv k="Net margin (assumed)" v={<span className="text-white/90">{(NET_MARGIN_ASSUMPTION * 100).toFixed(0)}%</span>} />
                   <Kv k="Exposure curve" v={<span className="text-white/90">QLV/100 × {(EXPOSURE_CEILING * 100).toFixed(0)}%</span>} />
                 </div>
                 <div className="mt-4">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/50">Annual net-margin leakage</p>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/70">Annual net-margin leakage</p>
                   <p className="mt-1.5 font-display text-[38px] font-semibold leading-none tracking-[-0.03em] tabular-nums text-white">
                     {leakage != null ? money(leakage) : "—"}
                   </p>
-                  <p className="mt-2 font-mono text-[10.5px] text-white/45">confidence band ±15% · recovery floor backed at $10,000</p>
+                  <p className="mt-2 font-mono text-[10.5px] text-white/65">confidence band ±15% · recovery floor backed at $10,000</p>
                 </div>
-                <p className="mt-4 border-t border-white/10 pt-3 text-[11.5px] leading-relaxed text-white/45">
+                <p className="mt-4 border-t border-white/20 pt-3 text-[11.5px] leading-relaxed text-white/65">
                   Native widget render. In production dispatch the Playwright-rendered audit image attaches from CDN.
                 </p>
               </div>
@@ -245,15 +245,15 @@ export function DossierDrawer({
               ) : (
                 <SoftCard className="px-5 py-3">
                   {data.telemetry.map((e) => (
-                    <div key={e.id} className="flex items-baseline justify-between gap-4 py-2 not-last:border-b not-last:border-black/[0.05]">
+                    <div key={e.id} className="flex items-baseline justify-between gap-4 py-2 not-last:border-b not-last:border-white/[0.07]">
                       <div className="min-w-0">
-                        <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-[#1A1D21]">{EVENT_LABELS[e.eventType] ?? e.eventType}</p>
-                        <p className="mt-0.5 truncate text-[11.5px] text-[#5F646D]">
+                        <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-[#E9EBE7]">{EVENT_LABELS[e.eventType] ?? e.eventType}</p>
+                        <p className="mt-0.5 truncate text-[11.5px] text-[#8E9194]">
                           {e.city ?? "—"}, {e.country ?? "—"} · {e.device ?? "—"}
                           {e.durationMs ? ` · ${Math.round(e.durationMs / 1000)}s` : ""}
                         </p>
                       </div>
-                      <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-[#8A8F97]">{relTime(e.occurredAtMs, now)}</span>
+                      <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-[#6E736E]">{relTime(e.occurredAtMs, now)}</span>
                     </div>
                   ))}
                 </SoftCard>
@@ -268,12 +268,12 @@ export function DossierDrawer({
               ) : (
                 <SoftCard className="px-5 py-3">
                   {data.dispatches.map((d) => (
-                    <div key={d.id} className="py-2 not-last:border-b not-last:border-black/[0.05]">
+                    <div key={d.id} className="py-2 not-last:border-b not-last:border-white/[0.07]">
                       <div className="flex items-baseline justify-between gap-3">
-                        <p className="truncate text-[12.5px] text-[#1A1D21]">{d.subject ?? "(no subject)"}</p>
+                        <p className="truncate text-[12.5px] text-[#E9EBE7]">{d.subject ?? "(no subject)"}</p>
                         <Chip tone={d.status === "clicked" || d.status === "replied" ? "inverted" : "outline"}>{d.status}</Chip>
                       </div>
-                      <p className="mt-0.5 font-mono text-[10.5px] text-[#8A8F97]">
+                      <p className="mt-0.5 font-mono text-[10.5px] text-[#6E736E]">
                         {d.channel.replace(/_/g, " ")} · {d.provider ?? "—"}
                         {d.scheduledAtMs ? ` · next step ${relTime(d.scheduledAtMs, now) === "" ? "now" : new Date(d.scheduledAtMs).toLocaleDateString()}` : ""}
                       </p>
@@ -289,14 +289,14 @@ export function DossierDrawer({
                 <SectionLabel className="mb-2">Reply threads · Module 9</SectionLabel>
                 <SoftCard className="px-5 py-3">
                   {data.replies.map((r) => (
-                    <div key={r.id} className="py-2 not-last:border-b not-last:border-black/[0.05]">
+                    <div key={r.id} className="py-2 not-last:border-b not-last:border-white/[0.07]">
                       <div className="flex items-baseline justify-between gap-3">
-                        <p className="truncate text-[12.5px] text-[#1A1D21]">{r.subject ?? "(no subject)"}</p>
+                        <p className="truncate text-[12.5px] text-[#E9EBE7]">{r.subject ?? "(no subject)"}</p>
                         <Chip tone="raised">{r.intent.replace(/_/g, " ")}</Chip>
                       </div>
-                      <p className="mt-1 line-clamp-2 text-[11.5px] leading-relaxed text-[#5F646D]">{r.body}</p>
+                      <p className="mt-1 line-clamp-2 text-[11.5px] leading-relaxed text-[#8E9194]">{r.body}</p>
                       {r.draft && (
-                        <p className="mt-1 font-mono text-[10.5px] uppercase tracking-[0.1em] text-[#8A8F97]">draft: {r.draft.status.replace(/_/g, " ")}</p>
+                        <p className="mt-1 font-mono text-[10.5px] uppercase tracking-[0.1em] text-[#6E736E]">draft: {r.draft.status.replace(/_/g, " ")}</p>
                       )}
                     </div>
                   ))}
@@ -305,7 +305,7 @@ export function DossierDrawer({
             )}
 
             {/* Action footer */}
-            <section className="sticky bottom-0 -mx-6 mt-2 border-t border-black/[0.07] bg-[#F4F5F7] px-6 pb-2 pt-4">
+            <section className="sticky bottom-0 -mx-6 mt-2 border-t border-white/[0.10] bg-[#0B0C0B] px-6 pb-2 pt-4">
               <div className="flex flex-wrap items-center gap-2">
                 {phone && (
                   <PillButton tone="dark" href={`tel:${phone.replace(/\s/g, "")}`}>

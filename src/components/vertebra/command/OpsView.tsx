@@ -25,15 +25,15 @@ function HudBar({ label, value, display, unit = "%" }: { label: string; value: n
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-1.5">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[#5F646D]">{label}</span>
-        <span className="font-mono text-[10.5px] tabular-nums text-[#08080A]">
+        <span className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[#8E9194]">{label}</span>
+        <span className="font-mono text-[10.5px] tabular-nums text-[#F4F5F2]">
           {display}
           {unit}
         </span>
       </div>
-      <div className="h-[5px] w-full overflow-hidden rounded-full bg-[#E4E6EA] shadow-[inset_1px_1px_3px_rgba(0,0,0,0.05)]">
+      <div className="h-[5px] w-full overflow-hidden rounded-full bg-[#232623]">
         <div
-          className="h-full rounded-full bg-[#08080A] transition-all duration-700"
+          className="h-full rounded-full bg-[#F4F5F2] transition-all duration-700"
           style={{ width: `${Math.min(100, Math.max(4, value))}%` }}
         />
       </div>
@@ -57,7 +57,7 @@ export function OpsView({ snap }: { snap: CommandSnapshot }) {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <SectionLabel>Ops — engine health</SectionLabel>
-          <p className="mt-2 flex items-center gap-2.5 font-display text-[22px] font-semibold tracking-[-0.03em] text-[#08080A]">
+          <p className="mt-2 flex items-center gap-2.5 font-display text-[22px] font-semibold tracking-[-0.03em] text-[#F4F5F2]">
             <LiveDot level={warn === 0 ? "live" : "warn"} />
             {warn === 0 ? "All nine modules nominal" : `${warn} module${warn > 1 ? "s" : ""} degraded`}
           </p>
@@ -71,7 +71,7 @@ export function OpsView({ snap }: { snap: CommandSnapshot }) {
         <HudBar label="AST security veto" value={100} display="PASS" unit="" />
         <HudBar label="Ingest latency" value={hud.latency * 4} display={String(hud.latency)} unit="ms" />
         <div className="flex items-center">
-          <span className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[#A6ABB2]">live · 2.4s cadence</span>
+          <span className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[#5F6460]">live · 2.4s cadence</span>
         </div>
       </SoftCard>
 
@@ -87,8 +87,8 @@ export function OpsView({ snap }: { snap: CommandSnapshot }) {
           ] as Array<[string, string | number]>
         ).map(([label, value]) => (
           <SoftCard key={label} className="px-4 py-3.5">
-            <p className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[#5F646D]">{label}</p>
-            <p className="mt-1.5 font-display text-[22px] font-semibold leading-none tracking-[-0.03em] tabular-nums text-[#08080A]">{value}</p>
+            <p className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[#8E9194]">{label}</p>
+            <p className="mt-1.5 font-display text-[22px] font-semibold leading-none tracking-[-0.03em] tabular-nums text-[#F4F5F2]">{value}</p>
           </SoftCard>
         ))}
       </div>
@@ -97,11 +97,11 @@ export function OpsView({ snap }: { snap: CommandSnapshot }) {
         {snap.ops.modules.map((m) => (
           <SoftCard key={m.id} className="px-5 py-4">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-[14px] font-medium text-[#1A1D21]">{m.module}</p>
+              <p className="text-[14px] font-medium text-[#E9EBE7]">{m.module}</p>
               <LiveDot level={m.status === "ok" ? "live" : m.status === "warn" ? "warn" : "fail"} />
             </div>
-            <p className="mt-1 font-mono text-[10.5px] text-[#A6ABB2]">{m.enginePath}</p>
-            <p className="mt-2.5 text-[12.5px] leading-relaxed text-[#5F646D]">{m.detail}</p>
+            <p className="mt-1 font-mono text-[10.5px] text-[#6E736E]">{m.enginePath}</p>
+            <p className="mt-2.5 text-[12.5px] leading-relaxed text-[#8E9194]">{m.detail}</p>
           </SoftCard>
         ))}
       </div>
@@ -113,7 +113,7 @@ export function OpsView({ snap }: { snap: CommandSnapshot }) {
           {erpRows.map(([erp, count]) => (
             <span key={erp} className="inline-flex items-center gap-2">
               <ErpBadge erp={erp} />
-              <span className="font-mono text-[10.5px] tabular-nums text-[#5F646D]">×{count}</span>
+              <span className="font-mono text-[10.5px] tabular-nums text-[#8E9194]">×{count}</span>
             </span>
           ))}
           {erpRows.length === 0 && <Chip tone="outline">no erp profiles yet</Chip>}
@@ -122,7 +122,7 @@ export function OpsView({ snap }: { snap: CommandSnapshot }) {
 
       <SoftCard className="mt-5 px-6 py-5">
         <SectionLabel className="mb-3">Module 8 production intake contract</SectionLabel>
-        <pre className="ink overflow-x-auto rounded-2xl p-4 font-mono text-[11.5px] leading-relaxed text-white/80">{`POST /api/telemetry/ingest
+        <pre className="ink overflow-x-auto rounded-lg p-4 font-mono text-[11.5px] leading-relaxed text-white/90">{`POST /api/telemetry/ingest
 {
   "prospectId": "cuid",              // or "domainKey"
   "eventType": "portal_visit",       // audit_view | document_download | pricing_view | session_end

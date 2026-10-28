@@ -329,7 +329,7 @@ export function relTime(ms: number, nowMs: number): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-/** Heat ladder — light theme: priority reads as ink density (darker = hotter). */
+/** Heat ladder — dark theme: priority reads as luminance density (brighter = hotter). */
 export function heatLevel(qlvScore: number | null): "critical" | "hot" | "warm" | "cool" {
   if (qlvScore == null) return "cool";
   if (qlvScore >= 85) return "critical";
@@ -339,23 +339,23 @@ export function heatLevel(qlvScore: number | null): "critical" | "hot" | "warm" 
 }
 
 export const HEAT_TEXT: Record<ReturnType<typeof heatLevel>, string> = {
-  critical: "text-[#08080A]",
-  hot: "text-[#2A2E33]",
-  warm: "text-[#5F646D]",
-  cool: "text-[#A6ABB2]",
+  critical: "text-white",
+  hot: "text-[#C9CCC7]",
+  warm: "text-[#8E9194]",
+  cool: "text-[#5F6460]",
 };
 
 export const HEAT_BAR: Record<ReturnType<typeof heatLevel>, string> = {
-  critical: "bg-[#08080A]",
-  hot: "bg-[#3A3F46]",
-  warm: "bg-[#82878F]",
-  cool: "bg-[#C6CAD0]",
+  critical: "bg-[#F4F5F2]",
+  hot: "bg-[#9DA29B]",
+  warm: "bg-[#5F6460]",
+  cool: "bg-[#333732]",
 };
 
-/** SVG fills for the theatre board — ink density ladder on white. */
+/** SVG fills for the theatre board — luminance ladder on obsidian. */
 export const HEAT_FILL: Record<ReturnType<typeof heatLevel>, string> = {
-  critical: "#08080A",
-  hot: "#3A3F46",
-  warm: "#82878F",
-  cool: "#C6CAD0",
+  critical: "#F4F5F2",
+  hot: "#9DA29B",
+  warm: "#5F6460",
+  cool: "#333732",
 };

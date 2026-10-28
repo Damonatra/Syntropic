@@ -11,6 +11,7 @@ import {
   type CommandSnapshot,
   type FeedItem,
 } from "@/lib/vertebra/command";
+
 import { personaMetrics, type PersonaId } from "@/lib/vertebra/persona";
 
 export function RadarView({
@@ -49,16 +50,16 @@ export function RadarView({
       {/* Guarantee anchor — the entry offer, always one glance away */}
       <SoftCard className="ink flex flex-wrap items-center gap-x-8 gap-y-3 px-7 py-5" interactive onClick={onGoPortal}>
         <div className="min-w-0 flex-1">
-          <p className="font-mono text-[9.5px] font-medium uppercase tracking-[0.22em] text-white/50">
+          <p className="font-mono text-[9.5px] font-medium uppercase tracking-[0.22em] text-white/65">
             Entry anchor // Diagnostic audit — $3,500 deposit
           </p>
           <p className="mt-1.5 font-display text-[19px] font-medium leading-snug tracking-[-0.02em] text-white">
-            Backed by a <span className="text-white underline decoration-white/30 underline-offset-4">$10,000 Margin Leakage Recovery Guarantee</span> — or we
+            Backed by a <span className="text-white underline decoration-white/50 underline-offset-4">$10,000 Margin Leakage Recovery Guarantee</span> — or we
             keep working the recovery free.
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <HudMeta node="AST-01" hash="b3f7" className="!text-white/45" />
+          <HudMeta node="AST-01" hash="b3f7" tone="graphite" />
           <ArrowButton dark={false} label="Open Margin Defense Portal" />
         </div>
       </SoftCard>
@@ -115,7 +116,7 @@ export function RadarView({
             <SectionLabel>Strike rail — today</SectionLabel>
             <button
               onClick={onGoStrike}
-              className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-[#5F646D] transition-colors hover:text-[#08080A]"
+              className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-[#8E9194] transition-colors hover:text-[#F4F5F2]"
             >
               Full queue →
             </button>
@@ -148,25 +149,25 @@ function FeedCard({
     <SoftCard
       interactive
       onClick={onClick}
-      className={`cc-rise px-5 py-3.5 ${fresh ? "border-black/[0.14]" : ""} ${hot ? "border-black/[0.16] shadow-[10px_12px_26px_rgba(0,0,0,0.09),-10px_-10px_22px_rgba(255,255,255,0.95)]" : ""}`}
+      className={`cc-rise px-5 py-3.5 ${fresh ? "border-white/[0.22]" : ""} ${hot ? "border-white/[0.30]" : ""}`}
     >
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3.5">
           <ScoreBlock score={item.qlvScore} band={null} size="sm" />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <p className={`truncate text-[14px] font-medium ${hot ? "text-[#08080A]" : "text-[#1A1D21]"}`}>{item.prospectName}</p>
+              <p className={`truncate text-[14px] font-medium ${hot ? "text-white" : "text-[#E9EBE7]"}`}>{item.prospectName}</p>
               <Chip tone={hot ? "inverted" : "default"}>{item.eventType.replace(/_/g, " ")}</Chip>
               {item.alertFired && <Chip tone="well">alert dispatched</Chip>}
             </div>
-            <p className="mt-1 truncate text-[12.5px] text-[#5F646D]">
+            <p className="mt-1 truncate text-[12.5px] text-[#8E9194]">
               {EVENT_VERBS[item.eventType] ?? item.eventType} · {item.city ?? "—"}, {item.country ?? "—"}
               {item.device ? ` · ${item.device}` : ""}
               {item.durationMs ? ` · ${Math.round(item.durationMs / 1000)}s` : ""}
             </p>
           </div>
         </div>
-        <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-[#8A8F97]">{relTime(item.occurredAtMs, now)}</span>
+        <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-[#6E736E]">{relTime(item.occurredAtMs, now)}</span>
       </div>
     </SoftCard>
   );
@@ -188,16 +189,16 @@ function RailCard({
       ? `${EVENT_VERBS[lead.telemetry.lastEventType] ?? lead.telemetry.lastEventType} ${relTime(lead.telemetry.lastEventAtMs, now)}`
       : "No telemetry yet";
   return (
-    <SoftCard interactive onClick={onClick} className={`px-4 py-3 ${lead.highIntentNow ? "border-black/[0.16]" : ""}`}>
+    <SoftCard interactive onClick={onClick} className={`px-4 py-3 ${lead.highIntentNow ? "border-white/[0.26]" : ""}`}>
       <div className="flex items-center gap-3">
-        <span className="w-5 shrink-0 font-mono text-[10px] tabular-nums text-[#A6ABB2]">{String(rank).padStart(2, "0")}</span>
+        <span className="w-5 shrink-0 font-mono text-[10px] tabular-nums text-[#5F6460]">{String(rank).padStart(2, "0")}</span>
         <ScoreBlock score={lead.score?.qlvScore ?? null} band={null} size="sm" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <p className={`truncate text-[13px] font-medium ${lead.highIntentNow ? "text-[#08080A]" : "text-[#1A1D21]"}`}>{lead.name}</p>
+            <p className={`truncate text-[13px] font-medium ${lead.highIntentNow ? "text-white" : "text-[#E9EBE7]"}`}>{lead.name}</p>
             {lead.highIntentNow && <LiveDot level="live" />}
           </div>
-          <p className="mt-0.5 truncate text-[11.5px] text-[#5F646D]">{trigger}</p>
+          <p className="mt-0.5 truncate text-[11.5px] text-[#8E9194]">{trigger}</p>
         </div>
       </div>
     </SoftCard>

@@ -1,6 +1,9 @@
-/* Vertebra Console — Steep design system, achromatic build.
-   Serif Signifier-style display (Source Serif 4), Sohne-style body (Inter),
-   greys and blacks only: #17191c ink on #ffffff paper with mist/fog layers. */
+/* Vertebra Executive Enclave — CUSTO dark build, achromatic gunmetal system.
+   Reference: DESIGN.md (Custo — gunmetal gallery, monolithic type).
+   Obsidian canvas #0B0C0B · hairline panels #131513 · anodized graphite
+   objects #4B514D · brushed steel ink #8E9194 · aluminum hairlines.
+   Zero chromatic color. Zero drop shadows on surfaces — depth lives in the
+   surface ladder (obsidian → panel → well → graphite), never in blur. */
 
 @import "tailwindcss";
 @import "tw-animate-css";
@@ -27,15 +30,15 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
-  /* Vertebra achromatic tokens (Steep, peach removed per brief) */
-  --color-ink: #17191c;
-  --color-paper: #ffffff;
-  --color-mist: #f2f2f3;
-  --color-fog: #fafafb;
-  --color-slate: #777b86;
-  --color-ash: #979799;
-  --color-smoke: #a3a6af;
-  --color-hairline: #ececec;
+  /* Vertebra achromatic tokens — Custo material ladder */
+  --color-ink: #F4F5F2;
+  --color-paper: #0B0C0B;
+  --color-mist: #131513;
+  --color-fog: #0E100E;
+  --color-slate: #8E9194;
+  --color-ash: #6E736E;
+  --color-smoke: #5F6460;
+  --color-hairline: rgba(216, 216, 216, 0.13);
 
   --font-sans: "Inter Tight", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-display: "Space Grotesk", "Inter Tight", ui-sans-serif, system-ui, sans-serif;
@@ -48,30 +51,29 @@
 }
 
 :root {
-  --radius: 1rem;
+  --radius: 0.5rem; /* Custo: 8px cards · 8px inputs · 8px secondary buttons */
 
-  /* Steep surfaces + greys only */
-  --background: #ffffff;
-  --foreground: #17191c;
-  --card: #ffffff;
-  --card-foreground: #17191c;
-  --popover: #ffffff;
-  --popover-foreground: #17191c;
-  --primary: #17191c;
-  --primary-foreground: #ffffff;
-  --secondary: #f2f2f3;
-  --secondary-foreground: #17191c;
-  --muted: #f2f2f3;
-  --muted-foreground: #777b86;
-  --accent: #f2f2f3;
-  --accent-foreground: #17191c;
-  --destructive: #17191c;
-  --border: #ececec;
-  --input: #ececec;
-  --ring: #17191c;
+  /* Obsidian surfaces + greys only */
+  --background: #0B0C0B;
+  --foreground: #F4F5F2;
+  --card: #131513;
+  --card-foreground: #F4F5F2;
+  --popover: #141614;
+  --popover-foreground: #F4F5F2;
+  --primary: #F4F5F2;
+  --primary-foreground: #0B0C0B;
+  --secondary: #1A1D1A;
+  --secondary-foreground: #F4F5F2;
+  --muted: #1A1D1A;
+  --muted-foreground: #8E9194;
+  --accent: #4B514D;
+  --accent-foreground: #F4F5F2;
+  --destructive: #F4F5F2;
+  --border: rgba(216, 216, 216, 0.13);
+  --input: rgba(216, 216, 216, 0.18);
+  --ring: #F4F5F2;
 
   --font-inter: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display-serif: "Source Serif 4", "GT Sectra", Georgia, ui-serif, serif;
 }
 
 * {
@@ -91,74 +93,144 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* --- Typography (Steep scale, weight-400 serif signature) --------------- */
+/* --- Typography (single geometric family — PP Neue Montreal substitute) --- */
 .font-display {
-  font-family: var(--font-display-serif);
-  font-weight: 400;
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.02em;
 }
 
 .display-xl {
-  font-family: var(--font-display-serif);
-  font-weight: 400;
+  font-family: var(--font-display);
+  font-weight: 500;
   font-size: clamp(44px, 7.2vw, 90px);
-  line-height: 1.16;
-  letter-spacing: -0.025em;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
 }
 
 .heading-lg {
-  font-family: var(--font-display-serif);
-  font-weight: 400;
+  font-family: var(--font-display);
+  font-weight: 500;
   font-size: clamp(32px, 5vw, 64px);
-  line-height: 1.2;
-  letter-spacing: -0.015em;
+  line-height: 1.12;
+  letter-spacing: -0.025em;
 }
 
 .heading {
-  font-family: var(--font-display-serif);
-  font-weight: 400;
+  font-family: var(--font-display);
+  font-weight: 500;
   font-size: clamp(26px, 3.4vw, 44px);
-  line-height: 1.25;
-  letter-spacing: -0.015em;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
 }
 
 .subhead {
   font-size: 18px;
   line-height: 1.5;
   letter-spacing: -0.009em;
-  color: #777b86;
+  color: #8E9194;
 }
 
 .meta {
   font-size: 14px;
-  color: #979799;
+  color: #6E736E;
 }
 
 .italic-accent {
   font-style: italic;
 }
 
-/* --- Surfaces ------------------------------------------------------------ */
+/* ------------------------------------------------------------------ */
+/* Syntropic Executive Enclave — CUSTO dark material system           */
+/* Canvas #0B0C0B · hairline panels · anodized graphite objects       */
+/* ------------------------------------------------------------------ */
+
+.command-root {
+  --background: #0B0C0B;
+  --foreground: #F4F5F2;
+  --card: #131513;
+  --card-foreground: #F4F5F2;
+  --popover: #141614;
+  --popover-foreground: #F4F5F2;
+  --primary: #F4F5F2;
+  --primary-foreground: #0B0C0B;
+  --secondary: #1A1D1A;
+  --secondary-foreground: #F4F5F2;
+  --muted: #1A1D1A;
+  --muted-foreground: #8E9194;
+  --accent: #4B514D;
+  --accent-foreground: #F4F5F2;
+  --destructive: #F4F5F2;
+  --border: rgba(216, 216, 216, 0.13);
+  --input: rgba(216, 216, 216, 0.18);
+  --ring: #F4F5F2;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  letter-spacing: -0.011em;
+}
+
+@layer components {
+  /* Hairline panel — flat matte surface, 8px radius, 1px aluminum hairline */
+  .neu {
+    background: #131513;
+    border: 1px solid rgba(216, 216, 216, 0.12);
+    border-radius: 8px;
+  }
+  .neu-lg {
+    background: #131513;
+    border: 1px solid rgba(216, 216, 216, 0.12);
+    border-radius: 8px;
+  }
+  /* Pressed well — darker than the panel it sits on, hairline only */
+  .neu-well {
+    background: #0E100E;
+    border: 1px solid rgba(216, 216, 216, 0.08);
+    border-radius: 8px;
+  }
+  /* Anodized graphite object — the machine-voice surface, Custo #4B514D.
+     Guarantees, threat matrix, agent drafts, audit verdicts. */
+  .ink {
+    background: #4B514D;
+    color: #F4F5F2;
+    border-radius: 8px;
+  }
+  /* Canvas Gunmetal #9EA29F — the single light band (calculator stage). */
+  .gunmetal {
+    background: #9EA29F;
+    color: #0B0C0B;
+    border-radius: 8px;
+  }
+
+  /* Circular control — flat, hairline press state, no shadows */
+  .tactile-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    transition: transform 140ms ease, background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+  }
+  .tactile-btn:active {
+    transform: scale(0.96);
+  }
+}
+
+/* --- Legacy marketing utilities (dark-flipped; unused by the enclave) --- */
 .artifact {
-  background: #ffffff;
-  border-radius: 20px;
-  box-shadow:
-    0 0 0 1px rgba(4, 23, 43, 0.05),
-    0 20px 25px -5px rgba(0, 0, 0, 0.1),
-    0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  background: #131513;
+  border: 1px solid rgba(216, 216, 216, 0.12);
+  border-radius: 8px;
 }
-
 .soft-card {
-  background: #f2f2f3;
-  border-radius: 24px;
+  background: #1A1D1A;
+  border-radius: 8px;
 }
-
 .ink-card {
-  background: #17191c;
-  color: #ffffff;
-  border-radius: 24px;
+  background: #4B514D;
+  color: #F4F5F2;
+  border-radius: 8px;
 }
 
-/* --- Controls ------------------------------------------------------------ */
 .pill {
   display: inline-flex;
   align-items: center;
@@ -174,24 +246,22 @@ body {
   cursor: pointer;
   white-space: nowrap;
 }
-
 .pill-dark {
-  background: #17191c;
-  color: #ffffff;
+  background: #F4F5F2;
+  color: #0B0C0B;
 }
 .pill-dark:hover {
   opacity: 0.88;
 }
-
 .pill-ghost {
   background: transparent;
-  color: #17191c;
-  border: 1px solid #17191c;
+  color: #F4F5F2;
+  border: 1px solid rgba(244, 245, 242, 0.4);
 }
 .pill-ghost:hover {
-  background: rgba(23, 25, 28, 0.05);
+  background: #F4F5F2;
+  color: #0B0C0B;
 }
-
 .pill-small {
   height: 32px;
   padding: 0 14px;
@@ -199,7 +269,7 @@ body {
 }
 
 .text-link {
-  color: #17191c;
+  color: #F4F5F2;
   font-size: 15px;
   padding: 4px 0;
   background: none;
@@ -211,143 +281,59 @@ body {
   text-underline-offset: 4px;
 }
 
-/* --- Tags (ghost typographic labels) ------------------------------------ */
 .tag {
   font-size: 12.5px;
-  color: #979799;
+  color: #8E9194;
   letter-spacing: 0.02em;
 }
 
-/* --- Scrollbars ----------------------------------------------------------- */
 .scroll-slim::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 .scroll-slim::-webkit-scrollbar-thumb {
-  background: #d9d9dc;
+  background: #2E322E;
   border-radius: 9999px;
 }
 .scroll-slim::-webkit-scrollbar-track {
   background: transparent;
 }
 
-/* --- QLV meter ------------------------------------------------------------ */
 .qlv-track {
   height: 6px;
   border-radius: 9999px;
-  background: #ececec;
+  background: #232623;
   overflow: hidden;
 }
 .qlv-fill {
   height: 100%;
   border-radius: 9999px;
-  background: #17191c;
+  background: #F4F5F2;
 }
 
-/* --- Inputs --------------------------------------------------------------- */
 .field {
   width: 100%;
-  border: 1px solid #ececec;
-  border-radius: 16px;
+  border: 1px solid rgba(216, 216, 216, 0.18);
+  border-radius: 8px;
   padding: 12px 16px;
   font-size: 15px;
-  background: #ffffff;
-  color: #17191c;
+  background: #0E100E;
+  color: #F4F5F2;
   outline: none;
   transition: border-color 140ms ease;
 }
 .field::placeholder {
-  color: #a3a6af;
+  color: #5F6460;
 }
 .field:focus {
-  border-color: #17191c;
+  border-color: rgba(244, 245, 242, 0.55);
 }
 
-/* ------------------------------------------------------------------ */
-/* Syntropic Executive Enclave — Monochromatic Defense Neumorphism    */
-/* Canvas #F4F5F7 · elevated white cards · pitch-black controls        */
-/* ------------------------------------------------------------------ */
-
-.command-root {
-  --background: #F4F5F7;
-  --foreground: #08080A;
-  --card: #FFFFFF;
-  --card-foreground: #08080A;
-  --popover: #FFFFFF;
-  --popover-foreground: #08080A;
-  --primary: #08080A;
-  --primary-foreground: #FFFFFF;
-  --secondary: #F0F1F3;
-  --secondary-foreground: #08080A;
-  --muted: #F0F1F3;
-  --muted-foreground: #5F646D;
-  --accent: #EBEDEF;
-  --accent-foreground: #08080A;
-  --destructive: #FF1744;
-  --border: rgba(8, 8, 10, 0.08);
-  --input: #E4E6EA;
-  --ring: #08080A;
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans);
-  letter-spacing: -0.011em;
-}
-
-/* Soft-tactile surfaces — pristine white elevation on grey canvas */
-.neu {
-  background: #FFFFFF;
-  border: 1px solid rgba(8, 8, 10, 0.03);
-  border-radius: 20px;
-  box-shadow:
-    10px 10px 22px rgba(0, 0, 0, 0.045),
-    -10px -10px 22px rgba(255, 255, 255, 0.85);
-}
-.neu-lg {
-  background: #FFFFFF;
-  border: 1px solid rgba(8, 8, 10, 0.03);
-  border-radius: 28px;
-  box-shadow:
-    12px 12px 24px rgba(0, 0, 0, 0.04),
-    -12px -12px 24px rgba(255, 255, 255, 0.8);
-}
-/* Pressed / well surface for inputs and nested panels */
-.neu-well {
-  background: #F0F1F3;
-  border: 1px solid rgba(8, 8, 10, 0.04);
-  border-radius: 16px;
-  box-shadow:
-    inset 3px 3px 8px rgba(0, 0, 0, 0.05),
-    inset -3px -3px 8px rgba(255, 255, 255, 0.9);
-}
-/* Deep onyx control surface — the only dark element in the system */
-.ink {
-  background: #08080A;
-  color: #FFFFFF;
-  border-radius: 20px;
-  box-shadow:
-    10px 10px 22px rgba(0, 0, 0, 0.16),
-    -6px -6px 16px rgba(255, 255, 255, 0.5);
-}
-
-/* Soft circular tactile buttons (LangGraph stepper / command arrows) */
-.tactile-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9999px;
-  transition: transform 140ms ease, box-shadow 140ms ease, background-color 140ms ease, color 140ms ease;
-}
-.tactile-btn:active {
-  box-shadow:
-    inset 3px 3px 6px rgba(0, 0, 0, 0.12),
-    inset -3px -3px 6px rgba(255, 255, 255, 0.7);
-  transform: scale(0.96);
-}
-
+/* --- Motion — achromatic instrument animations -------------------------- */
 @keyframes cc-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(0, 200, 83, 0.30); }
-  70% { box-shadow: 0 0 0 7px rgba(0, 200, 83, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(0, 200, 83, 0); }
+  0% { box-shadow: 0 0 0 0 rgba(244, 245, 242, 0.32); }
+  70% { box-shadow: 0 0 0 7px rgba(244, 245, 242, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(244, 245, 242, 0); }
 }
 @keyframes cc-rise {
   from { opacity: 0; transform: translateY(8px); }
@@ -378,7 +364,7 @@ body {
 .cc-sweep { animation: cc-sweep 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
 
 .cc-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
-.cc-scroll::-webkit-scrollbar-thumb { background: #d3d6db; border-radius: 8px; }
-.cc-scroll::-webkit-scrollbar-thumb:hover { background: #bfc3c9; }
+.cc-scroll::-webkit-scrollbar-thumb { background: #2E322E; border-radius: 8px; }
+.cc-scroll::-webkit-scrollbar-thumb:hover { background: #3C413C; }
 .cc-scroll::-webkit-scrollbar-track { background: transparent; }
-.cc-scroll { scrollbar-width: thin; scrollbar-color: #d3d6db transparent; }
+.cc-scroll { scrollbar-width: thin; scrollbar-color: #2E322E transparent; }

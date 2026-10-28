@@ -1,5 +1,8 @@
 /**
- * Interactive margin leakage estimator.
+ * Interactive margin leakage estimator — the Custo hero moment.
+ * Canvas Gunmetal #9EA29F band hosting a single obsidian object:
+ * the leakage verdict. Obsidian ink on gunmetal, white controls,
+ * monolithic Space Grotesk numerals.
  *
  * Model (stated on the tile): lines/yr × avg line value × exposure share × slippage.
  * Calibrated to the Module 2 factor medians of the NA industrial book
@@ -8,7 +11,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { HudMeta, SectionLabel } from "../bits";
+import { HudMeta } from "../bits";
 
 const LINE_VALUE_USD = 420; // avg revenue per RFQ line item
 const EXPOSURE_SHARE = 0.38; // share of lines flowing through late / manual / SPA-unapplied paths
@@ -38,19 +41,19 @@ function Stepper({
 }) {
   const clamp = (v: number) => Math.min(max, Math.max(min, v));
   const btn =
-    "tactile-btn size-9 bg-white text-[#08080A] text-[16px] shadow-[3px_3px_8px_rgba(0,0,0,0.08),-3px_-3px_8px_rgba(255,255,255,0.95)] hover:bg-[#F6F7F8]";
+    "tactile-btn size-9 bg-white text-[#0B0C0B] text-[16px] border border-black/10 hover:bg-[#0B0C0B] hover:text-white";
   return (
-    <div className="neu-well rounded-2xl px-5 py-4">
+    <div className="rounded-lg border border-black/10 bg-black/[0.08] px-5 py-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-[#5F646D]">{label}</p>
-          <p className="mt-0.5 text-[11px] text-[#8A8F97]">{hint}</p>
+          <p className="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-[#2E322E]">{label}</p>
+          <p className="mt-0.5 text-[11px] text-[#4B514D]">{hint}</p>
         </div>
         <div className="flex items-center gap-2.5">
           <button className={btn} aria-label={`Decrease ${label}`} onClick={() => onChange(clamp(value - step))}>
             −
           </button>
-          <span className="min-w-[64px] text-center font-display text-[26px] font-semibold leading-none tracking-[-0.03em] tabular-nums text-[#08080A]">
+          <span className="min-w-[64px] text-center font-display text-[26px] font-semibold leading-none tracking-[-0.03em] tabular-nums text-[#0B0C0B]">
             {value}
           </span>
           <button className={btn} aria-label={`Increase ${label}`} onClick={() => onChange(clamp(value + step))}>
@@ -77,10 +80,10 @@ export function LeakageCalculator() {
   }, [rfqPerMonth, lineItems]);
 
   return (
-    <div className="neu-lg flex flex-col gap-4 rounded-[28px] px-7 py-6">
+    <div className="gunmetal flex flex-col gap-4 rounded-lg border border-black/10 px-7 py-6">
       <div className="flex items-center justify-between">
-        <SectionLabel>Leakage estimator</SectionLabel>
-        <HudMeta node="AST-05" hash="9d14" />
+        <p className="font-mono text-[10.5px] font-medium uppercase tracking-[0.22em] text-[#2E322E]">Leakage estimator</p>
+        <HudMeta node="AST-05" hash="9d14" tone="light" />
       </div>
 
       <Stepper
@@ -102,27 +105,28 @@ export function LeakageCalculator() {
         onChange={setLineItems}
       />
 
-      <div className="ink rounded-2xl px-6 py-5">
-        <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-white/50">Modeled annual net-margin leakage</p>
+      {/* the obsidian object — modeled verdict */}
+      <div className="flex flex-1 flex-col justify-center rounded-lg bg-[#0B0C0B] px-6 py-5">
+        <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-white/60">Modeled annual net-margin leakage</p>
         <p className="mt-2 font-display text-[40px] font-semibold leading-none tracking-[-0.03em] tabular-nums text-white">
           {usd(result.annual)}
         </p>
-        <p className="mt-2 font-mono text-[10.5px] tabular-nums text-white/50">
+        <p className="mt-2 font-mono text-[10.5px] tabular-nums text-white/60">
           band {usd(result.low)} – {usd(result.high)} · ±15%
         </p>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/15 pt-4">
           <div>
-            <p className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-white/50">Recoverable year one · 55% capture</p>
+            <p className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-white/60">Recoverable year one · 55% capture</p>
             <p className="mt-1 font-display text-[19px] font-semibold tracking-[-0.02em] tabular-nums text-white">{usd(result.recoverable)}</p>
           </div>
           <div className="text-right">
-            <p className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-white/50">vs $3,500 audit</p>
+            <p className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-white/60">vs $3,500 audit</p>
             <p className="mt-1 font-display text-[19px] font-semibold tracking-[-0.02em] tabular-nums text-white">{result.multiple.toFixed(1)}×</p>
           </div>
         </div>
       </div>
 
-      <p className="font-mono text-[9.5px] leading-relaxed tracking-[0.06em] text-[#A6ABB2]">
+      <p className="font-mono text-[9.5px] leading-relaxed tracking-[0.06em] text-[#2E322E]">
         MODEL // {result.linesPerYear.toLocaleString("en-US")} lines/yr × ${LINE_VALUE_USD} avg line value × {(EXPOSURE_SHARE * 100).toFixed(0)}% exposure
         share × {(SLIPPAGE * 100).toFixed(1)}% slippage · guarantee floor {usd(GUARANTEE_FLOOR)} applies when the audit confirms the model
       </p>

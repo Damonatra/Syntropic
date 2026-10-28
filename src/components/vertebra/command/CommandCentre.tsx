@@ -413,21 +413,21 @@ export function CommandCentre() {
 
   // ---- render ------------------------------------------------------------ //
   return (
-    <div className="command-root fixed inset-0 flex overflow-hidden bg-[#F4F5F7] font-sans text-[#08080A] antialiased">
+    <div className="command-root fixed inset-0 flex overflow-hidden bg-[#0B0C0B] font-sans text-[#F4F5F2] antialiased">
       <CommandRail view={view} onView={setView} snap={snap} clock={clock || "--:--:--"} connected={connected} personaCode={activePersona.code} />
 
       <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-black/[0.06] px-6">
+        <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-white/[0.08] px-6">
           <div className="flex min-w-0 items-center gap-3">
             <LiveDot level={connected ? "live" : "warn"} />
-            <p className="truncate font-mono text-[11px] uppercase tracking-[0.2em] text-[#5F646D]">{VIEW_TITLES[view]}</p>
-            <span className="hidden max-w-[430px] truncate whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.14em] text-[#A6ABB2] xl:inline-block">
+            <p className="truncate font-mono text-[11px] uppercase tracking-[0.2em] text-[#8E9194]">{VIEW_TITLES[view]}</p>
+            <span className="hidden max-w-[430px] truncate whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.14em] text-[#5F6460] xl:inline-block">
               · {activePersona.title}: {activePersona.mandate}
             </span>
           </div>
           <div className="flex shrink-0 items-center gap-3">
             {/* persona switcher */}
-            <div className="hidden items-center gap-1 rounded-full border border-black/[0.06] bg-[#F0F1F3] p-1 md:flex" role="tablist" aria-label="Persona view">
+            <div className="hidden items-center gap-1 rounded-full border border-white/[0.10] bg-[#131513] p-1 md:flex" role="tablist" aria-label="Persona view">
               {PERSONAS.map((p) => (
                 <button
                   key={p.id}
@@ -436,8 +436,8 @@ export function CommandCentre() {
                   onClick={() => onPersona(p.id)}
                   className={`h-7 rounded-full px-3 font-mono text-[9.5px] font-medium uppercase tracking-[0.1em] transition-all ${
                     persona === p.id
-                      ? "bg-[#08080A] text-white shadow-[2px_2px_6px_rgba(0,0,0,0.2)]"
-                      : "text-[#5F646D] hover:text-[#08080A]"
+                      ? "bg-[#F4F5F2] text-[#0B0C0B]"
+                      : "text-[#8E9194] hover:text-[#F4F5F2]"
                   }`}
                 >
                   {p.code}
@@ -447,12 +447,35 @@ export function CommandCentre() {
             <HudMeta node="AST-00" hash="0a11" className="hidden xl:inline-flex" />
             <button
               onClick={() => setPaletteOpen(true)}
-              className="tactile-btn h-8 items-center gap-2 rounded-full border border-black/[0.07] bg-white px-3 font-mono text-[10.5px] uppercase tracking-[0.12em] text-[#5F646D] shadow-[2px_2px_6px_rgba(0,0,0,0.04),-2px_-2px_6px_rgba(255,255,255,0.9)] hover:text-[#08080A]"
+              className="tactile-btn h-8 items-center gap-2 rounded-full border border-white/[0.12] bg-[#131513] px-3 font-mono text-[10.5px] uppercase tracking-[0.12em] text-[#8E9194] hover:text-[#F4F5F2] hover:border-white/25"
             >
-              Jump <span className="rounded bg-[#F0F1F3] px-1.5 py-0.5 text-[9.5px]">⌘K</span>
+              Jump <span className="rounded bg-[#1A1D1A] px-1.5 py-0.5 text-[9.5px]">⌘K</span>
             </button>
           </div>
         </header>
+
+        {/* mobile view switcher — rail is hidden below md */}
+        <div
+          className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-white/[0.08] px-4 py-2 md:hidden"
+          role="tablist"
+          aria-label="Enclave views"
+        >
+          {VIEW_KEYS.map((k) => (
+            <button
+              key={k}
+              role="tab"
+              aria-selected={view === k}
+              onClick={() => setView(k)}
+              className={`h-7 shrink-0 rounded-full px-3 font-mono text-[9.5px] uppercase tracking-[0.1em] transition-all ${
+                view === k
+                  ? "bg-[#F4F5F2] text-[#0B0C0B]"
+                  : "border border-white/[0.12] bg-[#131513] text-[#8E9194]"
+              }`}
+            >
+              {k}
+            </button>
+          ))}
+        </div>
 
         <div className="min-h-0 flex-1">
           {!snap ? (
@@ -507,19 +530,19 @@ export function CommandCentre() {
               if (t.prospectId) openDossierById(t.prospectId);
               setToasts((prev) => prev.filter((x) => x.id !== t.id));
             }}
-            className={`cc-toast pointer-events-auto rounded-2xl px-4 py-3.5 text-left transition-transform hover:scale-[1.01] ${
+            className={`cc-toast pointer-events-auto rounded-lg px-4 py-3.5 text-left transition-transform hover:scale-[1.01] ${
               t.kind === "alert"
-                ? "ink shadow-[14px_16px_36px_rgba(0,0,0,0.3)]"
-                : "neu !rounded-2xl border-black/[0.06] shadow-[10px_12px_28px_rgba(0,0,0,0.09),-10px_-10px_22px_rgba(255,255,255,0.95)]"
+                ? "ink shadow-[0_18px_50px_rgba(0,0,0,0.5)]"
+                : "neu border-white/[0.14] shadow-[0_18px_50px_rgba(0,0,0,0.5)]"
             }`}
           >
             <div className="flex items-center gap-2">
-              {t.kind === "alert" && <span className="size-1.5 rounded-full bg-[#00C853] cc-blink" />}
-              <p className={`font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] ${t.kind === "alert" ? "text-white" : "text-[#5F646D]"}`}>
+              {t.kind === "alert" && <span className="size-1.5 rounded-full bg-[#F4F5F2] cc-blink" />}
+              <p className={`font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] ${t.kind === "alert" ? "text-white" : "text-[#8E9194]"}`}>
                 {t.title}
               </p>
             </div>
-            <p className={`mt-1.5 whitespace-pre-line text-[12px] leading-relaxed ${t.kind === "alert" ? "text-white/85" : "text-[#3A3F46]"}`}>
+            <p className={`mt-1.5 whitespace-pre-line text-[12px] leading-relaxed ${t.kind === "alert" ? "text-white/90" : "text-[#C9CCC7]"}`}>
               {t.body}
             </p>
           </button>
@@ -530,15 +553,15 @@ export function CommandCentre() {
 
       {/* Command palette */}
       <Dialog open={paletteOpen} onOpenChange={setPaletteOpen}>
-        <DialogContent className="command-root top-[18%] max-w-[560px] translate-y-0 gap-0 rounded-3xl border-black/[0.08] bg-white p-0 shadow-[0_40px_120px_-30px_rgba(0,0,0,0.35)] sm:top-[18%]">
+        <DialogContent className="command-root top-[18%] max-w-[560px] translate-y-0 gap-0 rounded-lg border-white/[0.14] bg-[#131513] p-0 shadow-[0_40px_120px_-30px_rgba(0,0,0,0.75)] sm:top-[18%]">
           <DialogTitle className="sr-only">Command palette</DialogTitle>
           <Command className="bg-transparent">
-            <CommandInput placeholder="Jump to a view, a distributor, a draft…" className="border-b border-black/[0.07] font-mono text-[13px]" />
+            <CommandInput placeholder="Jump to a view, a distributor, a draft…" className="border-b border-white/[0.10] font-mono text-[13px]" />
             <CommandList className="cc-scroll max-h-[380px] p-2">
-              <CommandEmpty className="py-6 text-center font-mono text-[11px] uppercase tracking-[0.14em] text-[#A6ABB2]">
+              <CommandEmpty className="py-6 text-center font-mono text-[11px] uppercase tracking-[0.14em] text-[#5F6460]">
                 No match
               </CommandEmpty>
-              <CommandGroup heading="Views" className="text-[#A6ABB2]">
+              <CommandGroup heading="Views" className="text-[#6E736E]">
                 {(Object.keys(VIEW_TITLES) as ViewKey[]).map((v) => (
                   <CommandItem
                     key={v}
@@ -546,7 +569,7 @@ export function CommandCentre() {
                       setView(v);
                       setPaletteOpen(false);
                     }}
-                    className="rounded-xl px-3 py-2.5 text-[13px] text-[#1A1D21] data-[selected=true]:bg-[#F0F1F3] data-[selected=true]:text-[#08080A]"
+                    className="rounded-lg px-3 py-2.5 text-[13px] text-[#E9EBE7] data-[selected=true]:bg-[#222522] data-[selected=true]:text-[#F4F5F2]"
                   >
                     {VIEW_TITLES[v]}
                   </CommandItem>
@@ -561,10 +584,10 @@ export function CommandCentre() {
                         setView("pipeline");
                         setPaletteOpen(false);
                       }}
-                      className="rounded-xl px-3 py-2.5 text-[13px] text-[#1A1D21] data-[selected=true]:bg-[#F0F1F3] data-[selected=true]:text-[#08080A]"
+                      className="rounded-lg px-3 py-2.5 text-[13px] text-[#E9EBE7] data-[selected=true]:bg-[#222522] data-[selected=true]:text-[#F4F5F2]"
                     >
                       Review draft — {t.prospectName}
-                      <span className="ml-auto font-mono text-[10px] uppercase text-[#A6ABB2]">{t.intent.replace(/_/g, " ")}</span>
+                      <span className="ml-auto font-mono text-[10px] uppercase text-[#6E736E]">{t.intent.replace(/_/g, " ")}</span>
                     </CommandItem>
                   ))}
                 </CommandGroup>
@@ -579,10 +602,10 @@ export function CommandCentre() {
                         openDossier(l);
                         setPaletteOpen(false);
                       }}
-                      className="rounded-xl px-3 py-2.5 text-[13px] text-[#1A1D21] data-[selected=true]:bg-[#F0F1F3] data-[selected=true]:text-[#08080A]"
+                      className="rounded-lg px-3 py-2.5 text-[13px] text-[#E9EBE7] data-[selected=true]:bg-[#222522] data-[selected=true]:text-[#F4F5F2]"
                     >
                       {l.name}
-                      <span className="ml-auto font-mono text-[10px] tabular-nums text-[#A6ABB2]">
+                      <span className="ml-auto font-mono text-[10px] tabular-nums text-[#6E736E]">
                         {l.score?.qlvScore ?? "—"} · {l.city ?? "—"}
                       </span>
                     </CommandItem>
@@ -600,8 +623,8 @@ export function CommandCentre() {
 function BootScreen() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4">
-      <span className="size-2 rounded-full bg-[#00C853] cc-pulse-dot" />
-      <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#5F646D]">Establishing uplink — loading enclave snapshot</p>
+      <span className="size-2 rounded-full bg-[#F4F5F2] cc-pulse-dot" />
+      <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-[#8E9194]">Establishing uplink — loading enclave snapshot</p>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 /**
- * Audit dropzone / ingestion tile — tactile intake for legacy quote PDFs and
+ * Audit dropzone / ingestion tile — obsidian intake for legacy quote PDFs and
  * cost sheets, demonstrating the production chain: Docling OCR parse →
  * line-item extraction → hybrid BM25 × dense retrieval (RRF, k=60) → Qdrant
  * upsert → sealed audit brief. The run is a client-side demonstration of the
@@ -99,7 +99,7 @@ export function AuditDropzone() {
   const currentStage = stageIdx >= 0 && stageIdx < STAGES.length ? STAGES[stageIdx] : null;
 
   return (
-    <div className="neu-lg flex flex-col rounded-[28px] px-7 py-6">
+    <div className="neu-lg flex flex-col rounded-lg px-7 py-6">
       <div className="flex items-center justify-between">
         <SectionLabel>Audit dropzone — legacy intake</SectionLabel>
         <HudMeta node="AST-08" hash="c21e" />
@@ -127,13 +127,13 @@ export function AuditDropzone() {
           setDragging(false);
           accept(e.dataTransfer.files);
         }}
-        className={`mt-4 flex min-h-[150px] cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-8 text-center transition-all ${
-          dragging ? "border-[#08080A] bg-white shadow-[inset_3px_3px_10px_rgba(0,0,0,0.07)]" : "border-black/15 bg-[#F0F1F3]"
+        className={`mt-4 flex min-h-[150px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed px-6 py-8 text-center transition-all ${
+          dragging ? "border-white/60 bg-[#1A1D1A]" : "border-white/20 bg-[#0E100E]"
         }`}
       >
-        <span className="flex size-11 items-center justify-center rounded-full bg-[#08080A] text-[17px] text-white shadow-[4px_4px_10px_rgba(0,0,0,0.2)]">↑</span>
-        <p className="mt-3 font-display text-[15.5px] font-semibold tracking-[-0.02em] text-[#08080A]">Drop legacy quote PDFs, cost sheets, SPA addenda</p>
-        <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-[#8A8F97]">or click to browse · pdf · csv · xlsx · ≤ 40 mb each</p>
+        <span className="flex size-11 items-center justify-center rounded-full bg-[#F4F5F2] text-[17px] text-[#0B0C0B]">↑</span>
+        <p className="mt-3 font-display text-[15.5px] font-semibold tracking-[-0.02em] text-[#F4F5F2]">Drop legacy quote PDFs, cost sheets, SPA addenda</p>
+        <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-[#6E736E]">or click to browse · pdf · csv · xlsx · ≤ 40 mb each</p>
       </div>
       <input
         ref={inputRef}
@@ -153,7 +153,7 @@ export function AuditDropzone() {
           {files.map((f) => (
             <Chip key={f.id} tone="raised" className="max-w-[240px]">
               <span className="truncate normal-case">{f.name}</span>
-              <span className="text-[#8A8F97]">{Math.max(1, Math.round(f.size / 1024))}kb</span>
+              <span className="text-[#6E736E]">{Math.max(1, Math.round(f.size / 1024))}kb</span>
             </Chip>
           ))}
         </div>
@@ -163,13 +163,13 @@ export function AuditDropzone() {
       {stageIdx >= 0 && (
         <div className="mt-4">
           <div className="flex items-center justify-between">
-            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#5F646D]">
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8E9194]">
               {done ? "audit brief ready — anomaly ledger sealed" : currentStage ? `${currentStage.label} — ${currentStage.detail}` : ""}
             </p>
-            <p className="font-mono text-[10px] tabular-nums text-[#08080A]">{progress}%</p>
+            <p className="font-mono text-[10px] tabular-nums text-[#F4F5F2]">{progress}%</p>
           </div>
-          <div className="mt-2 h-[5px] w-full overflow-hidden rounded-full bg-[#E4E6EA] shadow-[inset_1px_1px_3px_rgba(0,0,0,0.05)]">
-            <div className="h-full rounded-full bg-[#08080A] transition-all duration-500" style={{ width: `${progress}%` }} />
+          <div className="mt-2 h-[5px] w-full overflow-hidden rounded-full bg-[#232623]">
+            <div className="h-full rounded-full bg-[#F4F5F2] transition-all duration-500" style={{ width: `${progress}%` }} />
           </div>
           <div className="mt-3 grid grid-cols-2 gap-1.5 sm:grid-cols-3 xl:grid-cols-6">
             {STAGES.map((st, i) => {
@@ -177,12 +177,12 @@ export function AuditDropzone() {
               return (
                 <div
                   key={st.key}
-                  className={`rounded-xl px-2.5 py-2 font-mono text-[9px] uppercase tracking-[0.1em] transition-all ${
+                  className={`rounded-lg px-2.5 py-2 font-mono text-[9px] uppercase tracking-[0.1em] transition-all ${
                     state === "done"
-                      ? "bg-[#08080A] text-white"
+                      ? "bg-[#F4F5F2] text-[#0B0C0B]"
                       : state === "run"
-                        ? "bg-white text-[#08080A] shadow-[3px_3px_8px_rgba(0,0,0,0.08),-3px_-3px_8px_rgba(255,255,255,0.95)]"
-                        : "text-[#A6ABB2]"
+                        ? "border border-white/25 bg-[#222522] text-[#F4F5F2]"
+                        : "border border-white/[0.06] text-[#5F6460]"
                   }`}
                 >
                   {state === "done" ? "✓ " : ""}
@@ -196,7 +196,7 @@ export function AuditDropzone() {
 
       {/* extracted readout */}
       {done && (
-        <div className="ink cc-rise mt-4 rounded-2xl px-5 py-4">
+        <div className="ink cc-rise mt-4 rounded-lg px-5 py-4">
           <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
             {(
               [
@@ -207,21 +207,21 @@ export function AuditDropzone() {
               ] as Array<[string, number]>
             ).map(([k, v]) => (
               <div key={k}>
-                <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/45">{k}</p>
+                <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-white/65">{k}</p>
                 <p className="mt-1 font-display text-[21px] font-semibold tracking-[-0.03em] tabular-nums text-white">{v.toLocaleString("en-US")}</p>
               </div>
             ))}
           </div>
-          <p className="mt-3 border-t border-white/10 pt-2.5 font-mono text-[10px] tabular-nums text-white/55">
+          <p className="mt-3 border-t border-white/20 pt-2.5 font-mono text-[10px] tabular-nums text-white/75">
             flagged exposure across anomalies ≈ ${metrics.flaggedUsd.toLocaleString("en-US")}/yr · brief queued to Pipeline
           </p>
         </div>
       )}
 
       <div className="mt-4 flex items-center justify-between">
-        <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#A6ABB2]">client-side demo of the production ingestion chain</p>
+        <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#5F6460]">client-side demo of the production ingestion chain</p>
         {files.length > 0 && (
-          <button onClick={reset} className="font-mono text-[10px] uppercase tracking-[0.14em] text-[#5F646D] transition-colors hover:text-[#08080A]">
+          <button onClick={reset} className="font-mono text-[10px] uppercase tracking-[0.14em] text-[#8E9194] transition-colors hover:text-[#F4F5F2]">
             Reset
           </button>
         )}
