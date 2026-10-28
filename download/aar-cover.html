@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700;8..60,900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    @page { size: 794px 1123px; margin: 0; }
+    :root {
+      --c-bg: #f7f7f6;
+      --c-accent: #8e7324;
+      --c-text: #1d1c1a;
+      --c-muted: #85837b;
+      --c-mid: #716644;
+    }
+    html, body {
+      margin: 0; padding: 0;
+      width: 794px; height: 1123px;
+      background: var(--c-bg);
+      font-family: 'Inter', sans-serif;
+      color: var(--c-text);
+    }
+    @media screen {
+      html { height: auto; display: flex; justify-content: center; min-height: 100vh; background: var(--c-bg); }
+      body { transform-origin: top center; scale: min(1, calc(100vw / 794), calc(100vh / 1123)); margin: 0 auto; box-shadow: 0 0 60px rgba(0,0,0,0.12); }
+    }
+    .cover {
+      width: 794px; height: 1123px; position: relative;
+      border: none; outline: none; box-shadow: none;
+    }
+    /* Layer 1 - background grid, clipped */
+    .layer-bg {
+      position: absolute; inset: 0; overflow: hidden; z-index: 1;
+      background-image:
+        repeating-linear-gradient(to right, rgba(29,28,26,0.022) 0, rgba(29,28,26,0.022) 0.5px, transparent 0.5px, transparent 50px),
+        repeating-linear-gradient(to bottom, rgba(29,28,26,0.022) 0, rgba(29,28,26,0.022) 0.5px, transparent 0.5px, transparent 50px);
+    }
+    /* Layer 2 - structure: ultra-thick left anchor line */
+    .layer-structure { position: absolute; inset: 0; z-index: 2; }
+    .anchor-line {
+      position: absolute;
+      left: 95px; top: 112px;
+      width: 8px; height: 899px;
+      background: var(--c-accent);
+    }
+    /* Layer 3 - content */
+    .layer-content { position: absolute; inset: 0; z-index: 3; }
+    .kicker {
+      position: absolute; left: 178px; top: 168px;
+      font-size: 16pt; font-weight: 400;
+      letter-spacing: 3pt; text-transform: uppercase;
+      color: var(--c-muted); opacity: 0.85;
+      max-width: 500px;
+    }
+    .hero {
+      position: absolute; left: 175px; top: 300px;
+      font-family: 'Source Serif 4', serif;
+      font-size: 56pt; font-weight: 900;
+      line-height: 1.15; color: var(--c-text);
+      max-width: 520px;
+    }
+    .summary {
+      position: absolute; left: 178px; top: 585px;
+      font-size: 16.5pt; font-weight: 400; line-height: 1.6;
+      color: var(--c-text); opacity: 0.85;
+      max-width: 470px;
+    }
+    .meta {
+      position: absolute; left: 178px; top: 852px;
+      font-size: 17pt; font-weight: 500; line-height: 1.55;
+      color: var(--c-text);
+      max-width: 500px;
+    }
+    .meta .sub {
+      display: block; margin-top: 8px;
+      font-size: 16pt; font-weight: 400;
+      color: var(--c-muted);
+    }
+    .footer {
+      position: absolute; left: 178px; top: 1010px;
+      font-size: 16pt; font-weight: 400;
+      letter-spacing: 3pt; text-transform: uppercase;
+      color: var(--c-muted); opacity: 0.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="cover">
+    <div class="layer-bg"></div>
+    <div class="layer-structure">
+      <div class="anchor-line"></div>
+    </div>
+    <div class="layer-content">
+      <div class="kicker">After Action Report &middot; Engineering Closeout</div>
+      <div class="hero">Syntropic<br>Backbone</div>
+      <div class="summary">
+        Nine build cycles took the Backbone from a restyled command tower to a
+        database-backed, three-layer operations platform &mdash; audited, remediated,
+        secured, and gated to GO. This report records what was built, how it was
+        verified, what broke, and what remains.
+      </div>
+      <div class="meta">
+        Command Tower &middot; Executive Enclave &middot; Shared Ledger
+        <span class="sub">Backbone Engineering Cell &middot; 26 October 2026</span>
+      </div>
+      <div class="footer">AAR-SB-2026-10 &middot; Internal Closeout Record</div>
+    </div>
+  </div>
+</body>
+</html>

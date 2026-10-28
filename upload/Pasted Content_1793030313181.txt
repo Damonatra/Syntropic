@@ -1,0 +1,1430 @@
+#!/usr/bin/env bash
+# syntropic-setup.sh — assembles the Syntropic Backbone (Next.js App Router + Prisma/SQLite)
+# Generated from the conversation build; phases 0–11.5.
+set -euo pipefail
+ROOT="${1:-syntropic}"
+mkdir -p "$ROOT"/{app/api/v1/{intake,checkout,"webhooks/stripe",ingest,"hitl/[id]",team/[id],"telemetry/defend","telemetry/stream","telemetry/collect","backbone/state",auth/magic-link,auth/callback,auth/logout,auth/tenant-callback,"telegram/webhook",telegram/setup},app/backbone,lib,prisma,scripts,public}
+
+w() { mkdir -p "$(dirname "$ROOT/$1")"; cat > "$ROOT/$1"; }
+echo "▸ Assembling Syntropic in ./$ROOT ..."
+
+# ---------------------------------------------------------------- config ----
+w package.json <<'EOF'
+{
+  "name": "syntropic-backbone",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "seed": "tsx prisma/seed.ts",
+    "smoke": "tsx scripts/smoke.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.5.0",
+    "next": "^15.2.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "stripe": "^17.0.0"
+  },
+  "devDependencies": {
+    "prisma": "^6.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0"
+  }
+}
+EOF
+
+w tsconfig.json <<'EOF'
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["dom", "dom.iterable", "es2022"],
+    "allowJs": true, "skipLibCheck": true, "strict": true, "noEmit": true,
+    "esModuleInterop": true, "module": "esnext", "moduleResolution": "bundler",
+    "resolveJsonModule": true, "isolatedModules": true, "jsx": "preserve",
+    "incremental": true, "plugins": [{ "name": "next" }],
+    "paths": { "@/*": ["./*"] }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}
+EOF
+
+w next.config.mjs <<'EOF'
+/** @type {import('next').NextConfig} */
+const nextConfig = { experimental: { serverActions: { bodySizeLimit: '50mb' } } };
+export default nextConfig;
+EOF
+
+w .env.example <<'EOF'
+DATABASE_URL="file:./data/syntropic.db"
+AUTH_SECRET=""
+OPERATOR_EMAILS="damon@syntropic.ai,josias@syntropic.ai"
+OPERATOR_EMAIL_DAMON="damon@syntropic.ai"
+OPERATOR_EMAIL_JOSIAS="josias@syntropic.ai"
+STRIPE_SECRET_KEY=""
+STRIPE_PRICE_ID=""
+STRIPE_WEBHOOK_SECRET=""
+TELEGRAM_BOT_TOKEN=""
+TELEGRAM_CHAT_ID_DAMON=""
+TELEGRAM_CHAT_ID_JOSIAS=""
+TELEGRAM_WEBHOOK_SECRET=""
+ENGINE_WEBHOOK_KEY=""
+IP_HASH_SALT_BASE=""
+IP_HASH_SALT_ROTATE_DAYS="30"
+PUBLIC_BASE_URL="http://localhost:3000"
+DATA_DIR="./data"
+RESEND_API_KEY=""
+MAIL_FROM="Syntropic <ops@syntropic.ai>"
+EOF
+
+w .gitignore <<'EOF'
+node_modules
+.next
+data/
+.env
+EOF
+
+# ---------------------------------------------------------------- lib ----
+w lib/prisma.ts <<'EOF'
+import { PrismaClient } from '@prisma/client';
+const g = globalThis as unknown as { prisma?: PrismaClient };
+export const prisma = g.prisma ?? new PrismaClient();
+if (process.env.NODE_ENV !== 'production') g.prisma = prisma;
+EOF
+
+w lib/auth.ts <<'EOF'
+// Edge-safe HMAC sessions (operator + tenant scopes). See conversation Phases 1 & 9.
+const enc = new TextEncoder();
+const b64u = {
+  enc: (buf: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
+  dec: (s: string) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0)),
+};
+export const SESSION_COOKIE = 'syntropic_session';
+export const TENANT_COOKIE = 'syntropic_tenant';
+const SESSION_TTL_MS = 7 * 24 * 3600e3;
+const TENANT_SESSION_TTL_MS = 14 * 24 * 3600e3;
+export const TENANT_LINK_TTL_MS = 7 * 24 * 3600e3;
+
+export function operatorEmails(): string[] {
+  return (process.env.OPERATOR_EMAILS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+}
+export const isOperator = (email: string) => operatorEmails().includes(email.toLowerCase());
+
+async function hmacKey() {
+  const secret = process.env.AUTH_SECRET ?? 'dev-insecure-secret-change-me';
+  return crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+}
+export async function signSession(email: string): Promise<string> {
+  const payload = { scope: 'operator', email: email.toLowerCase(), exp: Date.now() + SESSION_TTL_MS, jti: crypto.randomUUID() };
+  const body = b64u.enc(enc.encode(JSON.stringify(payload)).buffer as ArrayBuffer);
+  return `${body}.${b64u.enc(await crypto.subtle.sign('HMAC', await hmacKey(), enc.encode(body)))}`;
+}
+export async function verifySession(token: string | undefined | null) {
+  if (!token || !token.includes('.')) return null;
+  const [body, sig] = token.split('.');
+  try {
+    if (!(await crypto.subtle.verify('HMAC', await hmacKey(), b64u.dec(sig), enc.encode(body)))) return null;
+    const p = JSON.parse(new TextDecoder().decode(b64u.dec(body)));
+    if (p.scope !== 'operator' || typeof p.exp !== 'number' || p.exp < Date.now()) return null;
+    if (!isOperator(p.email)) return null;
+    return { email: p.email };
+  } catch { return null; }
+}
+export async function signTenantSession(tenantId: string, email: string): Promise<string> {
+  const payload = { scope: 'tenant', tenantId, email: email.toLowerCase(), exp: Date.now() + TENANT_SESSION_TTL_MS, jti: crypto.randomUUID() };
+  const body = b64u.enc(enc.encode(JSON.stringify(payload)).buffer as ArrayBuffer);
+  return `${body}.${b64u.enc(await crypto.subtle.sign('HMAC', await hmacKey(), enc.encode(body)))}`;
+}
+export async function verifyTenantSession(token: string | undefined | null) {
+  if (!token || !token.includes('.')) return null;
+  const [body, sig] = token.split('.');
+  try {
+    if (!(await crypto.subtle.verify('HMAC', await hmacKey(), b64u.dec(sig), enc.encode(body)))) return null;
+    const p = JSON.parse(new TextDecoder().decode(b64u.dec(body)));
+    if (p.scope !== 'tenant' || typeof p.exp !== 'number' || p.exp < Date.now()) return null;
+    return { tenantId: p.tenantId as string, email: p.email as string };
+  } catch { return null; }
+}
+export async function hashToken(raw: string): Promise<string> {
+  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(raw)))]
+    .map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+export function randomToken(bytes = 32): string {
+  const b = new Uint8Array(bytes); crypto.getRandomValues(b);
+  return [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+EOF
+
+w lib/bus.ts <<'EOF'
+import { EventEmitter } from 'events';
+const g = globalThis as unknown as { __synBus?: EventEmitter };
+export const bus = g.__synBus ?? new EventEmitter();
+bus.setMaxListeners(100);
+if (!g.__synBus) g.__synBus = bus;
+export type BusEvent =
+  | { type: 'notification'; kind: string; text: string }
+  | { type: 'defense'; tenantId: string; companyName: string; amount: number; totalDefended: number }
+  | { type: 'hitl'; tenantId: string; companyName: string; fileName: string; count: number };
+export const emit = (e: BusEvent) => bus.emit('event', e);
+export const subscribe = (fn: (e: BusEvent) => void) => { bus.on('event', fn); return () => bus.off('event', fn); };
+EOF
+
+w lib/telegram.ts <<'EOF'
+export async function telegramAlert(chatId: string | null | undefined, text: string) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token || !chatId) return { sent: false };
+  try {
+    return { sent: (await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text }),
+    })).ok };
+  } catch { return { sent: false }; }
+}
+export async function telegramInline(chatId: string | null | undefined, text: string, buttons: { text: string; data: string }[]) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token || !chatId) return { sent: false };
+  try {
+    return { sent: (await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text, reply_markup: { inline_keyboard: [buttons.map((b) => ({ text: b.text, callback_data: b.data }))] } }),
+    })).ok };
+  } catch { return { sent: false }; }
+}
+export async function answerCallback(id: string, text: string) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return;
+  await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ callback_query_id: id, text }),
+  }).catch(() => {});
+}
+export async function editMessage(chatId: string, messageId: number, text: string) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return;
+  await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, message_id: messageId, text }),
+  }).catch(() => {});
+}
+EOF
+
+w lib/email.ts <<'EOF'
+export async function sendMagicLink(email: string, url: string): Promise<'sent' | 'logged'> {
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST', headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: process.env.MAIL_FROM ?? 'Syntropic <ops@syntropic.ai>', to: email,
+          subject: 'Your Syntropic Backbone sign-in link',
+          text: `Sign in to the Backbone Command Tower (valid 15 minutes, single use):\n\n${url}\n\nIf you did not request this, ignore this message.` }),
+    });
+      if (res.ok) return 'sent';
+    } catch { /* fall through */ }
+  }
+  console.log(`[auth] magic link for ${email}: ${url}`);
+  return 'logged';
+}
+export async function sendTenantUnlockEmail(email: string, url: string, company: string): Promise<'sent' | 'logged'> {
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST', headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: process.env.MAIL_FROM ?? 'Syntropic <ops@syntropic.ai>', to: email,
+          subject: 'Your Syntropic audit enclave is unlocked',
+          text: `${company}'s $3,500 Diagnostic Audit deposit is confirmed.\n\nOpen your secure enclave to upload 20 historical quote PDFs (link valid 7 days, single use):\n\n${url}\n\nYour enclave session stays active for 14 days on this device.` }),
+      });
+      if (res.ok) return 'sent';
+    } catch { /* fall through */ }
+  }
+  console.log(`[tenant] unlock link for ${email}: ${url}`);
+  return 'logged';
+}
+EOF
+
+w lib/assign.ts <<'EOF'
+import { prisma } from './prisma';
+export async function assignFounder() {
+  const members = await prisma.teamMember.findMany({ where: { isOnline: true } });
+  const pool = members.length ? members : await prisma.teamMember.findMany();
+  if (!pool.length) throw new Error('No TeamMembers seeded — run `npx prisma db seed`');
+  const active = await prisma.tenant.groupBy({
+    by: ['assignedToId'], _count: { _all: true },
+    where: { assignedToId: { in: pool.map((m) => m.id) }, status: { not: 'CONVERTED' } },
+  });
+  const load = new Map(active.map((a) => [a.assignedToId, a._count._all]));
+  return pool.sort((a, b) => (load.get(a.id) ?? 0) - (load.get(b.id) ?? 0) || a.auditsClosed - b.auditsClosed)[0];
+}
+EOF
+
+w lib/ratelimit.ts <<'EOF'
+const buckets = new Map<string, { tokens: number; last: number }>();
+export function rateLimit(key: string, limit: number, windowMs: number): boolean {
+  const now = Date.now();
+  const b = buckets.get(key) ?? { tokens: limit, last: now };
+  b.tokens = Math.min(limit, b.tokens + ((now - b.last) / windowMs) * limit);
+  b.last = now;
+  if (b.tokens < 1) { buckets.set(key, b); return false; }
+  b.tokens -= 1; buckets.set(key, b); return true;
+}
+EOF
+
+w lib/validate.ts <<'EOF'
+export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+EOF
+
+w lib/docling.ts <<'EOF'
+// THE ENGINE SWAP POINT — demo parser; production calls your Docling service here.
+export interface ParsedLine { lineNumber: number; rawText: string; confidence: number }
+export const HITL_CONFIDENCE_FLOOR = 0.95;
+export async function parseQuoteFile(fileName: string): Promise<ParsedLine[]> {
+  const count = 3 + (fileName.length % 5);
+  const lines: ParsedLine[] = [];
+  for (let i = 0; i < count; i++) {
+    const low = i === count - 1;
+    lines.push({
+      lineNumber: i + 1,
+      rawText: `${fileName} — line ${i + 1} · sample part shorthand (Docling demo)`,
+      confidence: low ? 0.86 + ((fileName.length % 8) / 100) : 0.994,
+    });
+  }
+  return lines;
+}
+EOF
+
+w lib/traffic.ts <<'EOF'
+import { createHash } from 'node:crypto';
+import { prisma } from './prisma';
+export const TRAFFIC_LAYERS = ['LANDING', 'PORTAL', 'ENGINE'] as const;
+export type TrafficLayer = (typeof TRAFFIC_LAYERS)[number];
+export type TrafficEventType =
+  | 'PAGE_VIEW' | 'SLIDER_CHANGE' | 'CTA_CLICK' | 'SCROLL_DEPTH'
+  | 'INTAKE_SUBMITTED' | 'DEPOSIT_CLICKED' | 'PAYMENT_SUCCESS'
+  | 'CALL_BOOKED' | 'PORTAL_LOGIN' | 'FILE_UPLOAD' | 'AUDIT_SUBMITTED'
+  | 'BRIEFING_ATTENDED' | 'CONVERSION_RECORDED';
+function daySalt(): string {
+  const days = Math.max(0, Number(process.env.IP_HASH_SALT_ROTATE_DAYS ?? 30) || 0);
+  const epoch = Math.floor(Date.now() / (days * 86400e3 || 86400e3));
+  return `${process.env.IP_HASH_SALT_BASE ?? 'dev-salt'}:${epoch}`;
+}
+export function hashIp(ip: string | null): string | null {
+  if (!ip) return null;
+  return createHash('sha256').update(`${ip}|${daySalt()}`).digest('hex');
+}
+export const utcDay = (d = new Date()) => d.toISOString().slice(0, 10);
+export async function recordTraffic(input: {
+  sessionId: string; layer: TrafficLayer; eventType: TrafficEventType;
+  ip: string | null; tenantId?: string | null; metadata?: Record<string, unknown>;
+}): Promise<void> {
+  try {
+    const day = utcDay();
+    await prisma.$transaction([
+      prisma.trafficEvent.create({
+        data: { sessionId: input.sessionId, tenantId: input.tenantId ?? null, layer: input.layer,
+                eventType: input.eventType, ipHash: hashIp(input.ip),
+                metadata: input.metadata ? JSON.stringify(input.metadata) : null },
+      }),
+      prisma.liveTelemetrySummary.upsert({
+        where: { date: day },
+        create: { date: day, totalVisitors: 1 },
+        update: { totalVisitors: { increment: 1 } },
+      }),
+    ]);
+    if (input.eventType === 'INTAKE_SUBMITTED') await bump(day, 'auditsInitiated');
+    if (input.eventType === 'PORTAL_LOGIN')       await bump(day, 'portalLogins');
+    if (input.eventType === 'FILE_UPLOAD')        await bump(day, 'quotesIngested');
+  } catch (e) { console.error('[traffic] capture failed (non-fatal):', e); }
+}
+async function bump(date: string, field: 'auditsInitiated' | 'portalLogins' | 'quotesIngested') {
+  try { await prisma.liveTelemetrySummary.update({ where: { date }, data: { [field]: { increment: 1 } } as never }); }
+  catch { /* row vanished — recalc heals */ }
+}
+export async function recomputeDay(date = utcDay()) {
+  const events = await prisma.trafficEvent.findMany({
+    where: { createdAt: { gte: new Date(`${date}T00:00:00.000Z`), lt: new Date(`${date}T23:59:59.999Z`) } },
+    select: { sessionId: true, ipHash: true },
+  });
+  const summary = await prisma.liveTelemetrySummary.findUnique({ where: { date } });
+  await prisma.liveTelemetrySummary.upsert({
+    where: { date },
+    create: { date, totalVisitors: events.length, uniqueSessions: new Set(events.map((e) => e.sessionId)).size },
+    update: { totalVisitors: events.length, uniqueSessions: new Set(events.map((e) => e.sessionId)).size,
+              auditsInitiated: summary?.auditsInitiated ?? 0, portalLogins: summary?.portalLogins ?? 0,
+              quotesIngested: summary?.quotesIngested ?? 0 },
+  });
+}
+EOF
+
+# ---------------------------------------------------------------- prisma ----
+w prisma/schema.prisma <<'EOF'
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+generator client {
+  provider = "prisma-client-js"
+}
+model TeamMember {
+  id                   String          @id @default(uuid())
+  name                 String          @unique
+  role                 String
+  isOnline             Boolean         @default(true)
+  qOutboundTarget      Int             @default(200)
+  qOutboundCompleted   Int             @default(0)
+  discoveryCallsBooked Int             @default(0)
+  auditsClosed         Int             @default(0)
+  contractsConverted   Int             @default(0)
+  telegramChatId       String?
+  email                String?         @unique
+  auditsHosted         AuditRecord[]
+  assignedTenants      Tenant[]        @relation("AssignedTenants")
+}
+model Tenant {
+  id                   String          @id @default(uuid())
+  companyName          String
+  contactEmail         String          @unique
+  contactName          String?
+  attribution          String?
+  erpSystem            String          @default("Unknown")
+  rfqMonthlyVolume     Int             @default(0)
+  totalDefended        Float           @default(0.0)
+  last24hDelta         Float           @default(0.0)
+  primaryLeakageVector String          @default("Unapplied SPAs")
+  paymentStatus        String          @default("PENDING")
+  status               String          @default("AUDIT_PENDING")
+  assignedToId         String?
+  assignedTo           TeamMember?     @relation("AssignedTenants", fields: [assignedToId], references: [id])
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  auditRecord          AuditRecord?
+  hitlItems            HitlQueueItem[]
+  defenseLogs          DefenseLog[]
+  @@index([contactEmail])
+  @@index([status])
+}
+model AuditRecord {
+  id                String      @id @default(uuid())
+  tenantId          String      @unique
+  tenant            Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dateSold          DateTime    @default(now())
+  auditFee          Float       @default(3500.0)
+  attendedCall      Boolean     @default(false)
+  callHostId        String?
+  callHost          TeamMember? @relation(fields: [callHostId], references: [id])
+  convertedToClient Boolean     @default(false)
+  identifiedLeakage Float       @default(0.0)
+  callNotes         String?
+  @@index([dateSold])
+}
+model HitlQueueItem {
+  id         String   @id @default(uuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fileName   String
+  lineNumber Int
+  rawText    String
+  confidence Float
+  status     String   @default("PENDING")
+  createdAt  DateTime @default(now())
+  @@index([tenantId])
+  @@index([status])
+}
+model DefenseLog {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  amount    Float
+  vector    String?
+  sourceRef String?
+  createdAt DateTime @default(now())
+  @@index([tenantId, createdAt])
+}
+model MagicLinkToken {
+  id        String    @id @default(uuid())
+  email     String
+  tokenHash String    @unique
+  scope     String    @default("operator")
+  tenantId  String?
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  @@index([email])
+  @@index([tenantId])
+}
+model PendingAction {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  kind      String
+  targetId  String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  @@index([kind, targetId])
+}
+model TrafficEvent {
+  id        String   @id @default(uuid())
+  sessionId String
+  tenantId  String?
+  layer     String
+  eventType String
+  metadata  String?
+  ipHash    String?
+  createdAt DateTime @default(now())
+  @@index([createdAt])
+  @@index([sessionId])
+  @@index([eventType, createdAt])
+  @@index([layer, createdAt])
+}
+model LiveTelemetrySummary {
+  id              String   @id @default(uuid())
+  date            String   @unique
+  totalVisitors   Int      @default(0)
+  uniqueSessions  Int      @default(0)
+  auditsInitiated Int      @default(0)
+  portalLogins    Int      @default(0)
+  quotesIngested  Int      @default(0)
+  @@index([date])
+}
+EOF
+
+w prisma/seed.ts <<'EOF'
+import { PrismaClient } from '@prisma/client';
+const prisma = new PrismaClient();
+async function main() {
+  await prisma.$queryRawUnsafe('PRAGMA journal_mode=WAL;');
+  await prisma.teamMember.upsert({
+    where: { name: 'Damon Matara' }, update: {},
+    create: { name: 'Damon Matara', role: 'Lead Architect & Founder', qOutboundTarget: 200,
+              telegramChatId: process.env.TELEGRAM_CHAT_ID_DAMON ?? null, email: process.env.OPERATOR_EMAIL_DAMON ?? null },
+  });
+  await prisma.teamMember.upsert({
+    where: { name: 'Josias' }, update: {},
+    create: { name: 'Josias', role: 'Enterprise Execution Lead', qOutboundTarget: 150,
+              telegramChatId: process.env.OPERATOR_EMAIL_JOSIAS ? process.env.TELEGRAM_CHAT_ID_JOSIAS ?? null : null,
+              email: process.env.OPERATOR_EMAIL_JOSIAS ?? null },
+  });
+  console.log('Seed complete — founders ready, WAL enabled.');
+}
+main().finally(() => prisma.$disconnect());
+EOF
+
+# ---------------------------------------------------------------- api ----
+w 'app/api/v1/intake/route.ts' <<'EOF'
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { assignFounder } from '@/lib/assign';
+import { emit } from '@/lib/bus';
+import { telegramAlert } from '@/lib/telegram';
+import { EMAIL_RE } from '@/lib/validate';
+import { rateLimit } from '@/lib/ratelimit';
+import { recordTraffic } from '@/lib/traffic';
+
+export const runtime = 'nodejs';
+
+export async function POST(req: Request) {
+  const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || null;
+  if (!rateLimit(`intake:${ip ?? 'local'}`, 10, 10 * 60e3)) {
+    return NextResponse.json({ error: 'rate_limited' }, { status: 429 });
+  }
+  const b = await req.json().catch(() => ({}));
+  const email = String(b.email ?? '').trim().toLowerCase();
+  const companyName = String(b.company ?? '').trim();
+  if (!EMAIL_RE.test(email) || !companyName) return NextResponse.json({ error: 'invalid_input' }, { status: 422 });
+
+  const founder = await assignFounder();
+  const track = b.track === 'STRATEGY_SESSION' ? 'STRATEGY_SESSION' : 'AUDIT_DEPOSIT';
+
+  const tenant = await prisma.tenant.upsert({
+    where: { contactEmail: email },
+    create: { companyName, contactEmail: email, contactName: String(b.contactName ?? '') || null,
+      erpSystem: String(b.erp ?? 'Unknown'), rfqMonthlyVolume: Number(b.rfqVolume ?? 0) || 0,
+      attribution: JSON.stringify(b.attribution ?? {}),
+      status: track === 'STRATEGY_SESSION' ? 'DISCOVERY_SCHEDULED' : 'AUDIT_PENDING', assignedToId: founder.id },
+    update: { companyName, contactName: String(b.contactName ?? '') || null,
+      erpSystem: String(b.erp ?? 'Unknown'), rfqMonthlyVolume: Number(b.rfqVolume ?? 0) || 0, assignedToId: founder.id,
+      ...(track === 'STRATEGY_SESSION' ? { status: 'DISCOVERY_SCHEDULED' } : {}) },
+  });
+
+  if (track === 'STRATEGY_SESSION') {
+    await prisma.teamMember.update({ where: { id: founder.id }, data: { discoveryCallsBooked: { increment: 1 } } });
+  }
+
+  const text = `🔥 NEW INGEST: ${companyName} (${track === 'AUDIT_DEPOSIT' ? 'Audit intake — deposit pending' : '15-Min Strategy Session'}) → Assigned to ${founder.name}`;
+  emit({ type: 'notification', kind: track === 'STRATEGY_SESSION' ? 'discovery' : 'audit_paid', text });
+  void telegramAlert(founder.telegramChatId, `📥 ${text}`);
+  void recordTraffic({ sessionId: String(b.sessionId ?? 'unknown'), layer: 'LANDING', eventType: 'INTAKE_SUBMITTED', ip, tenantId: tenant.id, metadata: { erp: tenant.erpSystem, volume: tenant.rfqMonthlyVolume } });
+
+  return NextResponse.json({ tenantId: tenant.id, assignedTo: founder.name, status: tenant.status });
+}
+EOF
+
+w 'app/api/v1/checkout/route.ts' <<'EOF'
+import { NextResponse } from 'next/server';
+import Stripe from 'stripe';
+import { prisma } from '@/lib/prisma';
+import { assignFounder } from '@/lib/assign';
+import { EMAIL_RE } from '@/lib/validate';
+import { rateLimit } from '@/lib/ratelimit';
+import { randomToken, hashToken, TENANT_LINK_TTL_MS } from '@/lib/auth';
+
+export const runtime = 'nodejs';
+
+export async function POST(req: Request) {
+  const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || null;
+  if (!rateLimit(`checkout:${ip ?? 'local'}`, 6, 10 * 60e3)) return NextResponse.json({ error: 'rate_limited' }, { status: 429 });
+
+  const b = await req.json().catch(() => ({}));
+  const mail = String(b.email ?? '').trim().toLowerCase();
+  if (!EMAIL_RE.test(mail) || !String(b.company ?? '').trim()) return NextResponse.json({ error: 'invalid_input' }, { status: 422 });
+  if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_PRICE_ID) {
+    return NextResponse.json({ error: 'checkout_not_configured' }, { status: 501 });
+  }
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+  const founder = await assignFounder();
+  const tenant = await prisma.tenant.upsert({
+    where: { contactEmail: mail },
+    create: { companyName: String(b.company), contactEmail: mail, erpSystem: String(b.erp ?? 'Unknown'),
+      rfqMonthlyVolume: Number(b.rfqVolume ?? 0) || 0, attribution: JSON.stringify(b.attribution ?? {}),
+      status: 'AUDIT_PENDING', assignedToId: founder.id },
+    update: { assignedToId: founder.id },
+  });
+  const { randomUUID } = await import('node:crypto');
+  void randomUUID; // (token mint below)
+  const raw = randomToken(32);
+  await prisma.magicLinkToken.create({
+    data: { email: mail, tokenHash: await hashToken(raw), scope: 'tenant', tenantId: tenant.id,
+            expiresAt: new Date(Date.now() + TENANT_LINK_TTL_MS) },
+  });
+  const origin = req.headers.get('origin') ?? new URL(req.url).origin;
+  const session = await stripe.checkout.sessions.create({
+    mode: 'payment', line_items: [{ price: process.env.STRIPE_PRICE_ID!, quantity: 1 }],
+    customer_email: mail, client_reference_id: tenant.id,
+    metadata: { tenantId: tenant.id, founderId: founder.id, source: String(b.source ?? 'unknown') },
+    success_url: `${origin}/api/auth/tenant-callback?token=${raw}`,
+    cancel_url: `${origin}/?payment=cancelled`,
+  });
+  return NextResponse.json({ url: session.url, tenantId: tenant.id });
+}
+EOF
+
+w 'app/api/webhooks/stripe/route.ts' <<'EOF'
+import { NextResponse } from 'next/server';
+import Stripe from 'stripe';
+import { prisma } from '@/lib/prisma';
+import { emit } from '@/lib/bus';
+import { telegramAlert } from '@/lib/telegram';
+import { randomToken, hashToken, TENANT_LINK_TTL_MS } from '@/lib/auth';
+import { sendTenantUnlockEmail } from '@/lib/email';
+import { recordTraffic } from '@/lib/traffic';
+
+export const runtime = 'nodejs';
+
+export async function POST(req: Request) {
+  const sig = req.headers.get('stripe-signature');
+  if (!sig || !process.env.STRIPE_WEBHOOK_SECRET) return NextResponse.json({ error: 'webhook_not_configured' }, { status: 501 });
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+  let event: Stripe.Event;
+  try { event = stripe.webhooks.constructEvent(await req.text(), sig, process.env.STRIPE_WEBHOOK_SECRET!); }
+  catch { return NextResponse.json({ error: 'bad_signature' }, { status: 400 }); }
+
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object as Stripe.Checkout.Session;
+    const tenantId = session.metadata?.tenantId ?? session.client_reference_id;
+    const founderId = session.metadata?.founderId ?? null;
+    if (!tenantId) return NextResponse.json({ received: true, note: 'no tenant ref' });
+
+    const r = await prisma.$transaction(async (tx) => {
+      const t = await tx.tenant.update({ where: { id: tenantId }, data: { paymentStatus: 'PAID', status: 'AUDIT_ACTIVE' }, include: { assignedTo: true } });
+      const audit = await tx.auditRecord.upsert({
+        where: { tenantId: t.id }, update: { auditFee: 3500 },
+        create: { tenantId: t.id, auditFee: 3500, callHostId: founderId ?? t.assignedToId,
+                  callNotes: 'Deposit captured via Stripe Checkout. Awaiting 20-file ingest + briefing.' },
+      });
+      const hostId = founderId ?? t.assignedToId;
+      if (hostId) await tx.teamMember.update({ where: { id: hostId }, data: { auditsClosed: { increment: 1 } } });
+      return { t, hostId };
+    });
+
+    const raw = randomToken(32);
+    await prisma.magicLinkToken.create({
+      data: { email: r.t.contactEmail, tokenHash: await hashToken(raw), scope: 'tenant', tenantId: r.t.id,
+              expiresAt: new Date(Date.now() + TENANT_LINK_TTL_MS) },
+    });
+    const base = process.env.PUBLIC_BASE_URL ?? new URL(req.url).origin;
+    void sendTenantUnlockEmail(r.t.contactEmail, `${base}/api/auth/tenant-callback?token=${raw}`, r.t.companyName);
+
+    const text = `🔥 NEW INGEST: ${r.t.companyName} ($3,500 Audit Deposit PAID) → Assigned to ${r.t.assignedTo?.name ?? 'unassigned'}`;
+    emit({ type: 'notification', kind: 'audit_paid', text });
+    const host = r.hostId ? await prisma.teamMember.findUnique({ where: { id: r.hostId } }) : null;
+    void telegramAlert(host?.telegramChatId, `💰 $3,500 deposit received — ${r.t.companyName}. Enclave unlocked, awaiting ingest.`);
+    void recordTraffic({ sessionId: `stripe:${session.id}`, layer: 'ENGINE', eventType: 'PAYMENT_SUCCESS', ip: null, tenantId: r.t.id, metadata: { source: session.metadata?.source } });
+  }
+  return NextResponse.json({ received: true });
+}
+EOF
+
+w 'app/api/v1/ingest/route.ts' <<'EOF'
+import { NextResponse } from 'next/server';
+import { mkdir, writeFile } from 'fs/promises';
+import path from 'path';
+import { cookies } from 'next/headers';
+import { prisma } from '@/lib/prisma';
+import { parseQuoteFile, HITL_CONFIDENCE_FLOOR } from '@/lib/docling';
+import { emit } from '@/lib/bus';
+import { telegramInline } from '@/lib/telegram';
+import { verifyTenantSession, TENANT_COOKIE, randomToken, hashToken } from '@/lib/auth';
+import { rateLimit } from '@/lib/ratelimit';
+import { recordTraffic } from '@/lib/traffic';
+
+export const runtime = 'nodejs';
+
+export async function POST(req: Request) {
+  const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || null;
+  if (!rateLimit(`ingest:${ip ?? 'local'}`, 20, 3600e3)) return NextResponse.json({ error: 'rate_limited' }, { status: 429 });
+
+  const form = await req.formData().catch(() => null);
+  if (!form) return NextResponse.json({ error: 'expected_multipart' }, { status: 400 });
+
+  const session = await verifyTenantSession((await cookies()).get(TENANT_COOKIE)?.value);
+  if (!session) return NextResponse.json({ error: 'tenant_session_required', detail: 'Open the secure link from your audit email to activate this enclave.' }, { status: 401 });
+
+  const tenant = await prisma.tenant.findUnique({ where: { id: session.tenantId } });
+  if (!tenant) return NextResponse.json({ error: 'tenant_not_found' }, { status: 401 });
+  if (tenant.paymentStatus !== 'PAID') {
+    return NextResponse.json({ error: 'ingest_locked', detail: 'File ingest requires an active $3,500 Diagnostic Audit deposit.' }, { status: 402 });
+  }
+
+  const files = form.getAll('files').filter((f): f is File => f instanceof File);
+  const namedOnly = String(form.get('namesOnly') ?? '');
+  if (files.length === 0 && namedOnly) {
+    return NextResponse.json({ error: 'no_files', detail: 'File contents missing — re-add the files in your enclave and re-submit.' }, { status: 422 });
+  }
+
+  const dataDir = process.env.DATA_DIR || './data';
+  const dir = path.join(dataDir, 'tenants', tenant.id);
+  await mkdir(dir, { recursive: true });
+
+  const hitlRows: { fileName: string; lineNumber: number; rawText: string; confidence: number }[] = [];
+  let queued = 0;
+  for (const f of files) {
+    if (!/\.(pdf|xlsx|csv)$/i.test(f.name) || f.size > 50 * 1048576) continue;
+    const safe = path.basename(f.name).replace(/[^a-zA-Z0-9._-]/g, '_');
+    await writeFile(path.join(dir, `${Date.now()}_${safe}`), Buffer.from(await f.arrayBuffer()));
+    queued++;
+    for (const line of (await parseQuoteFile(f.name)).filter((l) => l.confidence < HITL_CONFIDENCE_FLOOR)) {
+      hitlRows.push({ fileName: f.name, lineNumber: line.lineNumber, rawText: line.rawText, confidence: line.confidence });
+    }
+  }
+
+  if (hitlRows.length) {
+    await prisma.hitlQueueItem.createMany({ data: hitlRows.map((r) => ({ ...r, tenantId: tenant.id })) });
+    emit({ type: 'hitl', tenantId: tenant.id, companyName: tenant.companyName, fileName: hitlRows[0].fileName, count: hitlRows.length });
+    const host = tenant.assignedToId ? await prisma.teamMember.findUnique({ where: { id: tenant.assignedToId } }) : null;
+    const persisted = await prisma.hitlQueueItem.findMany({
+      where: { tenantId: tenant.id, status: 'PENDING', fileName: hitlRows[0].fileName },
+      orderBy: { createdAt: 'desc' }, take: 5,
+    });
+    for (const item of persisted) {
+      const raw = randomToken(16);
+      await prisma.pendingAction.create({
+        data: { tokenHash: await hashToken(raw), kind: 'HITL', targetId: item.id, expiresAt: new Date(Date.now() + 15 * 60e3) },
+      });
+      void telegramInline(host?.telegramChatId,
+        `⚠️ HITL REVIEW — ${tenant.companyName}\n${item.fileName} · line ${item.lineNumber} · ${(item.confidence * 100).toFixed(1)}% confidence\n"${item.rawText}"`,
+        [{ text: '✅ Approve', data: `h:A:${raw}` }, { text: '✖ Override', data: `h:O:${raw}` }]);
+    }
+  }
+
+  void recordTraffic({ sessionId: session.tenantId, layer: 'PORTAL', eventType: 'FILE_UPLOAD', ip, tenantId: tenant.id, metadata: { queued, hitl: hitlRows.length } });
+  return NextResponse.json({ ok: true, tenantId: tenant.id, filesQueued: queued, hitlCount: hitlRows.length });
+}
+EOF
+
+w 'app/api/v1/hitl/[id]/route.ts' <<'EOF'
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { emit } from '@/lib/bus';
+
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const { action } = await req.json().catch(() => ({ action: '' }));
+  if (action !== 'APPROVED' && action !== 'OVERRIDDEN') {
+    return NextResponse.json({ error: 'action must be APPROVED | OVERRIDDEN' }, { status: 422 });
+  }
+  const item = await prisma.hitlQueueItem.update({ where: { id }, data: { status: action }, include: { tenant: true } });
+  emit({ type: 'notification', kind: 'hitl', text: `HITL ${action}: ${item.tenant.companyName} · ${item.fileName} L${item.lineNumber} (${(item.confidence * 100).toFixed(1)}%)` });
+  return NextResponse.json({ ok: true, status: item.status });
+}
+EOF
+
+w 'app/api/v1/team/[id]/route.ts' <<'EOF'
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const { qOutboundTarget } = await req.json().catch(() => ({ qOutboundTarget: NaN }));
+  const n = Number(qOutboundTarget);
+  if (!Number.isInteger(n) || n < 1 || n > 10000) return NextResponse.json({ error: 'invalid_target' }, { status: 422 });
+  return NextResponse.json(await prisma.teamMember.update({ where: { id }, data: { qOutboundTarget: n } }));
+}
+EOF
+
+w 'app/api/v1/telemetry/defend/route.ts' <<'EOF'
+import { NextResponse } from 'next/server';
+import { appendFile, mkdir } from 'fs/promises';
+import path from 'path';
+import { prisma } from '@/lib/prisma';
+import { requireSecret } from '@/lib/guard';
+import { emit } from '@/lib/bus';
+
+export const runtime = 'nodejs';
+const REV_SHARE = 0.20;
+
+export async function POST(req: Request) {
+  const guard = requireSecret(req, process.env.ENGINE_WEBHOOK_KEY, 'x-engine-key');
+  if (!guard.ok) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+
+  const { tenantId, amount, vector, sourceRef } = await req.json().catch(() => ({} as Record<string, unknown>));
+  const amt = Number(amount);
+  if (!tenantId || !Number.isFinite(amt) || amt <= 0) return NextResponse.json({ error: 'invalid_input' }, { status: 422 });
+
+  const result = await prisma.$transaction(async (tx) => {
+    const tenant = await tx.tenant.update({
+      where: { id: String(tenantId) },
+      data: { totalDefended: { increment: amt }, last24hDelta: { increment: amt },
+              ...(vector ? { primaryLeakageVector: String(vector) } : {}) },
+    });
+    await tx.defenseLog.create({
+      data: { tenantId: tenant.id, amount: amt, vector: vector ? String(vector) : null, sourceRef: sourceRef ? String(sourceRef) : null },
+    });
+    return tenant;
+  });
+
+  const dataDir = process.env.DATA_DIR || './data';
+  const dir = path.join(dataDir, 'tenants', String(tenantId));
+  await mkdir(dir, { recursive: true });
+  await appendFile(path.join(dir, 'stream.log'),
+    JSON.stringify({ ts: new Date().toISOString(), amount: amt, vector: vector ?? null, sourceRef: sourceRef ?? null, totalDefended: result.totalDefended }) + '\n');
+
+  emit({ type: 'defense', tenantId: result.id, companyName: result.companyName, amount: amt, totalDefended: result.totalDefended });
+  return NextResponse.json({ totalDefended: result.totalDefended, syntropicCut: +(amt * REV_SHARE).toFixed(2) });
+}
+EOF
+
+w 'app/api/v1/telemetry/stream/route.ts' <<'EOF'
+import { subscribe, type BusEvent } from '@/lib/bus';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+export async function GET() {
+  const encoder = new TextEncoder();
+  let unsub: (() => void) | null = null;
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+  const stream = new ReadableStream({
+    start(controller) {
+      const send = (event: string, data: unknown) => controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+      send('hello', { ok: true, ts: new Date().toISOString() });
+      unsub = subscribe((e: BusEvent) => send(e.type, e));
+      heartbeat = setInterval(() => { try { controller.enqueue(encoder.encode(': ping\n\n')); } catch { /* closed */ } }, 25000);
+    },
+    cancel() { unsub?.(); if (heartbeat) clearInterval(heartbeat); },
+  });
+  return new Response(stream, { headers: { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive' } });
+}
+EOF
+
+w 'app/api/v1/telemetry/collect/route.ts' <<'EOF'
+import { NextResponse } from 'next/server';
+import { rateLimit } from '@/lib/ratelimit';
+import { recordTraffic, TRAFFIC_LAYERS, type TrafficEventType } from '@/lib/traffic';
+
+export const runtime = 'nodejs';
+
+export async function POST(req: Request) {
+  const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || null;
+  if (!rateLimit(`traffic:${ip ?? 'local'}`, 120, 60e3)) return NextResponse.json({ error: 'rate_limited' }, { status: 429 });
+  const b = await req.json().catch(() => null);
+  if (!b?.sessionId || !b?.eventType) return NextResponse.json({ error: 'invalid_input' }, { status: 422 });
+  if (!TRAFFIC_LAYERS.includes(b.layer)) return NextResponse.json({ error: 'invalid_layer' }, { status: 422 });
+  await recordTraffic({
+    sessionId: String(b.sessionId).slice(0, 64), layer: b.layer,
+    eventType: String(b.eventType).toUpperCase() as TrafficEventType, ip,
+    metadata: typeof b.metadata === 'object' && b.metadata !== null ? b.metadata : undefined,
+  });
+  return NextResponse.json({ ok: true });
+}
+EOF
+
+w 'app/api/v1/backbone/state/route.ts' <<'EOF'
+import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
+import { prisma } from '@/lib/prisma';
+import { verifySession, SESSION_COOKIE } from '@/lib/auth';
+import { utcDay } from '@/lib/traffic';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+const REV_SHARE = 0.20;
+const ago = (h: number) => new Date(Date.now() - h * 3600e3);
+
+export async function GET() {
+  const session = await verifySession((await cookies()).get(SESSION_COOKIE)?.value);
+  const me = session?.email ?? null;
+  const [team, tenants, audits, hitl, traffic] = await Promise.all([
+    prisma.teamMember.findMany({ orderBy: { name: 'asc' } }),
+    prisma.tenant.findMany({
+      include: { assignedTo: true, auditRecord: { include: { callHost: true } },
+                 defenseLogs: { where: { createdAt: { gte: ago(24 * 365) } }, select: { amount: true, createdAt: true } } },
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.auditRecord.findMany({ include: { tenant: true, callHost: true }, orderBy: { dateSold: 'desc' } }),
+    prisma.hitlQueueItem.findMany({ where: { status: 'PENDING' }, include: { tenant: true }, orderBy: { createdAt: 'desc' } }),
+    prisma.liveTelemetrySummary.findUnique({ where: { date: utcDay() } }),
+  ]);
+
+  const clients = tenants.map((t) => {
+    const last24h = t.defenseLogs.filter((l) => l.createdAt >= ago(24)).reduce((s, l) => s + l.amount, 0);
+    const monthly = t.defenseLogs.filter((l) => l.createdAt >= ago(24 * 30)).reduce((s, l) => s + l.amount, 0) * REV_SHARE;
+    const annual = t.defenseLogs.reduce((s, l) => s + l.amount, 0) * REV_SHARE;
+    return {
+      id: t.id, companyName: t.companyName, contactEmail: t.contactEmail, contactName: t.contactName,
+      erpSystem: t.erpSystem, totalDefended: t.totalDefended, last24hDelta: +last24h.toFixed(2),
+      primaryLeakageVector: t.primaryLeakageVector, paymentStatus: t.paymentStatus, status: t.status,
+      assignedTo: t.assignedTo?.name ?? null, createdAt: t.createdAt,
+      revShare: { monthly: +monthly.toFixed(2), annual: +annual.toFixed(2), lifetime: +annual.toFixed(2) },
+    };
+  });
+
+  return NextResponse.json({
+    team: team.map(({ telegramChatId, email, ...m }) => ({ ...m, isMe: me != null && email === me })),
+    me, clients, audits, hitlPending: hitl,
+    traffic: { date: utcDay(), totalVisitors: traffic?.totalVisitors ?? 0, uniqueSessions: traffic?.uniqueSessions ?? 0,
+               auditsInitiated: traffic?.auditsInitiated ?? 0, portalLogins: traffic?.portalLogins ?? 0, quotesIngested: traffic?.quotesIngested ?? 0 },
+    totals: {
+      marginsDefended: +clients.reduce((s, c) => s + c.totalDefended, 0).toFixed(2),
+      revShareMonthly: +clients.reduce((s, c) => s + c.revShare.monthly, 0).toFixed(2),
+      activeAccounts: clients.length,
+      guaranteePassed: audits.every((a) => a.identifiedLeakage >= 10000),
+    },
+    serverTime: new Date().toISOString(),
+  });
+}
+EOF
+
+w 'app/api/auth/magic-link/route.ts' <<'EOF'
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { isOperator, randomToken, hashToken } from '@/lib/auth';
+import { rateLimit } from '@/lib/ratelimit';
+import { sendMagicLink } from '@/lib/email';
+
+export const runtime = 'nodejs';
+
+export async function POST(req: Request) {
+  const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || null;
+  if (!rateLimit(`magiclink:${ip ?? 'local'}`, 5, 15 * 60e3)) return NextResponse.json({ error: 'rate_limited' }, { status: 429 });
+  const { email } = await req.json().catch(() => ({ email: '' }));
+  const mail = String(email ?? '').trim().toLowerCase();
+  if (isOperator(mail)) {
+    const raw = randomToken(32);
+    await prisma.magicLinkToken.create({
+      data: { email: mail, tokenHash: await hashToken(raw), scope: 'operator', expiresAt: new Date(Date.now() + 15 * 60e3) },
+    });
+    const origin = req.headers.get('origin') ?? new URL(req.url).origin;
+    await sendMagicLink(mail, `${origin}/api/auth/callback?token=${raw}`);
+  }
+  return NextResponse.json({ ok: true });
+}
+EOF
+
+w 'app/api/auth/callback/route.ts' <<'EOF'
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { signSession, hashToken, SESSION_COOKIE } from '@/lib/auth';
+
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const raw = url.searchParams.get('token') ?? '';
+  let email: string | null = null;
+  if (raw) {
+    const row = await prisma.magicLinkToken.findUnique({ where: { tokenHash: await hashToken(raw) } });
+    if (row && !row.usedAt && row.expiresAt > new Date()) {
+      await prisma.magicLinkToken.update({ where: { id: row.id }, data: { usedAt: new Date() } });
+      email = row.email;
+    }
+  }
+  if (!email) return NextResponse.redirect(new URL('/?auth=expired', url.origin));
+  const res = NextResponse.redirect(new URL('/backbone', url.origin));
+  res.cookies.set(SESSION_COOKIE, await signSession(email), {
+    httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 7 * 24 * 3600,
+  });
+  return res;
+}
+EOF
+
+w 'app/api/auth/tenant-callback/route.ts' <<'EOF'
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { signTenantSession, hashToken, TENANT_COOKIE } from '@/lib/auth';
+
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const raw = url.searchParams.get('token') ?? '';
+  let tenant: { id: string; contactEmail: string } | null = null;
+  if (raw) {
+    const row = await prisma.magicLinkToken.findUnique({ where: { tokenHash: await hashToken(raw) } });
+    if (row && row.scope === 'tenant' && row.tenantId && !row.usedAt && row.expiresAt > new Date()) {
+      const t = await prisma.tenant.findUnique({ where: { id: row.tenantId } });
+      if (t) {
+        await prisma.magicLinkToken.update({ where: { id: row.id }, data: { usedAt: new Date() } });
+        tenant = { id: t.id, contactEmail: t.contactEmail };
+      }
+    }
+  }
+  if (!tenant) return NextResponse.redirect(new URL('/?open=portal&auth=tenant-expired', url.origin));
+  const res = NextResponse.redirect(new URL(`/?open=portal&tenant=${tenant.id}`, url.origin));
+  res.cookies.set(TENANT_COOKIE, await signTenantSession(tenant.id, tenant.contactEmail), {
+    httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 14 * 24 * 3600,
+  });
+  return res;
+}
+EOF
+
+w 'app/api/auth/logout/route.ts' <<'EOF'
+import { NextResponse } from 'next/server';
+import { SESSION_COOKIE, TENANT_COOKIE } from '@/lib/auth';
+export async function POST() {
+  const res = NextResponse.json({ ok: true });
+  res.cookies.set(SESSION_COOKIE, '', { httpOnly: true, path: '/', maxAge: 0 });
+  res.cookies.set(TENANT_COOKIE, '', { httpOnly: true, path: '/', maxAge: 0 });
+  return res;
+}
+EOF
+
+w 'app/api/telegram/webhook/route.ts' <<'EOF'
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { hashToken } from '@/lib/auth';
+import { answerCallback, editMessage } from '@/lib/telegram';
+import { emit } from '@/lib/bus';
+
+export const runtime = 'nodejs';
+
+export async function POST(req: Request) {
+  const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (!secret) return NextResponse.json({ error: 'not_configured' }, { status: 501 });
+  if (req.headers.get('x-telegram-bot-api-secret-token') !== secret) return new NextResponse('forbidden', { status: 403 });
+
+  const update = await req.json().catch(() => null);
+  const cq = update?.callback_query;
+  if (!cq?.data) return NextResponse.json({ ok: true });
+
+  const [tag, code, raw] = String(cq.data).split(':');
+  const action = code === 'A' ? 'APPROVED' : code === 'O' ? 'OVERRIDDEN' : null;
+  if (tag !== 'h' || !action || !raw) { await answerCallback(cq.id, 'Unrecognized action'); return NextResponse.json({ ok: true }); }
+
+  const pending = await prisma.pendingAction.findUnique({ where: { tokenHash: await hashToken(raw) } });
+  if (!pending || pending.usedAt || pending.expiresAt < new Date()) {
+    await answerCallback(cq.id, '⏱ This link expired — review the item in the Backbone deck.');
+    return NextResponse.json({ ok: true });
+  }
+  const item = await prisma.hitlQueueItem.findUnique({ where: { id: pending.targetId }, include: { tenant: true } });
+  if (!item || item.status !== 'PENDING') {
+    await prisma.pendingAction.update({ where: { id: pending.id }, data: { usedAt: new Date() } });
+    await answerCallback(cq.id, 'Already resolved.');
+    return NextResponse.json({ ok: true });
+  }
+  const [applied] = await Promise.all([
+    prisma.hitlQueueItem.update({ where: { id: item.id }, data: { status: action } }),
+    prisma.pendingAction.update({ where: { id: pending.id }, data: { usedAt: new Date() } }),
+  ]);
+  const who = cq.from?.first_name ?? 'Operator';
+  await Promise.all([
+    answerCallback(cq.id, `${action === 'APPROVED' ? '✅ Approved' : '✖ Overridden'} by ${who}`),
+    editMessage(cq.message.chat.id, cq.message.message_id,
+      `✔ ${action} by ${who}\n${item.tenant.companyName} · ${item.fileName} · L${item.lineNumber} · ${(item.confidence * 100).toFixed(1)}%`),
+    emit({ type: 'notification', kind: 'hitl', text: `HITL ${action} (via Telegram · ${who}): ${item.tenant.companyName} · ${item.fileName} L${item.lineNumber}` }),
+  ]);
+  return NextResponse.json({ ok: true });
+}
+EOF
+
+w 'app/api/telegram/setup/route.ts' <<'EOF'
+import { NextResponse } from 'next/server';
+import { verifySession, SESSION_COOKIE } from '@/lib/auth';
+
+export async function POST(req: Request) {
+  const session = await verifySession((await cookies()).get(SESSION_COOKIE)?.value);
+  if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (!token || !secret) return NextResponse.json({ error: 'telegram_not_configured' }, { status: 501 });
+  const origin = req.headers.get('origin') ?? new URL(req.url).origin;
+  const res = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: `${origin}/api/telegram/webhook`, secret_token: secret, allowed_updates: ['callback_query'] }),
+  });
+  return NextResponse.json({ ok: res.ok });
+}
+import { cookies } from 'next/headers';
+EOF
+
+w middleware.ts <<'EOF'
+import { NextResponse, type NextRequest } from 'next/server';
+import { verifySession, SESSION_COOKIE } from '@/lib/auth';
+
+const PROTECTED = ['/backbone', '/api/v1/backbone', '/api/v1/telemetry/stream', '/api/v1/hitl', '/api/v1/team'];
+
+export async function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+  const hit = PROTECTED.some((p) => pathname === p || pathname.startsWith(p + '/'));
+  if (!hit) return NextResponse.next();
+  const session = await verifySession(req.cookies.get(SESSION_COOKIE)?.value);
+  if (session) return NextResponse.next();
+  if (pathname.startsWith('/api/')) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  const url = req.nextUrl.clone();
+  url.pathname = '/';
+  url.search = '?auth=required';
+  return NextResponse.redirect(url);
+}
+export const config = {
+  matcher: ['/backbone', '/backbone/:path*', '/api/v1/backbone/:path*', '/api/v1/telemetry/stream', '/api/v1/hitl/:path*', '/api/v1/team/:path*'],
+};
+EOF
+
+w lib/guard.ts <<'EOF'
+export function requireSecret(req: Request, key: string | undefined, header: string) {
+  if (!key) return { ok: true, warn: `secret unset — ${header} routes are OPEN (dev only)` };
+  return req.headers.get(header) === key ? { ok: true } : { ok: false };
+}
+EOF
+
+w 'scripts/issue-tenant-link.ts' <<'EOF'
+import { PrismaClient } from '@prisma/client';
+import { createHash, randomBytes } from 'node:crypto';
+const prisma = new PrismaClient();
+const sha = (s: string) => createHash('sha256').update(s).digest('hex');
+const email = process.argv[2]?.toLowerCase();
+if (!email) { console.error('usage: npx tsx scripts/issue-tenant-link.ts <tenant-email>'); process.exit(1); }
+const tenant = await prisma.tenant.findUnique({ where: { contactEmail: email } });
+if (!tenant) { console.error('tenant not found — run an intake first'); process.exit(1); }
+const raw = randomBytes(32).toString('hex');
+await prisma.magicLinkToken.create({
+  data: { email, tokenHash: sha(raw), scope: 'tenant', tenantId: tenant.id, expiresAt: new Date(Date.now() + 7 * 24 * 3600e3) },
+});
+console.log(`${process.env.PUBLIC_BASE_URL ?? 'http://localhost:3000'}/api/auth/tenant-callback?token=${raw}`);
+await prisma.$disconnect();
+EOF
+
+# ------------------------------------------------- backbone ui (live port) ----
+w 'app/backbone/page.tsx' <<'EOF'
+'use client';
+import { useCallback, useEffect, useState } from 'react';
+type Team = { id: string; name: string; role: string; isOnline: boolean; qOutboundTarget: number; qOutboundCompleted: number; discoveryCallsBooked: number; auditsClosed: number; contractsConverted: number; isMe: boolean };
+type Client = { id: string; companyName: string; contactEmail: string; contactName: string | null; erpSystem: string; totalDefended: number; last24hDelta: number; primaryLeakageVector: string; paymentStatus: string; status: string; assignedTo: string | null; createdAt: string; revShare: { monthly: number; annual: number; lifetime: number } };
+type Audit = { id: string; dateSold: string; auditFee: number; attendedCall: boolean; convertedToClient: boolean; identifiedLeakage: number; callNotes: string | null; tenant: { companyName: string }; callHost: { name: string } | null };
+type Hitl = { id: string; fileName: string; lineNumber: number; rawText: string; confidence: number; tenant: { companyName: string } };
+type Traffic = { date: string; totalVisitors: number; uniqueSessions: number; auditsInitiated: number; portalLogins: number; quotesIngested: number };
+type State = { team: Team[]; clients: Client[]; audits: Audit[]; hitlPending: Hitl[]; me: string | null; traffic: Traffic; totals: { marginsDefended: number; revShareMonthly: number; activeAccounts: number; guaranteePassed: boolean } };
+type Widget = 'arena' | 'margins' | 'revshare' | 'guarantee' | 'traffic' | null;
+type Horizon = 'monthly' | 'annual' | 'lifetime';
+const fmt = (n: number, d = 2) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+export default function BackbonePage() {
+  const [s, setS] = useState<State | null>(null);
+  const [banner, setBanner] = useState<string | null>(null);
+  const [widget, setWidget] = useState<Widget>(null);
+  const [horizon, setHorizon] = useState<Horizon>('monthly');
+  const [flash, setFlash] = useState<{ id: string; amount: number } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const load = useCallback(() => {
+    fetch('/api/v1/backbone/state')
+      .then((r) => { if (r.status === 401) { location.href = '/?auth=required'; throw new Error('unauthorized'); } return r.json(); })
+      .then(setS).catch(() => {});
+  }, []);
+  useEffect(() => {
+    load();
+    const es = new EventSource('/api/v1/telemetry/stream');
+    es.addEventListener('notification', (e) => setBanner(JSON.parse(e.data).text));
+    es.addEventListener('defense', (e) => {
+      const d = JSON.parse(e.data);
+      setFlash({ id: d.tenantId, amount: d.amount });
+      setS((p) => p && { ...p, totals: { ...p.totals, marginsDefended: p.totals.marginsDefended + d.amount } });
+      setTimeout(() => setFlash(null), 2500);
+      setTimeout(load, 800);
+    });
+    es.addEventListener('hitl', () => load());
+    es.onerror = () => {};
+    return () => es.close();
+  }, [load]);
+  const hitlAct = async (id: string, action: 'APPROVED' | 'OVERRIDDEN') => {
+    const r = await fetch(`/api/v1/hitl/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) });
+    if (r.status === 401) { setErr('Session expired — sign in again.'); return; }
+    load();
+  };
+  const setTarget = async (id: string, target: number) => {
+    await fetch(`/api/v1/team/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ qOutboundTarget: target }) });
+  };
+  const signOut = async () => { await fetch('/api/auth/logout', { method: 'POST' }); location.href = '/'; };
+  if (!s) return <main className="min-h-screen bg-slate-950 text-slate-100 font-mono text-xs p-8">Connecting to Backbone<span className="animate-pulse">…</span></main>;
+  const totalRev = s.clients.reduce((acc, c) => acc + c.revShare[horizon], 0);
+
+  return (
+    <main className="min-h-screen bg-slate-950 text-slate-100 font-mono">
+      <header className="border-b border-slate-800 bg-slate-950/90 backdrop-blur sticky top-0 z-40 px-6 py-3.5 flex flex-wrap justify-between items-center gap-3 text-xs">
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="font-bold tracking-widest text-emerald-400 text-sm">SYNTROPIC</span>
+          </div>
+          <nav className="flex items-center gap-1 bg-slate-900 border border-slate-800 p-1 rounded-xl">
+            <a href="/" className="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white">01. Landing Surface</a>
+            <a href="/?open=portal" className="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white">02. Client Portal</a>
+            <span className="px-3 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-bold">03. Backbone Command</span>
+          </nav>
+        </div>
+        <div className="flex items-center gap-3">
+          {err && <span className="text-amber-400">{err}</span>}
+          <div className="hidden sm:flex items-center gap-2 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl text-[11px] text-slate-400">
+            <span>Operator:</span><span className="text-emerald-400 font-bold">{s.me ?? 'unknown'}</span>
+          </div>
+          <button onClick={signOut} className="bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl text-[11px] text-slate-400 hover:text-white">Sign out</button>
+        </div>
+      </header>
+      <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+        {banner && (
+          <div className="bg-emerald-500 text-slate-950 px-5 py-2.5 text-xs font-bold rounded-xl flex justify-between items-center">
+            <span>{banner}</span>
+            <button onClick={() => setBanner(null)} className="hover:opacity-70">✕</button>
+          </div>
+        )}
+        <header className="border-b border-slate-800 pb-6">
+          <span className="text-emerald-400 uppercase tracking-widest text-xs">[ Real-time executive telemetry ]</span>
+          <h1 className="text-3xl font-light mt-1">Agency Command Deck</h1>
+          <p className="text-xs text-slate-400 mt-1">Direct intake feed connected · least-loaded auto-assignment · WAL-backed SQLite</p>
+        </header>
+
+        <section className="bg-slate-900/90 border border-emerald-500/30 rounded-2xl p-5 space-y-3">
+          <div className="flex justify-between items-center text-xs">
+            <span className="text-emerald-400 font-bold uppercase">⚡ Live landing page intake stream ({s.clients.length} tenants)</span>
+            <span className="text-[10px] text-slate-500">Auto-assigned to Damon / Josias</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {s.clients.slice(0, 4).map((c) => (
+              <div key={c.id} className="bg-slate-950 border border-slate-800 p-3.5 rounded-xl flex justify-between items-center text-xs">
+                <div className="min-w-0">
+                  <div className="font-bold text-slate-100 truncate">{c.companyName}</div>
+                  <div className="text-[10px] text-slate-400 truncate">{c.contactName ?? '—'} ({c.contactEmail})</div>
+                </div>
+                <div className="text-right shrink-0 ml-3">
+                  <span className={`text-[10px] px-2 py-0.5 rounded border ${c.status === 'AUDIT_ACTIVE' ? 'bg-emerald-950 text-emerald-400 border-emerald-500/30' : 'bg-sky-950 text-sky-400 border-sky-500/30'}`}>
+                    {c.status === 'AUDIT_ACTIVE' ? 'Audit active' : c.status === 'DISCOVERY_SCHEDULED' ? 'Discovery' : c.status === 'CONVERTED' ? 'Converted' : 'Pending'}
+                  </span>
+                  <div className="text-[10px] text-slate-500 mt-1">{c.assignedTo ?? 'unassigned'} · {c.erpSystem}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-3">
+          <div className="flex justify-between items-center text-xs">
+            <span className="text-amber-400 font-bold uppercase">⚠ Human-in-the-loop review deck ({s.hitlPending.length} pending)</span>
+            <span className="text-[10px] text-slate-500">Below 95.0% Docling confidence · Telegram inline enabled</span>
+          </div>
+          {s.hitlPending.length === 0 && <p className="text-slate-500 text-xs">Queue clear — every line parsed above the confidence floor.</p>}
+          {s.hitlPending.map((h) => (
+            <div key={h.id} className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 flex flex-wrap items-center gap-3 text-xs">
+              <div className="flex-1 min-w-[240px]">
+                <div className="font-bold text-slate-100">{h.tenant.companyName} · {h.fileName} · L{h.lineNumber}</div>
+                <div className="text-slate-400 truncate">{h.rawText}</div>
+              </div>
+              <span className="text-amber-400 font-bold tabular-nums">{(h.confidence * 100).toFixed(1)}%</span>
+              {(['APPROVED', 'OVERRIDDEN'] as const).map((a) => (
+                <button key={a} onClick={() => hitlAct(h.id, a)}
+                  className={`px-3 py-1.5 rounded-lg border transition ${a === 'APPROVED' ? 'border-emerald-500/40 text-emerald-400 hover:bg-emerald-950' : 'border-slate-700 text-slate-300 hover:border-slate-500'}`}>
+                  {a === 'APPROVED' ? 'Approve' : 'Override'}
+                </button>
+              ))}
+            </div>
+          ))}
+        </section>
+
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <W label="Active Accounts" value={`${s.totals.activeAccounts}`} sub=" / 10 Target" tone="ink" onClick={() => setWidget('arena')} foot="Click for 'Arena' Leaderboard ↴" icon="🏆" />
+          <W label="Margins Defended" value={fmt(s.totals.marginsDefended)} tone="emerald" flash={!!flash} onClick={() => setWidget('margins')} foot="Click for Client Directory ↴" icon="📈" />
+          <W label="Syntropic 20% Rev" value={fmt(s.totals.revShareMonthly)} tone="sky" onClick={() => setWidget('revshare')} foot="Click for Financial Horizons ↴" icon="$" />
+          <W label="Audit Guarantee" value={s.totals.guaranteePassed ? '100% Passed' : 'In review'} tone="emerald" onClick={() => setWidget('guarantee')} foot="Click for Audit Sales Log ↴" icon="🛡" />
+          <W label="Today · Traffic" value={String(s.traffic?.uniqueSessions ?? 0)} sub={` / ${s.traffic?.totalVisitors ?? 0} ev`} tone="ink" onClick={() => setWidget('traffic')} foot="Click for today's funnel ↴" icon="◉" />
+        </section>
+
+        {widget === 'arena' && (
+          <Panel title="THE ARENA · Damon vs. Josias founder leaderboard" sub="Outbound & conversion targets" onClose={() => setWidget(null)}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {s.team.map((m) => (
+                <div key={m.id} className="bg-slate-950 border border-slate-800 p-6 rounded-2xl space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-emerald-500 text-slate-950 font-bold flex items-center justify-center text-sm">{m.name[0]}</div>
+                    <div>
+                      <div className="font-bold flex items-center gap-2">{m.name}<span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /></div>
+                      <div className="text-[10px] text-slate-400">{m.role}</div>
+                    </div>
+                  </div>
+                  <div className="bg-slate-900 p-3 rounded-xl space-y-2 text-xs">
+                    <div className="flex justify-between text-slate-400 text-[11px]"><span>Quarterly outbound target:</span><span className="text-emerald-400 font-bold tabular-nums">{m.qOutboundCompleted} / {m.qOutboundTarget}</span></div>
+                    {m.isMe && (
+                      <label className="flex items-center gap-2 pt-1 text-[10px] text-slate-500">Adjust target:
+                        <input type="number" defaultValue={m.qOutboundTarget} min={1} max={10000}
+                          onBlur={(e) => { const n = Number(e.target.value); if (n >= 1 && n <= 10000) setTarget(m.id, n); }}
+                          className="w-20 bg-slate-950 border border-slate-800 px-2 py-1 text-xs text-white rounded" />
+                      </label>
+                    )}
+                  </div>
+                  <M label="Discovery calls" v={String(m.discoveryCallsBooked)} />
+                  <M label="$3,500 audits sold" v={String(m.auditsClosed)} t="emerald" />
+                  <M label="$50k contracts converted" v={String(m.contractsConverted)} t="sky" />
+                </div>
+              ))}
+            </div>
+          </Panel>
+        )}
+
+        {widget === 'margins' && (
+          <Panel title="[ LIVE CLIENT STREAM ] Real-time margins defended directory" onClose={() => setWidget(null)}>
+            <div className="space-y-3">
+              {s.clients.map((c) => (
+                <div key={c.id} className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 text-sm font-bold">{c.companyName}<span className="text-[10px] bg-slate-900 text-sky-400 px-2 py-0.5 rounded border border-slate-800">{c.erpSystem}</span></div>
+                    <div className="text-xs text-slate-400 mt-1">Primary vector: <span className="text-slate-200">{c.primaryLeakageVector}</span></div>
+                  </div>
+                  <div className="flex items-center gap-6 text-xs">
+                    <div><div className="text-[10px] text-slate-500">24-hour delta</div>
+                      <div className={`font-bold tabular-nums transition ${c.id === flash?.id ? 'text-emerald-300 scale-110' : 'text-emerald-400'}`}>+{fmt(c.id === flash?.id ? c.last24hDelta + flash.amount : c.last24hDelta)}</div></div>
+                    <div><div className="text-[10px] text-slate-500">Total defended</div><div className="text-lg font-bold tabular-nums">{fmt(c.totalDefended, 0)}</div></div>
+                    <a href="/?open=portal" className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 py-2 rounded-lg text-xs">OPEN ENCLAVE ↗</a>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        )}
+
+        {widget === 'revshare' && (
+          <Panel title="[ FINANCIAL HORIZONS & 20% REV SHARE ] Syntropic revenue velocity" onClose={() => setWidget(null)}
+            extra={<div className="flex items-center gap-2 bg-slate-950 border border-slate-800 p-1 rounded-xl text-xs">
+              {(['monthly', 'annual', 'lifetime'] as const).map((h) => (
+                <button key={h} onClick={() => setHorizon(h)} className={`px-3 py-1.5 rounded-lg capitalize transition ${horizon === h ? 'bg-sky-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'}`}>{h}</button>
+              ))}
+              <span className="text-sky-400 font-bold pl-2 pr-1 tabular-nums">{fmt(totalRev)}</span>
+            </div>}>
+            <div className="space-y-3">
+              {s.clients.map((c) => (
+                <div key={c.id} className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex justify-between items-center">
+                  <div>
+                    <div className="text-sm font-bold">{c.companyName}</div>
+                    <div className="text-xs text-slate-400 mt-0.5">Payment status:
+                      <span className={`ml-1 font-bold ${c.paymentStatus === 'PAID' ? 'text-emerald-400' : 'text-amber-400'}`}>{c.paymentStatus}</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[10px] text-slate-500 uppercase">{horizon} 20% cut</div>
+                    <div className="text-lg font-bold text-sky-400 tabular-nums">{fmt(c.revShare[horizon])}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        )}
+
+        {widget === 'guarantee' && (
+          <Panel title="Audit Guarantee Vault · $3,500 audit sales log" onClose={() => setWidget(null)}>
+            <div className="space-y-3">
+              {s.audits.length === 0 && <p className="text-slate-500 text-xs">No audits sold yet — deposits land here the moment a checkout completes.</p>}
+              {s.audits.map((a) => (
+                <div key={a.id} className="bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs space-y-1">
+                  <div className="flex justify-between font-bold">
+                    <span>{a.tenant.companyName}</span>
+                    <span className={a.convertedToClient ? 'text-emerald-400' : 'text-amber-400'}>{a.convertedToClient ? 'CONVERTED' : a.attendedCall ? 'BRIEFING HELD' : 'IN FLIGHT'}</span>
+                  </div>
+                  <div className="text-slate-400">{fmt(a.auditFee, 0)} deposit · sold {new Date(a.dateSold).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}{a.callHost ? ` · host ${a.callHost.name}` : ''} · leakage: <span className="text-emerald-400">{a.identifiedLeakage > 0 ? fmt(a.identifiedLeakage, 0) : 'TBD at briefing'}</span></div>
+                  {a.callNotes && <div className="text-slate-500">{a.callNotes}</div>}
+                </div>
+              ))}
+            </div>
+          </Panel>
+        )}
+
+        {widget === 'traffic' && (
+          <Panel title="Today's funnel · LiveTelemetrySummary" sub={s.traffic?.date} onClose={() => setWidget(null)}>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-xs">
+              {[['Total events', s.traffic?.totalVisitors], ['Unique sessions', s.traffic?.uniqueSessions], ['Audits initiated', s.traffic?.auditsInitiated], ['Portal logins', s.traffic?.portalLogins], ['Quotes ingested', s.traffic?.quotesIngested]].map(([l, v]) => (
+                <div key={String(l)} className="bg-slate-950 border border-slate-800 rounded-xl p-4">
+                  <div className="text-[10px] text-slate-500 uppercase">{l}</div>
+                  <div className="text-2xl font-bold text-slate-100 mt-1 tabular-nums">{String(v ?? 0)}</div>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        )}
+      </div>
+    </main>
+  );
+}
+function W({ label, value, sub, tone, flash, onClick, foot, icon }: { label: string; value: string; sub?: string; tone: 'ink' | 'emerald' | 'sky'; flash?: boolean; onClick: () => void; foot: string; icon: string }) {
+  const color = tone === 'emerald' ? 'text-emerald-400' : tone === 'sky' ? 'text-sky-400' : 'text-slate-100';
+  return (
+    <button onClick={onClick} className={`text-left bg-slate-900 border p-5 rounded-2xl cursor-pointer transition ${flash ? 'border-emerald-400 shadow-lg shadow-emerald-500/10' : 'border-slate-800 hover:border-slate-600'}`}>
+      <div className="flex justify-between items-center mb-1"><span className="text-xs text-slate-400 uppercase">{label}</span><span className="text-emerald-400">{icon}</span></div>
+      <div className={`text-3xl font-bold tracking-wider tabular-nums ${color}`}>{value}<span className="text-xs text-emerald-400 font-normal">{sub}</span></div>
+      <div className="text-[10px] text-emerald-400 mt-2">{foot}</div>
+    </button>
+  );
+}
+function Panel({ title, sub, children, onClose, extra }: { title: string; sub?: string; children: React.ReactNode; onClose: () => void; extra?: React.ReactNode }) {
+  return (
+    <section className="bg-slate-900 border border-emerald-500/40 rounded-3xl p-8 space-y-6">
+      <div className="flex flex-wrap justify-between items-center gap-4 border-b border-slate-800 pb-4">
+        <div><span className="text-xs text-emerald-400 uppercase tracking-widest">{title}</span>{sub && <h3 className="text-2xl font-light text-slate-100 mt-1">{sub}</h3>}</div>
+        <div className="flex items-center gap-3">{extra}<button onClick={onClose} className="text-slate-500 hover:text-white text-xs">[Close Panel]</button></div>
+      </div>
+      {children}
+    </section>
+  );
+}
+function M({ label, v, t }: { label: string; v: string; t?: 'emerald' | 'sky' }) {
+  return <div className="flex justify-between text-xs text-slate-300"><span className="text-slate-500">{label}</span><span className={`font-bold ${t === 'emerald' ? 'text-emerald-400' : t === 'sky' ? 'text-sky-400' : 'text-slate-100'}`}>{v}</span></div>;
+}
+EOF
+
+w 'public/index.html' <<'EOF'
+<!-- Drop the compiled gold-standard landing surface here.
+     The file is too large to inline in this generator; copy your index.html:
+       cp /path/to/your/index.html public/index.html
+     Its /api/v1/* fetches are same-origin and will hit these routes directly. -->
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Syntropic</title></head>
+<body><p style="font-family:monospace">Replace this file with the compiled Syntropic landing surface (public/index.html).</p></body></html>
+EOF
+
+w Dockerfile <<'EOF'
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npx prisma generate && npm run build
+EXPOSE 3000
+CMD ["sh", "-c", "npx prisma db push --skip-generate && npm start"]
+EOF
+
+echo ""
+echo "✅ Assembly complete → ./$ROOT"
+echo "   Next:"
+echo "     cd $ROOT"
+echo "     cp /path/to/your/compiled/index.html public/index.html   # landing surface"
+echo "     cp .env.example .env   # fill AUTH_SECRET, OPERATOR_EMAILS, keys"
+echo "     npm install && npx prisma db push && npx prisma db seed"
+echo "     npm run dev   # Backbone at http://localhost:3000/backbone"

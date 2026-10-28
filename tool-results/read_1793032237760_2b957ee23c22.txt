@@ -1,0 +1,562 @@
+   560→  tokenHash String    @unique
+   561→  kind      String
+   562→  targetId  String
+   563→  expiresAt DateTime
+   564→  usedAt    DateTime?
+   565→  createdAt DateTime  @default(now())
+   566→  @@index([kind, targetId])
+   567→}
+   568→model TrafficEvent {
+   569→  id        String   @id @default(uuid())
+   570→  sessionId String
+   571→  tenantId  String?
+   572→  layer     String
+   573→  eventType String
+   574→  metadata  String?
+   575→  ipHash    String?
+   576→  ipAddress String?
+   577→  city      String?
+   578→  country   String?
+   579→  createdAt DateTime @default(now())
+   580→  @@index([createdAt])
+   581→  @@index([sessionId])
+   582→  @@index([eventType, createdAt])
+   583→  @@index([layer, createdAt])
+   584→  @@index([city, country])
+   585→}
+   586→model LiveTelemetrySummary {
+   587→  id              String   @id @default(uuid())
+   588→  date            String   @unique
+   589→  totalVisitors   Int      @default(0)
+   590→  uniqueSessions  Int      @default(0)
+   591→  auditsInitiated Int      @default(0)
+   592→  portalLogins    Int      @default(0)
+   593→  quotesIngested  Int      @default(0)
+   594→  @@index([date])
+   595→}
+   596→EOF
+   597→
+   598→w prisma/seed.ts <<'EOF'
+   599→import { PrismaClient } from '@prisma/client';
+   600→const prisma = new PrismaClient();
+   601→async function main() {
+   602→  await prisma.$queryRawUnsafe('PRAGMA journal_mode=WAL;');
+   603→  await prisma.teamMember.upsert({
+   604→    where: { name: 'Damon Matara' }, update: {},
+   605→    create: { name: 'Damon Matara', role: 'Lead Architect & Founder', qOutboundTarget: 200,
+   606→              telegramChatId: process.env.TELEGRAM_CHAT_ID_DAMON ?? null, email: process.env.OPERATOR_EMAIL_DAMON ?? null },
+   607→  });
+   608→  await prisma.teamMember.upsert({
+   609→    where: { name: 'Josias' }, update: {},
+   610→    create: { name: 'Josias', role: 'Enterprise Execution Lead', qOutboundTarget: 150,
+   611→              telegramChatId: process.env.TELEGRAM_CHAT_ID_JOSIAS ?? null, email: process.env.OPERATOR_EMAIL_JOSIAS ?? null },
+   612→  });
+   613→  console.log('Seed complete — founders ready, WAL enabled.');
+   614→}
+   615→main().finally(() => prisma.$disconnect());
+   616→EOF
+   617→
+   618→# ---------------------------------------------------------------- api ----
+   619→w 'app/api/v1/intake/route.ts' <<'EOF'
+   620→import { NextResponse } from 'next/server';
+   621→import { prisma } from '@/lib/prisma';
+   622→import { assignFounder } from '@/lib/assign';
+   623→import { emit } from '@/lib/bus';
+   624→import { telegramAlert } from '@/lib/telegram';
+   625→import { EMAIL_RE } from '@/lib/validate';
+   626→import { rateLimit } from '@/lib/ratelimit';
+   627→import { recordTraffic } from '@/lib/traffic';
+   628→import { resolveGeo } from '@/lib/geo';
+   629→
+   630→export const runtime = 'nodejs';
+   631→
+   632→export async function POST(req: Request) {
+   633→  const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || null;
+   634→  if (!rateLimit(`intake:${ip ?? 'local'}`, 10, 10 * 60e3)) {
+   635→    return NextResponse.json({ error: 'rate_limited' }, { status: 429 });
+   636→  }
+   637→  const b = await req.json().catch(() => ({}));
+   638→  const email = String(b.email ?? '').trim().toLowerCase();
+   639→  const companyName = String(b.company ?? '').trim();
+   640→  if (!EMAIL_RE.test(email) || !companyName) return NextResponse.json({ error: 'invalid_input' }, { status: 422 });
+   641→
+   642→  const { geo } = resolveGeo(req.headers, ip);
+   643→  const founder = await assignFounder();
+   644→  const track = b.track === 'STRATEGY_SESSION' ? 'STRATEGY_SESSION' : 'AUDIT_DEPOSIT';
+   645→
+   646→  const tenant = await prisma.tenant.upsert({
+   647→    where: { contactEmail: email },
+   648→    create: { companyName, contactEmail: email, contactName: String(b.contactName ?? '') || null,
+   649→      erpSystem: String(b.erp ?? 'Unknown'), rfqMonthlyVolume: Number(b.rfqVolume ?? 0) || 0,
+   650→      attribution: JSON.stringify(b.attribution ?? {}),
+   651→      status: track === 'STRATEGY_SESSION' ? 'DISCOVERY_SCHEDULED' : 'AUDIT_PENDING', assignedToId: founder.id },
+   652→    update: { companyName, contactName: String(b.contactName ?? '') || null,
+   653→      erpSystem: String(b.erp ?? 'Unknown'), rfqMonthlyVolume: Number(b.rfqVolume ?? 0) || 0, assignedToId: founder.id,
+   654→      ...(track === 'STRATEGY_SESSION' ? { status: 'DISCOVERY_SCHEDULED' } : {}) },
+   655→  });
+   656→
+   657→  if (track === 'STRATEGY_SESSION') {
+   658→    await prisma.teamMember.update({ where: { id: founder.id }, data: { discoveryCallsBooked: { increment: 1 } } });
+   659→  }
+   660→
+   661→  const text = `🔥 NEW INGEST: ${companyName} (${track === 'AUDIT_DEPOSIT' ? 'Audit intake — deposit pending' : '15-Min Strategy Session'}) → Assigned to ${founder.name}`;
+   662→  emit({ type: 'notification', kind: track === 'STRATEGY_SESSION' ? 'discovery' : 'audit_paid', text });
+   663→  void telegramAlert(founder.telegramChatId, `📥 ${text}`);
+   664→  void recordTraffic({ sessionId: String(b.sessionId ?? 'unknown'), layer: 'LANDING', eventType: 'INTAKE_SUBMITTED', ip, tenantId: tenant.id, geo,
+   665→    metadata: { erp: tenant.erpSystem, volume: tenant.rfqMonthlyVolume } });
+   666→
+   667→  return NextResponse.json({ tenantId: tenant.id, assignedTo: founder.name, status: tenant.status });
+   668→}
+   669→EOF
+   670→
+   671→w 'app/api/v1/checkout/route.ts' <<'EOF'
+   672→import { NextResponse } from 'next/server';
+   673→import Stripe from 'stripe';
+   674→import { prisma } from '@/lib/prisma';
+   675→import { assignFounder } from '@/lib/assign';
+   676→import { EMAIL_RE } from '@/lib/validate';
+   677→import { rateLimit } from '@/lib/ratelimit';
+   678→import { randomToken, hashToken, TENANT_LINK_TTL_MS } from '@/lib/auth';
+   679→
+   680→export const runtime = 'nodejs';
+   681→
+   682→export async function POST(req: Request) {
+   683→  const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || null;
+   684→  if (!rateLimit(`checkout:${ip ?? 'local'}`, 6, 10 * 60e3)) return NextResponse.json({ error: 'rate_limited' }, { status: 429 });
+   685→
+   686→  const b = await req.json().catch(() => ({}));
+   687→  const mail = String(b.email ?? '').trim().toLowerCase();
+   688→  if (!EMAIL_RE.test(mail) || !String(b.company ?? '').trim()) return NextResponse.json({ error: 'invalid_input' }, { status: 422 });
+   689→  if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_PRICE_ID) {
+   690→    return NextResponse.json({ error: 'checkout_not_configured' }, { status: 501 });
+   691→  }
+   692→  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+   693→  const founder = await assignFounder();
+   694→  const tenant = await prisma.tenant.upsert({
+   695→    where: { contactEmail: mail },
+   696→    create: { companyName: String(b.company), contactEmail: mail, erpSystem: String(b.erp ?? 'Unknown'),
+   697→      rfqMonthlyVolume: Number(b.rfqVolume ?? 0) || 0, attribution: JSON.stringify(b.attribution ?? {}),
+   698→      status: 'AUDIT_PENDING', assignedToId: founder.id },
+   699→    update: { assignedToId: founder.id },
+   700→  });
+   701→  const raw = randomToken(32);
+   702→  await prisma.magicLinkToken.create({
+   703→    data: { email: mail, tokenHash: await hashToken(raw), scope: 'tenant', tenantId: tenant.id,
+   704→            expiresAt: new Date(Date.now() + TENANT_LINK_TTL_MS) },
+   705→  });
+   706→  const origin = req.headers.get('origin') ?? new URL(req.url).origin;
+   707→  const session = await stripe.checkout.sessions.create({
+   708→    mode: 'payment', line_items: [{ price: process.env.STRIPE_PRICE_ID!, quantity: 1 }],
+   709→    customer_email: mail, client_reference_id: tenant.id,
+   710→    metadata: { tenantId: tenant.id, founderId: founder.id, source: String(b.source ?? 'unknown') },
+   711→    success_url: `${origin}/api/auth/tenant-callback?token=${raw}`,
+   712→    cancel_url: `${origin}/?payment=cancelled`,
+   713→  });
+   714→  return NextResponse.json({ url: session.url, tenantId: tenant.id });
+   715→}
+   716→EOF
+   717→
+   718→w 'app/api/webhooks/stripe/route.ts' <<'EOF'
+   719→import { NextResponse } from 'next/server';
+   720→import Stripe from 'stripe';
+   721→import { prisma } from '@/lib/prisma';
+   722→import { emit } from '@/lib/bus';
+   723→import { telegramAlert } from '@/lib/telegram';
+   724→import { randomToken, hashToken, TENANT_LINK_TTL_MS } from '@/lib/auth';
+   725→import { sendTenantUnlockEmail } from '@/lib/email';
+   726→import { recordTraffic } from '@/lib/traffic';
+   727→
+   728→export const runtime = 'nodejs';
+   729→
+   730→export async function POST(req: Request) {
+   731→  const sig = req.headers.get('stripe-signature');
+   732→  if (!sig || !process.env.STRIPE_WEBHOOK_SECRET) return NextResponse.json({ error: 'webhook_not_configured' }, { status: 501 });
+   733→  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+   734→  let event: Stripe.Event;
+   735→  try { event = stripe.webhooks.constructEvent(await req.text(), sig, process.env.STRIPE_WEBHOOK_SECRET!); }
+   736→  catch { return NextResponse.json({ error: 'bad_signature' }, { status: 400 }); }
+   737→
+   738→  if (event.type === 'checkout.session.completed') {
+   739→    const session = event.data.object as Stripe.Checkout.Session;
+   740→    const tenantId = session.metadata?.tenantId ?? session.client_reference_id;
+   741→    const founderId = session.metadata?.founderId ?? null;
+   742→    if (!tenantId) return NextResponse.json({ received: true, note: 'no tenant ref' });
+   743→
+   744→    const r = await prisma.$transaction(async (tx) => {
+   745→      const t = await tx.tenant.update({ where: { id: tenantId }, data: { paymentStatus: 'PAID', status: 'AUDIT_ACTIVE' }, include: { assignedTo: true } });
+   746→      await tx.auditRecord.upsert({
+   747→        where: { tenantId: t.id }, update: { auditFee: 3500 },
+   748→        create: { tenantId: t.id, auditFee: 3500, callHostId: founderId ?? t.assignedToId,
+   749→                  callNotes: 'Deposit captured via Stripe Checkout. Awaiting 20-file ingest + briefing.' },
+   750→      });
+   751→      const hostId = founderId ?? t.assignedToId;
+   752→      if (hostId) await tx.teamMember.update({ where: { id: hostId }, data: { auditsClosed: { increment: 1 } } });
+   753→      return { t, hostId };
+   754→    });
+   755→
+   756→    const raw = randomToken(32);
+   757→    await prisma.magicLinkToken.create({
+   758→      data: { email: r.t.contactEmail, tokenHash: await hashToken(raw), scope: 'tenant', tenantId: r.t.id,
+   759→              expiresAt: new Date(Date.now() + TENANT_LINK_TTL_MS) },
+   760→    });
+   761→    const base = process.env.PUBLIC_BASE_URL ?? new URL(req.url).origin;
+   762→    void sendTenantUnlockEmail(r.t.contactEmail, `${base}/api/auth/tenant-callback?token=${raw}`, r.t.companyName);
+   763→
+   764→    const text = `🔥 NEW INGEST: ${r.t.companyName} ($3,500 Audit Deposit PAID) → Assigned to ${r.t.assignedTo?.name ?? 'unassigned'}`;
+   765→    emit({ type: 'notification', kind: 'audit_paid', text });
+   766→    const host = r.hostId ? await prisma.teamMember.findUnique({ where: { id: r.hostId } }) : null;
+   767→    void telegramAlert(host?.telegramChatId, `💰 $3,500 deposit received — ${r.t.companyName}. Enclave unlocked, awaiting ingest.`);
+   768→    void recordTraffic({ sessionId: `stripe:${session.id}`, layer: 'ENGINE', eventType: 'PAYMENT_SUCCESS', ip: null, tenantId: r.t.id, metadata: { source: session.metadata?.source } });
+   769→  }
+   770→  return NextResponse.json({ received: true });
+   771→}
+   772→EOF
+   773→
+   774→w 'app/api/v1/ingest/route.ts' <<'EOF'
+   775→import { NextResponse } from 'next/server';
+   776→import { mkdir, writeFile } from 'fs/promises';
+   777→import path from 'path';
+   778→import { cookies } from 'next/headers';
+   779→import { prisma } from '@/lib/prisma';
+   780→import { parseQuoteFile, HITL_CONFIDENCE_FLOOR } from '@/lib/docling';
+   781→import { emit } from '@/lib/bus';
+   782→import { telegramInline } from '@/lib/telegram';
+   783→import { verifyTenantSession, TENANT_COOKIE, randomToken, hashToken } from '@/lib/auth';
+   784→import { rateLimit } from '@/lib/ratelimit';
+   785→import { recordTraffic } from '@/lib/traffic';
+   786→import { resolveGeo } from '@/lib/geo';
+   787→
+   788→export const runtime = 'nodejs';
+   789→
+   790→export async function POST(req: Request) {
+   791→  const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || null;
+   792→  if (!rateLimit(`ingest:${ip ?? 'local'}`, 20, 3600e3)) return NextResponse.json({ error: 'rate_limited' }, { status: 429 });
+   793→
+   794→  const form = await req.formData().catch(() => null);
+   795→  if (!form) return NextResponse.json({ error: 'expected_multipart' }, { status: 400 });
+   796→
+   797→  const session = await verifyTenantSession((await cookies()).get(TENANT_COOKIE)?.value);
+   798→  if (!session) return NextResponse.json({ error: 'tenant_session_required', detail: 'Open the secure link from your audit email to activate this enclave.' }, { status: 401 });
+   799→
+   800→  const tenant = await prisma.tenant.findUnique({ where: { id: session.tenantId } });
+   801→  if (!tenant) return NextResponse.json({ error: 'tenant_not_found' }, { status: 401 });
+   802→  if (tenant.paymentStatus !== 'PAID') {
+   803→    return NextResponse.json({ error: 'ingest_locked', detail: 'File ingest requires an active $3,500 Diagnostic Audit deposit.' }, { status: 402 });
+   804→  }
+   805→
+   806→  const files = form.getAll('files').filter((f): f is File => f instanceof File);
+   807→  const namedOnly = String(form.get('namesOnly') ?? '');
+   808→  if (files.length === 0 && namedOnly) {
+   809→    return NextResponse.json({ error: 'no_files', detail: 'File contents missing — re-add the files in your enclave and re-submit.' }, { status: 422 });
+   810→  }
+   811→
+   812→  const dataDir = process.env.DATA_DIR || './data';
+   813→  const dir = path.join(dataDir, 'tenants', tenant.id);
+   814→  await mkdir(dir, { recursive: true });
+   815→
+   816→  const { geo } = resolveGeo(req.headers, ip);
+   817→  const hitlRows: { fileName: string; lineNumber: number; rawText: string; confidence: number }[] = [];
+   818→  let queued = 0;
+   819→  for (const f of files) {
+   820→    if (!/\.(pdf|xlsx|csv)$/i.test(f.name) || f.size > 50 * 1048576) continue;
+   821→    const safe = path.basename(f.name).replace(/[^a-zA-Z0-9._-]/g, '_');
+   822→    await writeFile(path.join(dir, `${Date.now()}_${safe}`), Buffer.from(await f.arrayBuffer()));
+   823→    queued++;
+   824→    for (const line of (await parseQuoteFile(f.name)).filter((l) => l.confidence < HITL_CONFIDENCE_FLOOR)) {
+   825→      hitlRows.push({ fileName: f.name, lineNumber: line.lineNumber, rawText: line.rawText, confidence: line.confidence });
+   826→    }
+   827→  }
+   828→
+   829→  if (hitlRows.length) {
+   830→    await prisma.hitlQueueItem.createMany({ data: hitlRows.map((r) => ({ ...r, tenantId: tenant.id })) });
+   831→    emit({ type: 'hitl', tenantId: tenant.id, companyName: tenant.companyName, fileName: hitlRows[0].fileName, count: hitlRows.length });
+   832→    const host = tenant.assignedToId ? await prisma.teamMember.findUnique({ where: { id: tenant.assignedToId } }) : null;
+   833→    const persisted = await prisma.hitlQueueItem.findMany({
+   834→      where: { tenantId: tenant.id, status: 'PENDING', fileName: hitlRows[0].fileName },
+   835→      orderBy: { createdAt: 'desc' }, take: 5,
+   836→    });
+   837→    for (const item of persisted) {
+   838→      const raw = randomToken(16);
+   839→      await prisma.pendingAction.create({
+   840→        data: { tokenHash: await hashToken(raw), kind: 'HITL', targetId: item.id, expiresAt: new Date(Date.now() + 15 * 60e3) },
+   841→      });
+   842→      void telegramInline(host?.telegramChatId,
+   843→        `⚠️ HITL REVIEW — ${tenant.companyName}\n${item.fileName} · line ${item.lineNumber} · ${(item.confidence * 100).toFixed(1)}% confidence\n"${item.rawText}"`,
+   844→        [{ text: '✅ Approve', data: `h:A:${raw}` }, { text: '✖ Override', data: `h:O:${raw}` }]);
+   845→    }
+   846→  }
+   847→
+   848→  void recordTraffic({ sessionId: tenant.id, layer: 'PORTAL', eventType: 'FILE_UPLOAD', ip, tenantId: tenant.id, geo,
+   849→    metadata: { queued, hitl: hitlRows.length } });
+   850→  return NextResponse.json({ ok: true, tenantId: tenant.id, filesQueued: queued, hitlCount: hitlRows.length });
+   851→}
+   852→EOF
+   853→
+   854→w 'app/api/v1/hitl/[id]/route.ts' <<'EOF'
+   855→import { NextResponse } from 'next/server';
+   856→import { prisma } from '@/lib/prisma';
+   857→import { emit } from '@/lib/bus';
+   858→
+   859→export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+   860→  const { id } = await params;
+   861→  const { action } = await req.json().catch(() => ({ action: '' }));
+   862→  if (action !== 'APPROVED' && action !== 'OVERRIDDEN') {
+   863→    return NextResponse.json({ error: 'action must be APPROVED | OVERRIDDEN' }, { status: 422 });
+   864→  }
+   865→  const item = await prisma.hitlQueueItem.update({ where: { id }, data: { status: action }, include: { tenant: true } });
+   866→  emit({ type: 'notification', kind: 'hitl', text: `HITL ${action}: ${item.tenant.companyName} · ${item.fileName} L${item.lineNumber} (${(item.confidence * 100).toFixed(1)}%)` });
+   867→  return NextResponse.json({ ok: true, status: item.status });
+   868→}
+   869→EOF
+   870→
+   871→w 'app/api/v1/team/[id]/route.ts' <<'EOF'
+   872→import { NextResponse } from 'next/server';
+   873→import { prisma } from '@/lib/prisma';
+   874→
+   875→export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+   876→  const { id } = await params;
+   877→  const { qOutboundTarget } = await req.json().catch(() => ({ qOutboundTarget: NaN }));
+   878→  const n = Number(qOutboundTarget);
+   879→  if (!Number.isInteger(n) || n < 1 || n > 10000) return NextResponse.json({ error: 'invalid_target' }, { status: 422 });
+   880→  return NextResponse.json(await prisma.teamMember.update({ where: { id }, data: { qOutboundTarget: n } }));
+   881→}
+   882→EOF
+   883→
+   884→w 'app/api/v1/telemetry/defend/route.ts' <<'EOF'
+   885→import { NextResponse } from 'next/server';
+   886→import { appendFile, mkdir } from 'fs/promises';
+   887→import path from 'path';
+   888→import { prisma } from '@/lib/prisma';
+   889→import { requireSecret } from '@/lib/guard';
+   890→import { emit } from '@/lib/bus';
+   891→
+   892→export const runtime = 'nodejs';
+   893→const REV_SHARE = 0.20;
+   894→
+   895→export async function POST(req: Request) {
+   896→  const guard = requireSecret(req, process.env.ENGINE_WEBHOOK_KEY, 'x-engine-key');
+   897→  if (!guard.ok) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+   898→
+   899→  const { tenantId, amount, vector, sourceRef } = await req.json().catch(() => ({} as Record<string, unknown>));
+   900→  const amt = Number(amount);
+   901→  if (!tenantId || !Number.isFinite(amt) || amt <= 0) return NextResponse.json({ error: 'invalid_input' }, { status: 422 });
+   902→
+   903→  const result = await prisma.$transaction(async (tx) => {
+   904→    const tenant = await tx.tenant.update({
+   905→      where: { id: String(tenantId) },
+   906→      data: { totalDefended: { increment: amt }, last24hDelta: { increment: amt },
+   907→              ...(vector ? { primaryLeakageVector: String(vector) } : {}) },
+   908→    });
+   909→    await tx.defenseLog.create({
+   910→      data: { tenantId: tenant.id, amount: amt, vector: vector ? String(vector) : null, sourceRef: sourceRef ? String(sourceRef) : null },
+   911→    });
+   912→    return tenant;
+   913→  });
+   914→
+   915→  const dataDir = process.env.DATA_DIR || './data';
+   916→  const dir = path.join(dataDir, 'tenants', String(tenantId));
+   917→  await mkdir(dir, { recursive: true });
+   918→  await appendFile(path.join(dir, 'stream.log'),
+   919→    JSON.stringify({ ts: new Date().toISOString(), amount: amt, vector: vector ?? null, sourceRef: sourceRef ?? null, totalDefended: result.totalDefended }) + '\n');
+   920→
+   921→  emit({ type: 'defense', tenantId: result.id, companyName: result.companyName, amount: amt, totalDefended: result.totalDefended });
+   922→  return NextResponse.json({ totalDefended: result.totalDefended, syntropicCut: +(amt * REV_SHARE).toFixed(2) });
+   923→}
+   924→EOF
+   925→
+   926→w 'app/api/v1/telemetry/stream/route.ts' <<'EOF'
+   927→import { subscribe, type BusEvent } from '@/lib/bus';
+   928→
+   929→export const runtime = 'nodejs';
+   930→export const dynamic = 'force-dynamic';
+   931→
+   932→export async function GET() {
+   933→  const encoder = new TextEncoder();
+   934→  let unsub: (() => void) | null = null;
+   935→  let heartbeat: ReturnType<typeof setInterval> | null = null;
+   936→  const stream = new ReadableStream({
+   937→    start(controller) {
+   938→      const send = (event: string, data: unknown) => controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+   939→      send('hello', { ok: true, ts: new Date().toISOString() });
+   940→      unsub = subscribe((e: BusEvent) => send(e.type, e));
+   941→      heartbeat = setInterval(() => { try { controller.enqueue(encoder.encode(': ping\n\n')); } catch { /* closed */ } }, 25000);
+   942→    },
+   943→    cancel() { unsub?.(); if (heartbeat) clearInterval(heartbeat); },
+   944→  });
+   945→  return new Response(stream, { headers: { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive' } });
+   946→}
+   947→EOF
+   948→
+   949→w 'app/api/v1/telemetry/collect/route.ts' <<'EOF'
+   950→import { NextResponse } from 'next/server';
+   951→import { rateLimit } from '@/lib/ratelimit';
+   952→import { recordTraffic, TRAFFIC_LAYERS, type TrafficEventType } from '@/lib/traffic';
+   953→import { resolveGeo } from '@/lib/geo';
+   954→
+   955→export const runtime = 'nodejs';
+   956→
+   957→export async function POST(req: Request) {
+   958→  const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || null;
+   959→  if (!rateLimit(`traffic:${ip ?? 'local'}`, 120, 60e3)) return NextResponse.json({ error: 'rate_limited' }, { status: 429 });
+   960→  const b = await req.json().catch(() => null);
+   961→  if (!b?.sessionId || !b?.eventType) return NextResponse.json({ error: 'invalid_input' }, { status: 422 });
+   962→  if (!TRAFFIC_LAYERS.includes(b.layer)) return NextResponse.json({ error: 'invalid_layer' }, { status: 422 });
+   963→  const { geo } = resolveGeo(req.headers, ip);
+   964→  await recordTraffic({
+   965→    sessionId: String(b.sessionId).slice(0, 64), layer: b.layer,
+   966→    eventType: String(b.eventType).toUpperCase() as TrafficEventType, ip, geo,
+   967→    metadata: typeof b.metadata === 'object' && b.metadata !== null ? b.metadata : undefined,
+   968→  });
+   969→  return NextResponse.json({ ok: true });
+   970→}
+   971→EOF
+   972→
+   973→w 'app/api/v1/telemetry/event/route.ts' <<'EOF'
+   974→// app/api/v1/telemetry/event/route.ts — Phase 11.8 final form (edge-first geo).
+   975→import { NextResponse } from 'next/server';
+   976→import { rateLimit } from '@/lib/ratelimit';
+   977→import { recordTraffic, TRAFFIC_LAYERS, type TrafficEventType } from '@/lib/traffic';
+   978→import { prisma } from '@/lib/prisma';
+   979→import { resolveGeo } from '@/lib/geo';
+   980→
+   981→export const runtime = 'nodejs';
+   982→
+   983→export async function POST(req: Request) {
+   984→  const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || null;
+   985→  if (!rateLimit(`traffic:${ip ?? 'local'}`, 120, 60e3)) {
+   986→    return NextResponse.json({ error: 'rate_limited' }, { status: 429 });
+   987→  }
+   988→  const b = await req.json().catch(() => null);
+   989→  if (!b?.sessionId || !b?.eventType || typeof b.sessionId !== 'string') {
+   990→    return NextResponse.json({ error: 'invalid_input' }, { status: 422 });
+   991→  }
+   992→  if (!TRAFFIC_LAYERS.includes(b.layer)) {
+   993→    return NextResponse.json({ error: 'invalid_layer' }, { status: 422 });
+   994→  }
+   995→
+   996→  const { geo } = resolveGeo(req.headers, ip);
+   997→
+   998→  let tenantId: string | null = null;
+   999→  if (b.tenantId) {
+  1000→    tenantId = (await prisma.tenant.findUnique({ where: { id: String(b.tenantId) }, select: { id: true } }))?.id ?? null;
+  1001→  }
+  1002→
+  1003→  await recordTraffic({
+  1004→    sessionId: b.sessionId.slice(0, 64),
+  1005→    layer: b.layer,
+  1006→    eventType: String(b.eventType).toUpperCase() as TrafficEventType,
+  1007→    ip,
+  1008→    tenantId,
+  1009→    geo,
+  1010→    metadata: typeof b.metadata === 'object' && b.metadata !== null ? b.metadata
+  1011→      : (typeof b.metadata === 'string' ? safeParse(b.metadata) : undefined),
+  1012→  });
+  1013→
+  1014→  return NextResponse.json({ ok: true, geo });
+  1015→}
+  1016→
+  1017→function safeParse(s: string): Record<string, unknown> | undefined {
+  1018→  try { const p = JSON.parse(s); return typeof p === 'object' && p !== null ? p : undefined; } catch { return undefined; }
+  1019→}
+  1020→EOF
+  1021→
+  1022→w 'app/api/v1/backbone/state/route.ts' <<'EOF'
+  1023→import { NextResponse } from 'next/server';
+  1024→import { cookies } from 'next/headers';
+  1025→import { prisma } from '@/lib/prisma';
+  1026→import { verifySession, SESSION_COOKIE } from '@/lib/auth';
+  1027→import { utcDay } from '@/lib/traffic';
+  1028→
+  1029→export const runtime = 'nodejs';
+  1030→export const dynamic = 'force-dynamic';
+  1031→const REV_SHARE = 0.20;
+  1032→const ago = (h: number) => new Date(Date.now() - h * 3600e3);
+  1033→
+  1034→export async function GET() {
+  1035→  const session = await verifySession((await cookies()).get(SESSION_COOKIE)?.value);
+  1036→  const me = session?.email ?? null;
+  1037→  const [team, tenants, audits, hitl, traffic] = await Promise.all([
+  1038→    prisma.teamMember.findMany({ orderBy: { name: 'asc' } }),
+  1039→    prisma.tenant.findMany({
+  1040→      include: { assignedTo: true, auditRecord: { include: { callHost: true } },
+  1041→                 defenseLogs: { where: { createdAt: { gte: ago(24 * 365) } }, select: { amount: true, createdAt: true } } },
+  1042→      orderBy: { createdAt: 'desc' },
+  1043→    }),
+  1044→    prisma.auditRecord.findMany({ include: { tenant: true, callHost: true }, orderBy: { dateSold: 'desc' } }),
+  1045→    prisma.hitlQueueItem.findMany({ where: { status: 'PENDING' }, include: { tenant: true }, orderBy: { createdAt: 'desc' } }),
+  1046→    prisma.liveTelemetrySummary.findUnique({ where: { date: utcDay() } }),
+  1047→  ]);
+  1048→
+  1049→  const clients = tenants.map((t) => {
+  1050→    const last24h = t.defenseLogs.filter((l) => l.createdAt >= ago(24)).reduce((s, l) => s + l.amount, 0);
+  1051→    const monthly = t.defenseLogs.filter((l) => l.createdAt >= ago(24 * 30)).reduce((s, l) => s + l.amount, 0) * REV_SHARE;
+  1052→    const annual = t.defenseLogs.reduce((s, l) => s + l.amount, 0) * REV_SHARE;
+  1053→    return {
+  1054→      id: t.id, companyName: t.companyName, contactEmail: t.contactEmail, contactName: t.contactName,
+  1055→      erpSystem: t.erpSystem, totalDefended: t.totalDefended, last24hDelta: +last24h.toFixed(2),
+  1056→      primaryLeakageVector: t.primaryLeakageVector, paymentStatus: t.paymentStatus, status: t.status,
+  1057→      assignedTo: t.assignedTo?.name ?? null, createdAt: t.createdAt,
+  1058→      revShare: { monthly: +monthly.toFixed(2), annual: +annual.toFixed(2), lifetime: +annual.toFixed(2) },
+  1059→    };
+  1060→  });
+  1061→
+  1062→  return NextResponse.json({
+  1063→    team: team.map(({ telegramChatId, email, ...m }) => ({ ...m, isMe: me != null && email === me })),
+  1064→    me, clients, audits, hitlPending: hitl,
+  1065→    traffic: { date: utcDay(), totalVisitors: traffic?.totalVisitors ?? 0, uniqueSessions: traffic?.uniqueSessions ?? 0,
+  1066→               auditsInitiated: traffic?.auditsInitiated ?? 0, portalLogins: traffic?.portalLogins ?? 0, quotesIngested: traffic?.quotesIngested ?? 0 },
+  1067→    totals: {
+  1068→      marginsDefended: +clients.reduce((s, c) => s + c.totalDefended, 0).toFixed(2),
+  1069→      revShareMonthly: +clients.reduce((s, c) => s + c.revShare.monthly, 0).toFixed(2),
+  1070→      activeAccounts: clients.length,
+  1071→      guaranteePassed: audits.every((a) => a.identifiedLeakage >= 10000),
+  1072→    },
+  1073→    serverTime: new Date().toISOString(),
+  1074→  });
+  1075→}
+  1076→EOF
+  1077→
+  1078→w 'app/api/v1/backbone/geo/route.ts' <<'EOF'
+  1079→// app/api/v1/backbone/geo/route.ts — GEO-IP intelligence slice (Phase 11.9, operator-gated by middleware)
+  1080→import { NextResponse } from 'next/server';
+  1081→import { prisma } from '@/lib/prisma';
+  1082→import { utcDay } from '@/lib/traffic';
+  1083→
+  1084→export const runtime = 'nodejs';
+  1085→export const dynamic = 'force-dynamic';
+  1086→const dayStart = () => new Date(`${utcDay()}T00:00:00.000Z`);
+  1087→
+  1088→export async function GET() {
+  1089→  const since = dayStart();
+  1090→
+  1091→  /* 1 · PRIMARY HUB — most LANDING events today */
+  1092→  const landing = await prisma.trafficEvent.groupBy({
+  1093→    by: ['city', 'country'], _count: { _all: true },
+  1094→    where: { layer: 'LANDING', createdAt: { gte: since }, city: { not: null } },
+  1095→    orderBy: { _count: { _all: 'desc' } }, take: 1,
+  1096→  });
+  1097→  const landingTotal = await prisma.trafficEvent.count({
+  1098→    where: { layer: 'LANDING', createdAt: { gte: since }, city: { not: null } },
+  1099→  });
+  1100→  const primary = landing[0]
+  1101→    ? { city: landing[0].city, country: landing[0].country,
+  1102→        share: landingTotal ? Math.round((landing[0]._count._all / landingTotal) * 100) : 0,
+  1103→        events: landing[0]._count._all }
+  1104→    : null;
+  1105→
+  1106→  /* 2 · ACTIVE ENCLAVE HUB — most active tenants per city (client city = latest linked traffic) */
+  1107→  const activeTenants = await prisma.tenant.findMany({
+  1108→    where: { status: { in: ['AUDIT_ACTIVE', 'DISCOVERY_SCHEDULED'] } },
+  1109→    select: { id: true, companyName: true, status: true, hitlItems: { where: { status: 'PENDING' }, select: { id: true } } },
+  1110→  });
+  1111→  const tenantIds = activeTenants.map((t) => t.id);
+  1112→  const latestPerTenant = tenantIds.length
+  1113→    ? await prisma.trafficEvent.findMany({
+  1114→        where: { tenantId: { in: tenantIds }, city: { not: null } },
+  1115→        orderBy: { createdAt: 'desc' },
+  1116→        select: { tenantId: true, city: true, country: true },
+  1117→      })
+  1118→    : [];
+  1119→  const tenantCity = new Map<string, string>();
+
+[showing lines 560-1119 of 1772; use offset=1120 with limit to continue reading]

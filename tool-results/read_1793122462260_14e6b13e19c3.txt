@@ -1,0 +1,582 @@
+   854→   854→              {ledger && activeWidgetModal === 'margin' && <MarginPanel ledger={ledger} onClose={() => setActiveWidgetModal(null)} />}
+   855→   855→              {ledger && activeWidgetModal === 'revshare' && <RevsharePanel ledger={ledger} onClose={() => setActiveWidgetModal(null)} />}
+   856→   856→              {ledger && activeWidgetModal === 'guarantee' && <GuaranteePanel ledger={ledger} onClose={() => setActiveWidgetModal(null)} />}
+   857→   857→              {ledger && activeWidgetModal === 'traffic' && ledger.traffic && (
+   858→   858→                <TrafficPanel traffic={ledger.traffic} onClose={() => setActiveWidgetModal(null)} />
+   859→   859→              )}
+   860→   860→
+   861→   861→              {/* Phase 11.9 — Inbound industrial hubs (live geo stream). */}
+   862→   862→              {/* Time travel leaves today's map behind — the geo slice is a present-tense artifact. */}
+   863→   863→              {geo && !traveling && <GeoHubPanel geo={geo} />}
+   864→   864→
+   865→   865→              {/* Intercept stream — live only. Time travel pauses the wire. */}
+   866→   866→              {traveling ? (
+   867→   867→                <section className={`mt-6 p-6 sm:p-8 ${ARTIFACT}`}>
+   868→   868→                  <div className="flex items-center gap-2 text-[15px] font-medium text-ink">
+   869→   869→                    <Activity className="h-4 w-4 text-smoke" strokeWidth={1.75} />
+   870→   870→                    Live intercept stream
+   871→   871→                  </div>
+   872→   872→                  <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-steel">
+   873→   873→                    The wire only exists in the present — intercepts stream in real time and are not replayed by the ledger.
+   874→   874→                    Return to live to watch the defense engine work; the ship's log below still shows everything as it stood on {timeTravel}.
+   875→   875→                  </p>
+   876→   876→                </section>
+   877→   877→              ) : (
+   878→   878→              <section className={`mt-6 p-2 sm:p-3 ${ARTIFACT}`}>
+   879→   879→                <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-2 pt-2.5 sm:px-4">
+   880→   880→                  <h2 className="flex items-center gap-2 text-[15px] font-medium text-ink">
+   881→   881→                    <Activity className="h-4 w-4 text-sienna" strokeWidth={1.75} />
+   882→   882→                    Live intercept stream
+   883→   883→                    <span className="hidden font-normal text-steel sm:inline">· under 90s response SLA</span>
+   884→   884→                  </h2>
+   885→   885→                  <span className="text-[12px] text-smoke">Auto-refresh · 2s</span>
+   886→   886→                </div>
+   887→   887→                <div className="divide-y divide-hairline">
+   888→   888→                  {events.map((log) => (
+   889→   889→                    <div
+   890→   890→                      key={log.id}
+   891→   891→                      className="flex flex-col justify-between gap-2 rounded-2xl px-3 py-3 transition-colors hover:bg-fog sm:px-4 lg:flex-row lg:items-center"
+   892→   892→                    >
+   893→   893→                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
+   894→   894→                        <span className="tabular-nums text-smoke">{clockTime(log.createdAt)}</span>
+   895→   895→                        <span className="rounded-full bg-mist px-2.5 py-0.5 text-[12px] text-ink">{log.tenantName}</span>
+   896→   896→                        <span className="text-ink">{log.item}</span>
+   897→   897→                      </div>
+   898→   898→                      <div className="flex items-center gap-3 text-[13px]">
+   899→   899→                        {log.origCents > 0 && <span className="tabular-nums text-smoke line-through">{fmtUsd(log.origCents, true)}</span>}
+   900→   900→                        <span className="font-medium tabular-nums text-ink">{fmtUsd(log.defendedCents, true)}</span>
+   901→   901→                        <span className="rounded-full bg-mist px-2.5 py-0.5 text-[12px] tabular-nums text-ink">+{fmtUsd(log.diffCents, true)}</span>
+   902→   902→                        <span className="hidden items-center gap-1 text-[12px] text-steel md:inline-flex">
+   903→   903→                          {log.source === 'HITL_APPROVAL' ? 'Attached via HITL approval' : `Injected into ${log.channel}`}
+   904→   904→                          <ArrowUpRight className="h-3 w-3" strokeWidth={1.75} />
+   905→   905→                        </span>
+   906→   906→                      </div>
+   907→   907→                    </div>
+   908→   908→                  ))}
+   909→   909→                </div>
+   910→   910→              </section>
+   911→   911→              )}
+   912→   912→
+   913→   913→              {/* The Ship's Log — append-only command journal (attribution feature) */}
+   914→   914→              <ShipsLogPanel log={commandLog} />
+   915→   915→
+   916→   916→              {/* Say it plainly — one input, confirmable drafts, no guessing */}
+   917→   917→              <section className={`mt-4 p-6 sm:p-8 ${ARTIFACT}`}>
+   918→   918→                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-hairline pb-5">
+   919→   919→                  <div>
+   920→   920→                    <div className="text-[14px] text-ash">One input · parsed into a draft · confirmed by you</div>
+   921→   921→                    <h3 className="mt-1.5 flex items-center gap-2.5 font-display text-[26px] font-normal leading-[1.18] tracking-[-0.01em] text-ink">
+   922→   922→                      Say it <em className="italic">plainly</em>
+   923→   923→                    </h3>
+   924→   924→                  </div>
+   925→   925→                  <span className="inline-flex items-center gap-2 rounded-full bg-mist px-3 py-1 text-[12px] font-medium text-steel">
+   926→   926→                    Signed as {currentUser}
+   927→   927→                  </span>
+   928→   928→                </div>
+   929→   929→
+   930→   930→                <form onSubmit={submitCommand} className="flex flex-col gap-2 pt-5 sm:flex-row">
+   931→   931→                  <input
+   932→   932→                    type="text"
+   933→   933→                    value={commandInput}
+   934→   934→                    onChange={(e) => setCommandInput(e.target.value)}
+   935→   935→                    placeholder='Say it plainly — "raise my target to 180" · "approve HITL-8092" · "invite gulf to the portal"'
+   936→   936→                    aria-label="Plain-English command line"
+   937→   937→                    className="h-11 flex-1 rounded-2xl border border-hairline bg-fog px-4 text-[14px] text-ink transition-colors placeholder:text-smoke focus:border-ink/30 focus:bg-paper focus:outline-none"
+   938→   938→                  />
+   939→   939→                  <FilledPill type="submit" className="h-11 shrink-0">
+   940→   940→                    Parse draft
+   941→   941→                  </FilledPill>
+   942→   942→                </form>
+   943→   943→
+   944→   944→                {commandDraft && (
+   945→   945→                  <div className="mt-4 animate-in fade-in slide-in-from-bottom-1 duration-200 rounded-2xl bg-fog p-4 sm:p-5">
+   946→   946→                    {commandDraft.kind === 'unknown' ? (
+   947→   947→                      <>
+   948→   948→                        <div className="text-[12px] font-medium uppercase tracking-[0.06em] text-sienna">Couldn't parse that</div>
+   949→   949→                        <p className="mt-1.5 text-[13.5px] leading-relaxed text-steel">{commandDraft.hint}</p>
+   950→   950→                      </>
+   951→   951→                    ) : (
+   952→   952→                      <>
+   953→   953→                        <div className="text-[12px] font-medium uppercase tracking-[0.06em] text-smoke">Draft command · parsed from plain English</div>
+   954→   954→                        <div className="mt-1.5 text-[15px] font-medium text-ink">{commandDraft.summary}</div>
+   955→   955→                        <div className="mt-3 flex flex-wrap gap-2">
+   956→   956→                          <FilledPill onClick={executeCommand} disabled={commandBusy}>
+   957→   957→                            {commandBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} /> : <Check className="h-3.5 w-3.5" strokeWidth={2} />}
+   958→   958→                            Confirm & execute
+   959→   959→                          </FilledPill>
+   960→   960→                          <GhostPill onClick={() => setCommandDraft(null)} disabled={commandBusy}>
+   961→   961→                            Discard
+   962→   962→                          </GhostPill>
+   963→   963→                        </div>
+   964→   964→                        <p className="mt-2.5 text-[12px] text-smoke">
+   965→   965→                          Nothing runs until you confirm — the station listens, but never acts on its own.
+   966→   966→                        </p>
+   967→   967→                      </>
+   968→   968→                    )}
+   969→   969→                  </div>
+   970→   970→                )}
+   971→   971→
+   972→   972→                {!commandDraft && (
+   973→   973→                  <div className="mt-3.5 flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] text-smoke">
+   974→   974→                    <span>Try:</span>
+   975→   975→                    {[
+   976→   976→                      'raise my target to 180',
+   977→   977→                      'approve HITL-8092',
+   978→   978→                      'invite gulf to the portal',
+   979→   979→                      "message apex saying we're on it",
+   980→   980→                    ].map((example) => (
+   981→   981→                      <button
+   982→   982→                        key={example}
+   983→   983→                        type="button"
+   984→   984→                        onClick={() => setCommandInput(example)}
+   985→   985→                        className="rounded-full bg-fog px-2.5 py-1 font-mono text-[11.5px] text-steel transition-colors hover:bg-mist hover:text-ink"
+   986→   986→                      >
+   987→   987→                        {example}
+   988→   988→                      </button>
+   989→   989→                    ))}
+   990→   990→                  </div>
+   991→   991→                )}
+   992→   992→              </section>
+   993→   993→            </div>
+   994→   994→          )}
+   995→   995→
+   996→   996→          {/* ════ 02 · INGESTION & HITL ════ */}
+   997→   997→          {activeTab === 'ingestion_hitl' && (
+   998→   998→            <div className="animate-in fade-in duration-300">
+   999→   999→              <ViewHeader
+  1000→  1000→                tag="Spatial OCR & human-in-the-loop"
+  1001→  1001→                title="Ingestion &"
+  1002→  1002→                accent="quality"
+  1003→  1003→                rest="control"
+  1004→  1004→                sub="Docling spatial parsing flags every line item under 95% confidence. Telegram alerts dispatch the moment an item lands in the queue — and dispatch failures reroute here for manual resolution."
+  1005→  1005→              />
+  1006→  1006→
+  1007→  1007→              <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+  1008→  1008→                <h2 className="text-[15px] font-medium text-ink">Intercept review queue</h2>
+  1009→  1009→                {pendingCount > 0 ? (
+  1010→  1010→                  <BlushChip>
+  1011→  1011→                    <LiveDot />
+  1012→  1012→                    {pendingCount} action required
+  1013→  1013→                  </BlushChip>
+  1014→  1014→                ) : (
+  1015→  1015→                  <span className="text-[13px] text-steel">Queue clear — all items verified</span>
+  1016→  1016→                )}
+  1017→  1017→              </div>
+  1018→  1018→
+  1019→  1019→              <div className="space-y-4">
+  1020→  1020→                {hitlQueue.map((item) => {
+  1021→  1021→                  const isFailure = item.kind === 'DISPATCH_FAILURE';
+  1022→  1022→                  const busy = busyRef === item.ref;
+  1023→  1023→                  return (
+  1024→  1024→                    <article key={item.id} className={`space-y-5 p-5 sm:p-6 ${ARTIFACT}`}>
+  1025→  1025→                      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+  1026→  1026→                        <div className="min-w-0">
+  1027→  1027→                          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px]">
+  1028→  1028→                            <span className="font-medium text-steel">{item.ref}</span>
+  1029→  1029→                            <span className="text-smoke">·</span>
+  1030→  1030→                            <span className="text-steel">{item.tenantName}</span>
+  1031→  1031→                            <span className="text-smoke">({relTime(item.createdAt)})</span>
+  1032→  1032→                            {isFailure && <AlertTriangle className="h-3.5 w-3.5 text-sienna" strokeWidth={1.75} />}
+  1033→  1033→                          </div>
+  1034→  1034→                          <div className="mt-1.5 text-[17px] font-medium tracking-[-0.009em] text-ink">
+  1035→  1035→                            {isFailure ? (item.skuParsed ?? `Draft → ${item.tenantName} mailbox`) : item.skuParsed}
+  1036→  1036→                          </div>
+  1037→  1037→                          <div className="mt-1 text-[13px] text-steel">
+  1038→  1038→                            {isFailure ? 'Automated draft injection' : <>Source file · <span className="text-ink">{item.pdfName}</span></>}
+  1039→  1039→                          </div>
+  1040→  1040→                        </div>
+  1041→  1041→
+  1042→  1042→                        <div className="shrink-0 text-left sm:text-right">
+  1043→  1043→                          {isFailure ? (
+  1044→  1044→                            <>
+  1045→  1045→                              <div className="text-[12px] text-steel">Dispatch failure</div>
+  1046→  1046→                              <BlushChip className="mt-1.5">
+  1047→  1047→                                <AlertTriangle className="h-3 w-3" strokeWidth={1.75} />
+  1048→  1048→                                {item.failureReason === 'MAILBOX_NOT_FOUND' ? 'Mailbox not found' : 'Mailbox locked'}
+  1049→  1049→                              </BlushChip>
+  1050→  1050→                              <div className="mt-1.5 text-[12px] text-steel">Owner · <span className="font-medium text-ink">{item.owner}</span></div>
+  1051→  1051→                            </>
+  1052→  1052→                          ) : (
+  1053→  1053→                            <>
+  1054→  1054→                              <div className="text-[12px] text-steel">Docling confidence</div>
+  1055→  1055→                              <div className="mt-0.5 text-[22px] font-medium tabular-nums text-ink">{item.confidenceScore}%</div>
+  1056→  1056→                              <BlushChip className="mt-1.5">+{fmtUsd(item.extractedMarginLossCents, true)} loss identified</BlushChip>
+  1057→  1057→                            </>
+  1058→  1058→                          )}
+  1059→  1059→                        </div>
+  1060→  1060→                      </div>
+  1061→  1061→
+  1062→  1062→                      <div className="flex flex-col gap-2.5 border-t border-black/5 pt-4 sm:flex-row sm:justify-end">
+  1063→  1063→                        {item.status === 'PENDING' ? (
+  1064→  1064→                          isFailure ? (
+  1065→  1065→                            <>
+  1066→  1066→                              <GhostPill onClick={() => act(item.ref, 'RETRY')} disabled={busy}>
+  1067→  1067→                                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} /> : null}
+  1068→  1068→                                Retry dispatch
+  1069→  1069→                              </GhostPill>
+  1070→  1070→                              <FilledPill onClick={() => act(item.ref, 'RESOLVE')}>
+  1071→  1071→                                <Check className="h-3.5 w-3.5" strokeWidth={2} />
+  1072→  1072→                                Mark resolved
+  1073→  1073→                              </FilledPill>
+  1074→  1074→                            </>
+  1075→  1075→                          ) : (
+  1076→  1076→                            <>
+  1077→  1077→                              <GhostPill onClick={() => act(item.ref, 'OVERRIDE')} disabled={busy}>Manual override SKU</GhostPill>
+  1078→  1078→                              <FilledPill onClick={() => act(item.ref, 'APPROVE')} disabled={busy}>
+  1079→  1079→                                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} /> : <Check className="h-3.5 w-3.5" strokeWidth={2} />}
+  1080→  1080→                                Approve & dispatch to portal
+  1081→  1081→                              </FilledPill>
+  1082→  1082→                            </>
+  1083→  1083→                          )
+  1084→  1084→                        ) : (
+  1085→  1085→                          <span className="inline-flex items-center gap-2 text-[13px] text-steel">
+  1086→  1086→                            <CheckCircle2 className="h-4 w-4 text-sienna" strokeWidth={1.75} />
+  1087→  1087→                            {item.status === 'APPROVED'
+  1088→  1088→                              ? 'Verified & attached to client portal'
+  1089→  1089→                              : item.status === 'OVERRIDDEN'
+  1090→  1090→                                ? 'Manually overridden & attached to client portal'
+  1091→  1091→                                : 'Dispatch restored — failure resolved'}
+  1092→  1092→                          </span>
+  1093→  1093→                        )}
+  1094→  1094→                      </div>
+  1095→  1095→                    </article>
+  1096→  1096→                  );
+  1097→  1097→                })}
+  1098→  1098→              </div>
+  1099→  1099→            </div>
+  1100→  1100→          )}
+  1101→  1101→
+  1102→  1102→          {/* ════ 03 · TENANTS & AUDITS ════ */}
+  1103→  1103→          {activeTab === 'tenants_audits' && (
+  1104→  1104→            <div className="animate-in fade-in duration-300">
+  1105→  1105→              <ViewHeader
+  1106→  1106→                tag="Tenant enclave management"
+  1107→  1107→                title="Enterprise clients &"
+  1108→  1108→                accent="audits"
+  1109→  1109→                rest=""
+  1110→  1110→                sub="Isolated AST boundaries per tenant, with invite-only portal access, 48-hour audit briefings, and rev-share contracts tracked to the ledger."
+  1111→  1111→              />
+  1112→  1112→
+  1113→  1113→              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+  1114→  1114→                {tenants.map((tenant) => {
+  1115→  1115→                  const access = portalAccess.find((a) => a.name === tenant.name);
+  1116→  1116→                  const activeInvite = invites.find((i) => i.tenantName === tenant.name && i.status !== 'REVOKED');
+  1117→  1117→                  const accessLabel = !access?.hasCode
+  1118→  1118→                    ? 'Disabled — no active code'
+  1119→  1119→                    : activeInvite?.status === 'PENDING'
+  1120→  1120→                      ? 'Invite pending — first sign-in'
+  1121→  1121→                      : 'Access active';
+  1122→  1122→                  const revealing = revealedCode?.tenant === tenant.name;
+  1123→  1123→                  return (
+  1124→  1124→                  <article key={tenant.name} className="space-y-4 rounded-[24px] bg-mist p-6">
+  1125→  1125→                    <div className="flex items-start justify-between gap-3">
+  1126→  1126→                      <div>
+  1127→  1127→                        <h3 className="font-display text-[26px] font-normal leading-[1.18] tracking-[-0.01em] text-ink">{tenant.name}</h3>
+  1128→  1128→                        <div className="mt-1 text-[13px] text-steel">{tenant.erp} · AST isolated boundary</div>
+  1129→  1129→                      </div>
+  1130→  1130→                      <BlushChip className="shrink-0">{tenant.status}</BlushChip>
+  1131→  1131→                    </div>
+  1132→  1132→
+  1133→  1133→                    <div className="space-y-2 border-t border-black/5 pt-4 text-[13px]">
+  1134→  1134→                      <div className="flex items-center justify-between gap-3">
+  1135→  1135→                        <span className="text-steel">Deposit / fee</span>
+  1136→  1136→                        <span className="font-medium text-ink">{tenant.depositLabel}</span>
+  1137→  1137→                      </div>
+  1138→  1138→                      <div className="flex items-center justify-between gap-3">
+  1139→  1139→                        <span className="text-steel">Margin recovery baseline</span>
+  1140→  1140→                        <span className="font-medium text-ink">{tenant.guaranteeLabel}</span>
+  1141→  1141→                      </div>
+  1142→  1142→                      <div className="flex items-center justify-between gap-3">
+  1143→  1143→                        <span className="text-steel">Outlook mailbox</span>
+  1144→  1144→                        <span className={`font-medium ${tenant.mailboxStatus === 'ACTIVE' ? 'text-ink' : 'text-sienna'}`}>
+  1145→  1145→                          {mailboxLabel[tenant.mailboxStatus]}
+  1146→  1146→                        </span>
+  1147→  1147→                      </div>
+  1148→  1148→                    </div>
+  1149→  1149→
+  1150→  1150→                    {/* Portal access — invite-only, replaces demo codes */}
+  1151→  1151→                    <div className="space-y-3 border-t border-black/5 pt-4">
+  1152→  1152→                      <div className="flex items-center justify-between gap-3">
+  1153→  1153→                        <div className="flex items-center gap-2 text-[13px] font-medium text-ink">
+  1154→  1154→                          <KeyRound className="h-3.5 w-3.5 text-steel" strokeWidth={1.75} />
+  1155→  1155→                          Portal access
+  1156→  1156→                        </div>
+  1157→  1157→                        <span className={`text-[12px] font-medium ${access?.hasCode ? 'text-ink' : 'text-sienna'}`}>
+  1158→  1158→                          {accessLabel}
+  1159→  1159→                        </span>
+  1160→  1160→                      </div>
+  1161→  1161→                      <div className="text-[12px] leading-relaxed text-steel">
+  1162→  1162→                        {access?.contactEmail || 'No contact email on file'}
+  1163→  1163→                        {activeInvite && <> · invite <span className="font-mono text-[11.5px] text-ink">{activeInvite.codeHint}</span> ({activeInvite.status.toLowerCase()}, issued by {activeInvite.issuedBy})</>}
+  1164→  1164→                      </div>
+  1165→  1165→                      <div className="flex flex-wrap gap-2">
+  1166→  1166→                        <GhostPill onClick={() => issueInvite(tenant.name)} disabled={inviteBusy === tenant.name}>
+  1167→  1167→                          {inviteBusy === tenant.name ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} /> : <MailPlus className="h-3.5 w-3.5" strokeWidth={1.75} />}
+  1168→  1168→                          Email new invite
+  1169→  1169→                        </GhostPill>
+  1170→  1170→                        {access?.hasCode && (
+  1171→  1171→                          <GhostPill onClick={() => revokeAccess(tenant.name)} disabled={inviteBusy === tenant.name}>
+  1172→  1172→                            <Ban className="h-3.5 w-3.5" strokeWidth={1.75} />
+  1173→  1173→                            Disable access
+  1174→  1174→                          </GhostPill>
+  1175→  1175→                        )}
+  1176→  1176→                      </div>
+  1177→  1177→                      {revealing && revealedCode && (
+  1178→  1178→                        <div className="rounded-2xl bg-blush p-4 text-sienna">
+  1179→  1179→                          <div className="flex items-center justify-between gap-3">
+  1180→  1180→                            <div className="text-[12px] font-medium uppercase tracking-[0.06em]">Access code — shown once</div>
+  1181→  1181→                            <button
+  1182→  1182→                              onClick={copyRevealed}
+  1183→  1183→                              className="inline-flex items-center gap-1.5 rounded-full border border-sienna/30 px-2.5 py-1 text-[12px] font-medium transition-colors hover:bg-sienna/10"
+  1184→  1184→                            >
+  1185→  1185→                              {copiedCode ? <Check className="h-3 w-3" strokeWidth={2} /> : <Copy className="h-3 w-3" strokeWidth={1.75} />}
+  1186→  1186→                              {copiedCode ? 'Copied' : 'Copy'}
+  1187→  1187→                            </button>
+  1188→  1188→                          </div>
+  1189→  1189→                          <div className="mt-1.5 font-mono text-[16px] font-medium tracking-wide">{revealedCode.code}</div>
+  1190→  1190→                          <p className="mt-1.5 text-[12px] leading-relaxed text-sienna/80">
+  1191→  1191→                            Delivered to {revealedCode.email} (outbox · simulated SMTP). It replaces any previous code and signs this tenant into exactly one enclave — store it now; it will not be shown again.
+  1192→  1192→                          </p>
+  1193→  1193→                        </div>
+  1194→  1194→                      )}
+  1195→  1195→                    </div>
+  1196→  1196→
+  1197→  1197→                    <a
+  1198→  1198→                      href={`/portal?tenant=${encodeURIComponent(tenant.name)}`}
+  1199→  1199→                      target="_blank"
+  1200→  1200→                      rel="noreferrer"
+  1201→  1201→                      className="inline-flex items-center gap-1.5 pt-1 text-[14px] text-ink underline-offset-4 hover:underline"
+  1202→  1202→                    >
+  1203→  1203→                      Open client enclave view <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.75} />
+  1204→  1204→                    </a>
+  1205→  1205→                  </article>
+  1206→  1206→                  );
+  1207→  1207→                })}
+  1208→  1208→              </div>
+  1209→  1209→            </div>
+  1210→  1210→          )}
+  1211→  1211→
+  1212→  1212→          {/* ════ 04 · UNIFIED INBOX ════ */}
+  1213→  1213→          {activeTab === 'communications' && (
+  1214→  1214→            <div className="animate-in fade-in duration-300">
+  1215→  1215→              <ViewHeader
+  1216→  1216→                tag="Unified communications"
+  1217→  1217→                title="Client executive"
+  1218→  1218→                accent="messages"
+  1219→  1219→                rest=""
+  1220→  1220→                sub="One direct enclave line per tenant — portal messages, parsing updates, and executive replies in a single thread."
+  1221→  1221→              />
+  1222→  1222→
+  1223→  1223→              <section className={`overflow-hidden ${ARTIFACT}`}>
+  1224→  1224→                <div className="grid h-[560px] grid-cols-1 md:h-[600px] md:grid-cols-12">
+  1225→  1225→                  {/* Channel list */}
+  1226→  1226→                  <div className="flex min-h-0 flex-col border-b border-hairline p-4 md:col-span-4 md:border-b-0 md:border-r">
+  1227→  1227→                    <div className="px-2 pb-3 text-[13px] text-ash">Active enclave channels</div>
+  1228→  1228→                    <div className="scroll-slim max-h-32 space-y-1 overflow-y-auto md:max-h-none md:flex-1">
+  1229→  1229→                      {tenants.map((t) => {
+  1230→  1230→                        const active = activeChatTenant === t.name;
+  1231→  1231→                        const hasUnread = messages.some((m) => m.tenantName === t.name && m.unread);
+  1232→  1232→                        return (
+  1233→  1233→                          <button
+  1234→  1234→                            key={t.name}
+  1235→  1235→                            onClick={() => setActiveChatTenant(t.name)}
+  1236→  1236→                            aria-current={active ? 'true' : undefined}
+  1237→  1237→                            className={`w-full rounded-2xl px-3.5 py-3 text-left transition-colors ${active ? 'bg-mist' : 'hover:bg-fog'}`}
+  1238→  1238→                          >
+  1239→  1239→                            <div className="flex items-center justify-between gap-2">
+  1240→  1240→                              <span className="text-[14px] text-ink">{t.name}</span>
+  1241→  1241→                              {hasUnread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sienna" aria-label="Unread" />}
+  1242→  1242→                            </div>
+  1243→  1243→                            <div className="mt-0.5 text-[12px] text-smoke">Direct enclave line</div>
+  1244→  1244→                          </button>
+  1245→  1245→                        );
+  1246→  1246→                      })}
+  1247→  1247→                    </div>
+  1248→  1248→                  </div>
+  1249→  1249→
+  1250→  1250→                  {/* Thread */}
+  1251→  1251→                  <div className="flex min-h-0 flex-col bg-fog md:col-span-8">
+  1252→  1252→                    <div className="flex items-center justify-between border-b border-hairline bg-paper px-5 py-3.5">
+  1253→  1253→                      <div>
+  1254→  1254→                        <div className="text-[15px] font-medium text-ink">{activeChatTenant}</div>
+  1255→  1255→                        <div className="mt-0.5 flex items-center gap-2 text-[12px] text-steel">
+  1256→  1256→                          <LiveDot /> Direct line · Josias active
+  1257→  1257→                        </div>
+  1258→  1258→                      </div>
+  1259→  1259→                      {activeTenant && activeTenant.mailboxStatus !== 'ACTIVE' && (
+  1260→  1260→                        <QuietChip className="shrink-0 text-sienna">
+  1261→  1261→                          <AlertTriangle className="h-3 w-3" strokeWidth={1.75} />
+  1262→  1262→                          Mailbox {activeTenant.mailboxStatus === 'LOCKED' ? 'locked' : 'missing'}
+  1263→  1263→                        </QuietChip>
+  1264→  1264→                      )}
+  1265→  1265→                    </div>
+  1266→  1266→
+  1267→  1267→                    <div className="scroll-slim flex-1 space-y-3 overflow-y-auto p-4 sm:p-5">
+  1268→  1268→                      {visibleMessages.length === 0 ? (
+  1269→  1269→                        <div className="grid h-full place-items-center text-[13px] text-smoke">
+  1270→  1270→                          No messages yet — open the conversation with a hello.
+  1271→  1271→                        </div>
+  1272→  1272→                      ) : (
+  1273→  1273→                        visibleMessages.map((msg) => {
+  1274→  1274→                          const own = msg.sender.includes('Josias');
+  1275→  1275→                          return (
+  1276→  1276→                            <div
+  1277→  1277→                              key={msg.id}
+  1278→  1278→                              className={`max-w-[420px] rounded-[16px] px-4 py-3 ${
+  1279→  1279→                                own ? 'ml-auto bg-ink text-paper' : 'border border-hairline bg-paper text-ink'
+  1280→  1280→                              }`}
+  1281→  1281→                            >
+  1282→  1282→                              <div className={`mb-1 flex items-center justify-between gap-6 text-[11px] ${own ? 'text-paper/60' : 'text-smoke'}`}>
+  1283→  1283→                                <span>{msg.sender}</span>
+  1284→  1284→                                <span className="tabular-nums">{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+  1285→  1285→                              </div>
+  1286→  1286→                              <p className="text-[14px] leading-relaxed">{msg.text}</p>
+  1287→  1287→                            </div>
+  1288→  1288→                          );
+  1289→  1289→                        })
+  1290→  1290→                      )}
+  1291→  1291→                    </div>
+  1292→  1292→
+  1293→  1293→                    <form onSubmit={handleSendMessage} className="flex items-center gap-2 border-t border-hairline bg-paper p-4">
+  1294→  1294→                      <input
+  1295→  1295→                        type="text"
+  1296→  1296→                        value={newMessageText}
+  1297→  1297→                        onChange={(e) => setNewMessageText(e.target.value)}
+  1298→  1298→                        placeholder="Reply on the direct enclave line…"
+  1299→  1299→                        aria-label={`Message ${activeChatTenant}`}
+  1300→  1300→                        className="h-11 flex-1 rounded-2xl border border-hairline bg-paper px-4 text-[14px] text-ink transition-colors placeholder:text-smoke focus:border-ink/30 focus:outline-none"
+  1301→  1301→                      />
+  1302→  1302→                      <button
+  1303→  1303→                        type="submit"
+  1304→  1304→                        aria-label="Send message"
+  1305→  1305→                        className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-ink text-paper transition-colors hover:bg-[#33363b]"
+  1306→  1306→                      >
+  1307→  1307→                        <Send className="h-4 w-4" strokeWidth={1.75} />
+  1308→  1308→                      </button>
+  1309→  1309→                    </form>
+  1310→  1310→                  </div>
+  1311→  1311→                </div>
+  1312→  1312→              </section>
+  1313→  1313→            </div>
+  1314→  1314→          )}
+  1315→  1315→
+  1316→  1316→          {/* ════ 05 · CALENDAR & CALLS ════ */}
+  1317→  1317→          {activeTab === 'calendar_calls' && (
+  1318→  1318→            <div className="animate-in fade-in duration-300">
+  1319→  1319→              <ViewHeader
+  1320→  1320→                tag="Built-in WebRTC video rooms"
+  1321→  1321→                title="Executive call"
+  1322→  1322→                accent="operations"
+  1323→  1323→                rest=""
+  1324→  1324→                sub="Briefings and discovery sessions sync from the client portal — join in one click without leaving the enclave."
+  1325→  1325→              />
+  1326→  1326→
+  1327→  1327→              <div className="grid grid-cols-1 gap-4 md:grid-cols-12 md:gap-6">
+  1328→  1328→                {/* Scheduled sessions */}
+  1329→  1329→                <div className="space-y-3 rounded-[24px] bg-mist p-5 md:col-span-5">
+  1330→  1330→                  <div className="px-1 pb-1 text-[13px] font-medium text-steel">Scheduled calls · synced from portal</div>
+  1331→  1331→                  {calls.map((call) => (
+  1332→  1332→                    <div key={call.id} className="space-y-2 rounded-2xl bg-paper p-4">
+  1333→  1333→                      <div className="flex items-start justify-between gap-3">
+  1334→  1334→                        <div className="text-[14px] font-medium text-ink">{call.clientName}</div>
+  1335→  1335→                        <BlushChip className="shrink-0">{call.status}</BlushChip>
+  1336→  1336→                      </div>
+  1337→  1337→                      <div className="text-[13px] text-steel">{call.type}</div>
+  1338→  1338→                      <div className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
+  1339→  1339→                        <Clock className="h-3.5 w-3.5 text-steel" strokeWidth={1.75} />
+  1340→  1340→                        <span className="tabular-nums">{callWhen(call.scheduledAt)}</span>
+  1341→  1341→                      </div>
+  1342→  1342→                    </div>
+  1343→  1343→                  ))}
+  1344→  1344→                </div>
+  1345→  1345→
+  1346→  1346→                {/* Call room */}
+  1347→  1347→                <div className="flex flex-col rounded-[24px] bg-mist p-5 md:col-span-7">
+  1348→  1348→                  <div className="flex items-center justify-between px-1 pb-4">
+  1349→  1349→                    <div className="flex items-center gap-2 text-[14px] font-medium text-ink">
+  1350→  1350→                      <Video className="h-4 w-4 text-sienna" strokeWidth={1.75} />
+  1351→  1351→                      Syntropic built-in call room
+  1352→  1352→                    </div>
+  1353→  1353→                    <span className="text-[12px] text-steel">
+  1354→  1354→                      {callState === 'live'
+  1355→  1355→                        ? rtcMode === 'turn'
+  1356→  1356→                          ? `Relay room active · ${relayCount} TURN candidate${relayCount === 1 ? '' : 's'}`
+  1357→  1357→                          : 'Local room active'
+  1358→  1358→                        : rtcMode === 'turn'
+  1359→  1359→                          ? 'TURN relay · configured'
+  1360→  1360→                          : 'Encrypted P2P line'}
+  1361→  1361→                    </span>
+  1362→  1362→                  </div>
+  1363→  1363→
+  1364→  1364→                  <div className="grid flex-1 place-items-center rounded-2xl bg-paper p-6">
+  1365→  1365→                    {callState === 'live' ? (
+  1366→  1366→                      <div className="w-full">
+  1367→  1367→                        <video
+  1368→  1368→                          ref={videoRef}
+  1369→  1369→                          autoPlay
+  1370→  1370→                          muted
+  1371→  1371→                          playsInline
+  1372→  1372→                          className="aspect-video w-full rounded-2xl bg-ink object-cover"
+  1373→  1373→                        />
+  1374→  1374→                        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+  1375→  1375→                          <GhostPill onClick={toggleMic}>
+  1376→  1376→                            {micOn ? <Mic className="h-3.5 w-3.5" strokeWidth={1.75} /> : <MicOff className="h-3.5 w-3.5" strokeWidth={1.75} />}
+  1377→  1377→                            {micOn ? 'Mute' : 'Unmute'}
+  1378→  1378→                          </GhostPill>
+  1379→  1379→                          <GhostPill onClick={toggleCam}>
+  1380→  1380→                            {camOn ? <Video className="h-3.5 w-3.5" strokeWidth={1.75} /> : <VideoOff className="h-3.5 w-3.5" strokeWidth={1.75} />}
+  1381→  1381→                            {camOn ? 'Camera off' : 'Camera on'}
+  1382→  1382→                          </GhostPill>
+  1383→  1383→                          <FilledPill onClick={endCall}>
+  1384→  1384→                            <PhoneOff className="h-3.5 w-3.5" strokeWidth={1.75} />
+  1385→  1385→                            End call
+  1386→  1386→                          </FilledPill>
+  1387→  1387→                        </div>
+  1388→  1388→                      </div>
+  1389→  1389→                    ) : callState === 'connecting' ? (
+  1390→  1390→                      <div className="text-center">
+  1391→  1391→                        <Loader2 className="mx-auto h-10 w-10 animate-spin text-smoke" strokeWidth={1.25} />
+  1392→  1392→                        <div className="mt-3 text-[15px] font-medium text-ink">Requesting camera & microphone…</div>
+  1393→  1393→                        <div className="mx-auto mt-1.5 max-w-xs text-[13px] leading-relaxed text-steel">
+  1394→  1394→                          Grant browser permissions to initialize the encrypted room.
+  1395→  1395→                        </div>
+  1396→  1396→                      </div>
+  1397→  1397→                    ) : callState === 'error' ? (
+  1398→  1398→                      <div className="text-center">
+  1399→  1399→                        <VideoOff className="mx-auto h-10 w-10 text-smoke" strokeWidth={1.25} />
+  1400→  1400→                        <div className="mt-3 text-[15px] font-medium text-ink">Camera & microphone unavailable</div>
+  1401→  1401→                        <div className="mx-auto mt-1.5 max-w-xs text-[13px] leading-relaxed text-steel">
+  1402→  1402→                          Connect a device or grant permissions in your browser, then retry the room launch.
+  1403→  1403→                        </div>
+  1404→  1404→                        <FilledPill className="mt-4" onClick={launchRoom}>
+  1405→  1405→                          <Video className="h-4 w-4" strokeWidth={1.75} />
+  1406→  1406→                          Retry room launch
+  1407→  1407→                        </FilledPill>
+  1408→  1408→                      </div>
+  1409→  1409→                    ) : (
+  1410→  1410→                      <div className="text-center">
+  1411→  1411→                        <Video className="mx-auto h-10 w-10 animate-pulse text-smoke" strokeWidth={1.25} />
+  1412→  1412→                        <div className="mt-3 text-[15px] font-medium text-ink">No active call in session</div>
+  1413→  1413→                        <div className="mx-auto mt-1.5 max-w-xs text-[13px] leading-relaxed text-steel">
+  1414→  1414→                          When a client joins from their Executive Portal at the scheduled time, your camera preview initiates here automatically.
+  1415→  1415→                        </div>
+  1416→  1416→                      </div>
+  1417→  1417→                    )}
+  1418→  1418→                  </div>
+  1419→  1419→
+  1420→  1420→                  {callState !== 'live' && callState !== 'connecting' && (
+  1421→  1421→                    <FilledPill className="mt-4 w-full py-3" onClick={launchRoom}>
+  1422→  1422→                      <Video className="h-4 w-4" strokeWidth={1.75} />
+  1423→  1423→                      Launch test video room for Josias
+  1424→  1424→                    </FilledPill>
+  1425→  1425→                  )}
+  1426→  1426→                </div>
+  1427→  1427→              </div>
+  1428→  1428→            </div>
+  1429→  1429→          )}
+  1430→  1430→        </main>
+  1431→  1431→      </div>
+  1432→  1432→    </div>
+  1433→  1433→  );
+  1434→  1434→}
+  1435→  1435→

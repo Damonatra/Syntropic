@@ -1,0 +1,649 @@
+'use client';
+
+import React, { useState } from 'react';
+import Link from 'next/link';
+import { 
+  ShieldCheck, 
+  CheckCircle2, 
+  AlertTriangle, 
+  UploadCloud, 
+  Lock, 
+  ArrowLeft,
+  Calculator,
+  Mail,
+  CreditCard,
+  PhoneCall,
+  FileText,
+  Clock,
+  Zap,
+  Check,
+  X,
+  MessageSquare,
+  Video,
+  Send,
+  Calendar as CalendarIcon,
+  Database,
+  Bell,
+  Sliders,
+  DollarSign,
+  TrendingUp,
+  Activity,
+  UserCheck,
+  Eye,
+  Trophy,
+  Flame,
+  Target,
+  BarChart3,
+  Users,
+  Circle,
+  ExternalLink,
+  ChevronRight,
+  FileSpreadsheet
+} from 'lucide-react';
+
+export type BackboneTab = 'telemetry' | 'tenants_audits' | 'communications' | 'calendar_calls';
+
+export interface TeamMember {
+  id: string;
+  name: string;
+  role: string;
+  isOnline: boolean;
+  qOutboundTarget: number;
+  qOutboundCompleted: number;
+  discoveryCallsBooked: number;
+  auditsClosed: number;
+  contractsConverted: number;
+  avatarLetter: string;
+}
+
+export interface ClientMarginData {
+  id: string;
+  companyName: string;
+  erpSystem: string;
+  totalDefended: number;
+  last24hDelta: number;
+  primaryLeakageVector: string;
+  paymentStatus: 'PAID' | 'PENDING' | 'OVERDUE';
+  monthlyRevShare: number;
+  annualRevShare: number;
+  lifetimeRevShare: number;
+}
+
+export interface AuditRecord {
+  id: string;
+  companyName: string;
+  dateSold: string;
+  auditFee: number;
+  attendedCall: boolean;
+  callHost: string;
+  convertedToClient: boolean;
+  identifiedLeakage: number;
+  callNotes: string;
+}
+
+export default function SyntropicBackboneCommandTower() {
+  const [activeTab, setActiveTab] = useState<BackboneTab>('telemetry');
+  
+  // Currently Logged In Team Member (Damon or Josias)
+  const [currentUser, setCurrentUser] = useState<string>('Damon');
+
+  // Widget Modals State ('arena' | 'margins' | 'revshare' | 'guarantee' | null)
+  const [activeWidgetModal, setActiveWidgetModal] = useState<string | null>(null);
+
+  // Selected Client for Deep Enclave View
+  const [selectedClientForModal, setSelectedClientForModal] = useState<ClientMarginData | null>(null);
+
+  // Time Horizon Filter for Rev Share Modal ('monthly' | 'annual' | 'lifetime')
+  const [revHorizon, setRevHorizon] = useState<'monthly' | 'annual' | 'lifetime'>('monthly');
+
+  // Team Members State (Damon & Josias)
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([
+    {
+      id: 'usr-1',
+      name: 'Damon Matara',
+      role: 'Lead Architect & Founder',
+      isOnline: true,
+      qOutboundTarget: 200,
+      qOutboundCompleted: 142,
+      discoveryCallsBooked: 18,
+      auditsClosed: 3,
+      contractsConverted: 2,
+      avatarLetter: 'D'
+    },
+    {
+      id: 'usr-2',
+      name: 'Josias',
+      role: 'Enterprise Execution Lead',
+      isOnline: true,
+      qOutboundTarget: 150,
+      qOutboundCompleted: 110,
+      discoveryCallsBooked: 14,
+      auditsClosed: 2,
+      contractsConverted: 2,
+      avatarLetter: 'J'
+    }
+  ]);
+
+  // Clients Live Financial Data State
+  const [clientMarginList, setClientMarginList] = useState<ClientMarginData[]>([
+    {
+      id: 'cl-1',
+      companyName: 'Apex Piping & Supply',
+      erpSystem: 'Epicor P21',
+      totalDefended: 42850.00,
+      last24hDelta: 2450.00,
+      primaryLeakageVector: 'Unapplied Copper SPAs',
+      paymentStatus: 'PAID',
+      monthlyRevShare: 8570.00,
+      annualRevShare: 102840.00,
+      lifetimeRevShare: 102840.00
+    },
+    {
+      id: 'cl-2',
+      companyName: 'Midwest Trade Wholesale',
+      erpSystem: 'Infor SX.e',
+      totalDefended: 28550.00,
+      last24hDelta: 1200.00,
+      primaryLeakageVector: 'Outdated Vendor Cost Sheet Lag',
+      paymentStatus: 'PAID',
+      monthlyRevShare: 5710.00,
+      annualRevShare: 68520.00,
+      lifetimeRevShare: 68520.00
+    },
+    {
+      id: 'cl-3',
+      companyName: 'Industrial Fastener Corp',
+      erpSystem: 'Eclipse',
+      totalDefended: 18400.00,
+      last24hDelta: 850.00,
+      primaryLeakageVector: 'Unapplied Volume Tier Discounts',
+      paymentStatus: 'PENDING',
+      monthlyRevShare: 3680.00,
+      annualRevShare: 44160.00,
+      lifetimeRevShare: 44160.00
+    }
+  ]);
+
+  // Audit Records State (Audit Guarantee Vault)
+  const [auditRecords, setAuditRecords] = useState<AuditRecord[]>([
+    {
+      id: 'aud-101',
+      companyName: 'Apex Piping & Supply',
+      dateSold: '2026-10-12',
+      auditFee: 3500,
+      attendedCall: true,
+      callHost: 'Damon & Josias',
+      convertedToClient: true,
+      identifiedLeakage: 18450.00,
+      callNotes: 'VP of Ops presented 20 raw quote PDFs. Docling OCR detected $18.4k leakage. Client executed $50k agreement on call.'
+    },
+    {
+      id: 'aud-102',
+      companyName: 'Midwest Trade Wholesale',
+      dateSold: '2026-10-15',
+      auditFee: 3500,
+      attendedCall: true,
+      callHost: 'Josias',
+      convertedToClient: true,
+      identifiedLeakage: 14200.00,
+      callNotes: 'Walked through Outlook native draft injection demo. Client signed $50k contract after reviewing spatial bounding boxes.'
+    },
+    {
+      id: 'aud-103',
+      companyName: 'Gulf Coast Valve & Supply',
+      dateSold: '2026-10-20',
+      auditFee: 3500,
+      attendedCall: false,
+      callHost: 'Damon',
+      convertedToClient: false,
+      identifiedLeakage: 11800.00,
+      callNotes: 'Prospect missed 10:00 AM briefing call due to warehouse emergency. Follow-up sequence dispatched.'
+    }
+  ]);
+
+  const totalMarginDefended = clientMarginList.reduce((acc, c) => acc + c.totalDefended, 0);
+  const totalMonthlyRevShare = clientMarginList.reduce((acc, c) => acc + c.monthlyRevShare, 0);
+
+  const handleUpdateTarget = (userId: string, newTarget: number) => {
+    setTeamMembers(prev => prev.map(u => u.id === userId ? { ...u, qOutboundTarget: newTarget } : u));
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-mono selection:bg-emerald-500 selection:text-slate-950 flex flex-col">
+      
+      {/* COMMAND TOWER HEADER */}
+      <header className="border-b border-slate-800 bg-slate-950 sticky top-0 z-50 px-8 py-4 flex justify-between items-center text-xs">
+        <div className="flex items-center space-x-4">
+          <Link href="/" className="font-bold tracking-widest text-emerald-400 flex items-center space-x-2 text-sm">
+            <span>backbone</span>
+            <span className="text-[10px] text-slate-500 font-normal">v1.0.4-live</span>
+          </Link>
+          <span className="text-slate-800">|</span>
+          <span className="bg-emerald-950/80 border border-emerald-500/30 text-emerald-400 px-2.5 py-1 rounded-full flex items-center space-x-1.5 text-[10px]">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>SYSTEM OPERATIONAL · TELEMETRY LIVE</span>
+          </span>
+        </div>
+
+        {/* User Switcher */}
+        <div className="flex items-center space-x-4 text-slate-400 text-[11px]">
+          <div className="flex items-center space-x-2 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl">
+            <span className="text-slate-500">Active Profile:</span>
+            <select 
+              value={currentUser} 
+              onChange={(e) => setCurrentUser(e.target.value)}
+              className="bg-transparent text-emerald-400 font-bold focus:outline-none cursor-pointer"
+            >
+              <option value="Damon" className="bg-slate-950 text-white">Damon (Lead Architect)</option>
+              <option value="Josias" className="bg-slate-950 text-white">Josias (Execution Lead)</option>
+            </select>
+          </div>
+          
+          <div className="flex items-center space-x-1.5 text-slate-300 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl">
+            <Database className="w-3.5 h-3.5 text-emerald-400"/>
+            <span>SQLite WAL · Real-time Sync</span>
+          </div>
+        </div>
+      </header>
+
+      {/* MAIN LAYOUT */}
+      <div className="flex-1 flex flex-col md:flex-row">
+        
+        {/* SIDEBAR NAVIGATION */}
+        <aside className="w-full md:w-64 border-r border-slate-800/80 bg-slate-950 p-6 space-y-2 shrink-0">
+          <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-4">Command Modules</div>
+
+          <button 
+            onClick={() => setActiveTab('telemetry')}
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-xs font-bold transition text-left ${activeTab === 'telemetry' ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/10' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
+          >
+            <Activity className="w-4 h-4"/>
+            <span>01. Live Telemetry</span>
+          </button>
+
+          <button 
+            onClick={() => setActiveTab('tenants_audits')}
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-xs font-bold transition text-left ${activeTab === 'tenants_audits' ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/10' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
+          >
+            <UserCheck className="w-4 h-4"/>
+            <span>02. Tenants & Enclaves</span>
+          </button>
+
+          <button 
+            onClick={() => setActiveTab('communications')}
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-xs font-bold transition text-left ${activeTab === 'communications' ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/10' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
+          >
+            <MessageSquare className="w-4 h-4"/>
+            <span>03. Unified Inbox</span>
+          </button>
+
+          <button 
+            onClick={() => setActiveTab('calendar_calls')}
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-xs font-bold transition text-left ${activeTab === 'calendar_calls' ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/10' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
+          >
+            <CalendarIcon className="w-4 h-4"/>
+            <span>04. WebRTC Video Calls</span>
+          </button>
+
+          <div className="pt-8 border-t border-slate-800/80 mt-8 space-y-3 font-sans text-xs text-slate-400">
+            <div className="font-mono text-[10px] text-slate-500 uppercase font-bold">Personal Workspace ({currentUser}):</div>
+            <div className="bg-slate-900 border border-slate-800 p-3.5 rounded-xl font-mono text-[11px] space-y-2">
+              <div className="flex justify-between items-center">
+                <span>My Outbound Goal:</span>
+                <span className="text-emerald-400 font-bold">
+                  {currentUser === 'Damon' ? '142 / 200' : '110 / 150'}
+                </span>
+              </div>
+              <div className="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden">
+                <div className="bg-emerald-500 h-full w-[71%]"></div>
+              </div>
+              <div className="flex justify-between text-[10px] text-slate-500">
+                <span>Q4 Progress</span>
+                <span>71% Completed</span>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        {/* MAIN WORKSPACE VIEW */}
+        <main className="flex-1 p-8 overflow-y-auto space-y-8">
+
+          {/* TAB 01: LIVE TELEMETRY DECK */}
+          {activeTab === 'telemetry' && (
+            <div className="space-y-8">
+              <div>
+                <span className="text-xs text-emerald-400 uppercase tracking-widest">[ REAL-TIME EXECUTIVE TELEMETRY ]</span>
+                <h1 className="text-3xl font-light text-slate-100 mt-1">Agency Command Deck</h1>
+                <p className="text-xs text-slate-400 font-sans mt-1">Click any telemetry widget below to inspect live conversion pipelines, client ledgers, and financial velocity.</p>
+              </div>
+
+              {/* 4 INTERACTIVE WIDGET CARDS */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                
+                {/* WIDGET 1: ARENA LEADERBOARD */}
+                <div 
+                  onClick={() => setActiveWidgetModal('arena')}
+                  className={`bg-slate-900 border p-5 rounded-2xl cursor-pointer transition ${activeWidgetModal === 'arena' ? 'border-emerald-400 shadow-lg shadow-emerald-500/10 bg-slate-900/90' : 'border-slate-800 hover:border-slate-700'}`}
+                >
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs text-slate-400 uppercase">Active Accounts</span>
+                    <Trophy className="w-4 h-4 text-emerald-400"/>
+                  </div>
+                  <div className="text-3xl font-bold text-slate-100">{clientMarginList.length} <span className="text-xs text-emerald-400 font-normal">/ 10 Target</span></div>
+                  <div className="text-[10px] text-emerald-400 mt-2 font-mono flex items-center space-x-1">
+                    <span>Click for 'Arena' Leaderboard ↴</span>
+                  </div>
+                </div>
+
+                {/* WIDGET 2: MARGINS DEFENDED (LIVE TICKER) */}
+                <div 
+                  onClick={() => setActiveWidgetModal('margins')}
+                  className={`bg-slate-900 border p-5 rounded-2xl cursor-pointer transition ${activeWidgetModal === 'margins' ? 'border-emerald-400 shadow-lg shadow-emerald-500/10 bg-slate-900/90' : 'border-slate-800 hover:border-slate-700'}`}
+                >
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs text-slate-400 uppercase">Margins Defended</span>
+                    <TrendingUp className="w-4 h-4 text-emerald-400"/>
+                  </div>
+                  <div className="text-3xl font-bold text-emerald-400 tracking-wider">
+                    ${totalMarginDefended.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </div>
+                  <div className="text-[10px] text-emerald-400 mt-2 font-mono flex items-center space-x-1">
+                    <span>Click for Client Directory ↴</span>
+                  </div>
+                </div>
+
+                {/* WIDGET 3: 20% REV SHARE (LIVE) */}
+                <div 
+                  onClick={() => setActiveWidgetModal('revshare')}
+                  className={`bg-slate-900 border p-5 rounded-2xl cursor-pointer transition ${activeWidgetModal === 'revshare' ? 'border-emerald-400 shadow-lg shadow-emerald-500/10 bg-slate-900/90' : 'border-slate-800 hover:border-slate-700'}`}
+                >
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs text-slate-400 uppercase">Syntropic 20% Rev</span>
+                    <DollarSign className="w-4 h-4 text-sky-400"/>
+                  </div>
+                  <div className="text-3xl font-bold text-sky-400 tracking-wider">
+                    ${totalMonthlyRevShare.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </div>
+                  <div className="text-[10px] text-sky-400 mt-2 font-mono flex items-center space-x-1">
+                    <span>Click for Financial Horizons ↴</span>
+                  </div>
+                </div>
+
+                {/* WIDGET 4: AUDIT GUARANTEE STATUS */}
+                <div 
+                  onClick={() => setActiveWidgetModal('guarantee')}
+                  className={`bg-slate-900 border p-5 rounded-2xl cursor-pointer transition ${activeWidgetModal === 'guarantee' ? 'border-emerald-400 shadow-lg shadow-emerald-500/10 bg-slate-900/90' : 'border-slate-800 hover:border-slate-700'}`}
+                >
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs text-slate-400 uppercase">Audit Guarantee</span>
+                    <ShieldCheck className="w-4 h-4 text-emerald-400"/>
+                  </div>
+                  <div className="text-3xl font-bold text-emerald-400">100% Passed</div>
+                  <div className="text-[10px] text-emerald-400 mt-2 font-mono flex items-center space-x-1">
+                    <span>Click for Audit Sales Log ↴</span>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* MODAL 1: THE ARENA LEADERBOARD (DAMON VS JOSIAS) */}
+              {activeWidgetModal === 'arena' && (
+                <div className="bg-slate-900 border border-emerald-500/40 rounded-3xl p-8 space-y-6 animate-fadeIn">
+                  <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+                    <div>
+                      <span className="text-xs font-mono text-emerald-400 uppercase tracking-widest flex items-center space-x-2">
+                        <Flame className="w-4 h-4 text-amber-400 animate-bounce"/>
+                        <span>THE ARENA · DAMON VS. JOSIAS FOUNDER LEADERBOARD</span>
+                      </span>
+                      <h3 className="text-2xl font-light text-slate-100 mt-1">Outbound & Conversion Targets</h3>
+                    </div>
+                    <button onClick={() => setActiveWidgetModal(null)} className="text-slate-500 hover:text-white font-mono text-xs">[Close Panel]</button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {teamMembers.map((member) => (
+                      <div key={member.id} className="bg-slate-950 border border-slate-800 p-6 rounded-2xl space-y-4 relative overflow-hidden">
+                        <div className="flex justify-between items-start">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 rounded-full bg-emerald-500 text-slate-950 font-bold flex items-center justify-center text-sm">
+                              {member.avatarLetter}
+                            </div>
+                            <div>
+                              <div className="font-bold text-slate-100 flex items-center space-x-2">
+                                <span>{member.name}</span>
+                                {member.isOnline ? (
+                                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Online Now"></span>
+                                ) : (
+                                  <span className="w-2 h-2 rounded-full bg-slate-600" title="Offline"></span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-slate-400">{member.role}</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Quarterly Target Adjustment */}
+                        <div className="bg-slate-900 p-3 rounded-xl space-y-2 text-xs">
+                          <div className="flex justify-between text-slate-400 text-[11px]">
+                            <span>Quarterly Outbound Target:</span>
+                            <span className="text-emerald-400 font-bold">{member.qOutboundCompleted} / {member.qOutboundTarget}</span>
+                          </div>
+                          {member.name.toLowerCase().includes(currentUser.toLowerCase()) && (
+                            <div className="flex items-center space-x-2 pt-1">
+                              <span className="text-[10px] text-slate-500">Adjust Target:</span>
+                              <input 
+                                type="number" 
+                                value={member.qOutboundTarget} 
+                                onChange={(e) => handleUpdateTarget(member.id, Number(e.target.value))}
+                                className="w-20 bg-slate-950 border border-slate-800 px-2 py-1 text-xs text-white rounded font-mono"
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-1.5 text-xs font-mono text-slate-300">
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Discovery Calls:</span>
+                            <span className="font-bold text-slate-100">{member.discoveryCallsBooked}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">$3,500 Audits Sold:</span>
+                            <span className="font-bold text-emerald-400">{member.auditsClosed}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">$50k Contracts Converted:</span>
+                            <span className="font-bold text-sky-400">{member.contractsConverted}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* MODAL 2: MARGINS DEFENDED (LIVE CLIENT LIST) */}
+              {activeWidgetModal === 'margins' && (
+                <div className="bg-slate-900 border border-emerald-500/40 rounded-3xl p-8 space-y-6 animate-fadeIn">
+                  <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+                    <div>
+                      <span className="text-xs font-mono text-emerald-400 uppercase tracking-widest">[ LIVE CLIENT STREAM ]</span>
+                      <h3 className="text-2xl font-light text-slate-100 mt-1">Real-Time Margins Defended Directory</h3>
+                    </div>
+                    <button onClick={() => setActiveWidgetModal(null)} className="text-slate-500 hover:text-white font-mono text-xs">[Close Panel]</button>
+                  </div>
+
+                  <div className="space-y-3">
+                    {clientMarginList.map((client) => (
+                      <div key={client.id} className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-sm font-bold text-slate-100">{client.companyName}</span>
+                            <span className="text-[10px] bg-slate-900 text-sky-400 px-2 py-0.5 rounded border border-slate-800">{client.erpSystem}</span>
+                          </div>
+                          <div className="text-xs text-slate-400 mt-1">Primary Vector: <span className="text-slate-200">{client.primaryLeakageVector}</span></div>
+                        </div>
+
+                        <div className="flex items-center space-x-6 text-xs font-mono">
+                          <div>
+                            <div className="text-[10px] text-slate-500">24-Hour Delta</div>
+                            <div className="text-emerald-400 font-bold">+${client.last24hDelta.toFixed(2)}</div>
+                          </div>
+
+                          <div>
+                            <div className="text-[10px] text-slate-500">Total Defended</div>
+                            <div className="text-lg font-bold text-slate-100">${client.totalDefended.toLocaleString()}</div>
+                          </div>
+
+                          <button 
+                            onClick={() => setSelectedClientForModal(client)}
+                            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 py-2 rounded-lg text-xs flex items-center space-x-1 transition"
+                          >
+                            <span>OPEN ENCLAVE</span>
+                            <ExternalLink className="w-3.5 h-3.5"/>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* MODAL 3: REV-SHARE & FINANCIAL HORIZONS */}
+              {activeWidgetModal === 'revshare' && (
+                <div className="bg-slate-900 border border-emerald-500/40 rounded-3xl p-8 space-y-6 animate-fadeIn">
+                  <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+                    <div>
+                      <span className="text-xs font-mono text-sky-400 uppercase tracking-widest">[ FINANCIAL HORIZONS & 20% REV SHARE ]</span>
+                      <h3 className="text-2xl font-light text-slate-100 mt-1">Syntropic Revenue Velocity</h3>
+                    </div>
+
+                    <div className="flex items-center space-x-2 bg-slate-950 border border-slate-800 p-1 rounded-xl text-xs font-mono">
+                      {(['monthly', 'annual', 'lifetime'] as const).map((horizon) => (
+                        <button 
+                          key={horizon}
+                          onClick={() => setRevHorizon(horizon)}
+                          className={`px-3 py-1.5 rounded-lg capitalize transition ${revHorizon === horizon ? 'bg-sky-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white'}`}
+                        >
+                          {horizon}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {clientMarginList.map((client) => (
+                      <div key={client.id} className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex justify-between items-center">
+                        <div>
+                          <div className="text-sm font-bold text-slate-100">{client.companyName}</div>
+                          <div className="text-xs text-slate-400 mt-0.5">Payment Status: 
+                            <span className={`ml-1 font-bold ${client.paymentStatus === 'PAID' ? 'text-emerald-400' : 'text-amber-400'}`}>{client.paymentStatus}</span>
+                          </div>
+                        </div>
+
+                        <div className="text-right font-mono">
+                          <div className="text-[10px] text-slate-500 uppercase">{revHorizon} 20% Cut</div>
+                          <div className="text-lg font-bold text-sky-400">
+                            ${(revHorizon === 'monthly' ? client.monthlyRevShare : revHorizon === 'annual' ? client.annualRevShare : client.lifetimeRevShare).toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* MODAL 4: AUDIT GUARANTEE STATUS & SALES LOG */}
+              {activeWidgetModal === 'guarantee' && (
+                <div className="bg-slate-900 border border-emerald-500/40 rounded-3xl p-8 space-y-6 animate-fadeIn">
+                  <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+                    <div>
+                      <span className="text-xs font-mono text-emerald-400 uppercase tracking-widest">[ AUDIT GUARANTEE VAULT ]</span>
+                      <h3 className="text-2xl font-light text-slate-100 mt-1">Audit Sales & Conversion History</h3>
+                    </div>
+                    <button onClick={() => setActiveWidgetModal(null)} className="text-slate-500 hover:text-white font-mono text-xs">[Close Panel]</button>
+                  </div>
+
+                  <div className="space-y-3">
+                    {auditRecords.map((audit) => (
+                      <div key={audit.id} className="bg-slate-950 border border-slate-800 p-4 rounded-xl space-y-3">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="text-sm font-bold text-slate-100">{audit.companyName}</div>
+                            <div className="text-xs text-slate-400">Date Sold: {audit.dateSold} · Fee: ${audit.auditFee}</div>
+                          </div>
+                          <span className={`text-[10px] px-2.5 py-1 rounded-full border ${audit.convertedToClient ? 'bg-emerald-950 text-emerald-400 border-emerald-500/30' : 'bg-slate-900 text-slate-400 border-slate-800'}`}>
+                            {audit.convertedToClient ? 'Converted ($50k Executed)' : 'Pending Conversion'}
+                          </span>
+                        </div>
+
+                        <div className="text-xs font-mono bg-slate-900 p-3 rounded-lg text-slate-300 space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Briefing Call Host:</span>
+                            <span className="text-slate-200">{audit.callHost}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Attended Call:</span>
+                            <span className={audit.attendedCall ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                              {audit.attendedCall ? 'Yes (Attended)' : 'No (Missed Session)'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Identified Profit Leakage:</span>
+                            <span className="text-emerald-400 font-bold">${audit.identifiedLeakage.toLocaleString()}</span>
+                          </div>
+                        </div>
+
+                        <div className="text-xs text-slate-400 font-sans italic border-t border-slate-900 pt-2">
+                          "{audit.callNotes}"
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* DEEP CLIENT ENCLAVE MODAL VIEW */}
+              {selectedClientForModal && (
+                <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-6">
+                  <div className="bg-slate-900 border border-emerald-500/40 rounded-3xl p-8 max-w-2xl w-full space-y-6 shadow-2xl font-mono">
+                    <div className="flex justify-between items-start border-b border-slate-800 pb-4">
+                      <div>
+                        <span className="text-xs text-emerald-400 uppercase font-bold">[ CLIENT ENCLAVE VIEW ]</span>
+                        <h3 className="text-2xl font-light text-slate-100 mt-1">{selectedClientForModal.companyName}</h3>
+                        <div className="text-xs text-slate-400 mt-0.5">{selectedClientForModal.erpSystem} · AST Isolation Active</div>
+                      </div>
+                      <button onClick={() => setSelectedClientForModal(null)} className="text-slate-500 hover:text-white text-xs">[Close View]</button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 text-xs">
+                      <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                        <div className="text-slate-500">Total Defended Margin</div>
+                        <div className="text-2xl font-bold text-emerald-400 mt-1">${selectedClientForModal.totalDefended.toLocaleString()}</div>
+                      </div>
+                      <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                        <div className="text-slate-500">Monthly Rev-Share (20%)</div>
+                        <div className="text-2xl font-bold text-sky-400 mt-1">${selectedClientForModal.monthlyRevShare.toLocaleString()}</div>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 text-xs space-y-2">
+                      <div className="text-slate-400 font-bold uppercase">Primary Margin Leakage Vector:</div>
+                      <div className="text-slate-200">{selectedClientForModal.primaryLeakageVector}</div>
+                    </div>
+
+                    <button onClick={() => setSelectedClientForModal(null)} className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3 rounded-xl text-xs transition">
+                      RETURN TO COMMAND TOWER
+                    </button>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          )}
+
+        </main>
+      </div>
+
+    </div>
+  );
+}

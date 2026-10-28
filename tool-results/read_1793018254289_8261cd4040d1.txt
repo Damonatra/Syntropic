@@ -1,0 +1,1136 @@
+     1→     1→'use client';
+     2→     2→
+     3→     3→/**
+     4→     4→ * Syntropic Backbone — Layer 4 Command Tower.
+     5→     5→ * Fully wired to the SQLite/Prisma backbone APIs (R-01…R-07, X-1…X-3):
+     6→     6→ *  - Ledger figures stream from /api/ledger (single source of truth).
+     7→     7→ *  - Intercept stream polls every 2s; >$2,500 defenses fire Telegram alerts.
+     8→     8→ *  - HITL queue handles OCR + dispatch-failure rerouting with owners.
+     9→     9→ *  - Unified inbox persists messages; threads mark read on open.
+    10→    10→ *  - Call room launches a real local WebRTC preview.
+    11→    11→ */
+    12→    12→
+    13→    13→import React, { useCallback, useEffect, useRef, useState } from 'react';
+    14→    14→import Link from 'next/link';
+    15→    15→import {
+    16→    16→  Activity, UploadCloud, UserCheck, MessageSquare, Calendar as CalendarIcon, Bell, Database,
+    17→    17→  Check, CheckCircle2, Send, Video, Clock, ArrowUpRight, AlertTriangle, Mic, MicOff,
+    18→    18→  VideoOff, PhoneOff, Loader2, Trophy, TrendingUp, DollarSign, ShieldCheck, Users,
+    19→    19→  KeyRound, MailPlus, Ban, Copy,
+    20→    20→} from 'lucide-react';
+    21→    21→import {
+    22→    22→  ARTIFACT, LiveDot, ViewHeader, FilledPill, GhostPill, BlushChip, QuietChip, IntelCard,
+    23→    23→  ArenaPanel, MarginPanel, RevsharePanel, GuaranteePanel, fmtUsd,
+    24→    24→} from './primitives';
+    25→    25→import type {
+    26→    26→  CallView, HitlAction, HitlView, InterceptView, InviteView, LedgerView, MessageView,
+    27→    27→  PortalAccessView, TenantView,
+    28→    28→} from '@/lib/types';
+    29→    29→
+    30→    30→export type BackboneTab = 'telemetry' | 'ingestion_hitl' | 'tenants_audits' | 'communications' | 'calendar_calls';
+    31→    31→
+    32→    32→type TelegramToast = { title: string; body: string } | null;
+    33→    33→type CallState = 'idle' | 'connecting' | 'live' | 'error';
+    34→    34→type RevealedCode = { tenant: string; email: string; code: string; hint: string } | null;
+    35→    35→
+    36→    36→const NAV: { id: BackboneTab; num: string; label: string; icon: React.ElementType }[] = [
+    37→    37→  { id: 'telemetry', num: '01', label: 'Live telemetry', icon: Activity },
+    38→    38→  { id: 'ingestion_hitl', num: '02', label: 'Ingestion & HITL', icon: UploadCloud },
+    39→    39→  { id: 'tenants_audits', num: '03', label: 'Tenants & audits', icon: UserCheck },
+    40→    40→  { id: 'communications', num: '04', label: 'Unified inbox', icon: MessageSquare },
+    41→    41→  { id: 'calendar_calls', num: '05', label: 'Built-in calls', icon: CalendarIcon },
+    42→    42→];
+    43→    43→
+    44→    44→const relTime = (iso: string) => {
+    45→    45→  const mins = Math.max(1, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+    46→    46→  if (mins < 60) return `${mins} min${mins === 1 ? '' : 's'} ago`;
+    47→    47→  return `${Math.round(mins / 60)}h ago`;
+    48→    48→};
+    49→    49→
+    50→    50→const clockTime = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour12: false });
+    51→    51→
+    52→    52→const callWhen = (iso: string) => {
+    53→    53→  const d = new Date(iso);
+    54→    54→  return `${d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' })}, ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+    55→    55→};
+    56→    56→
+    57→    57→const mailboxLabel: Record<TenantView['mailboxStatus'], string> = {
+    58→    58→  ACTIVE: 'Active',
+    59→    59→  LOCKED: 'Locked — migration window',
+    60→    60→  MISSING: 'Not provisioned',
+    61→    61→};
+    62→    62→
+    63→    63→export default function SyntropicBackboneCommandTower() {
+    64→    64→  const [activeTab, setActiveTab] = useState<BackboneTab>('telemetry');
+    65→    65→  const [activeWidgetModal, setActiveWidgetModal] = useState<string | null>('accounts');
+    66→    66→  const toggleWidget = (id: string) => setActiveWidgetModal((prev) => (prev === id ? null : id));
+    67→    67→
+    68→    68→  // ── Backbone data ────────────────────────────────────────────
+    69→    69→  const [ledger, setLedger] = useState<LedgerView | null>(null);
+    70→    70→  const [tenants, setTenants] = useState<TenantView[]>([]);
+    71→    71→  const [hitlQueue, setHitlQueue] = useState<HitlView[]>([]);
+    72→    72→  const [events, setEvents] = useState<InterceptView[]>([]);
+    73→    73→  const [messages, setMessages] = useState<MessageView[]>([]);
+    74→    74→  const [calls, setCalls] = useState<CallView[]>([]);
+    75→    75→
+    76→    76→  // ── UI state ─────────────────────────────────────────────────
+    77→    77→  const [activeChatTenant, setActiveChatTenant] = useState('Apex Piping & Supply');
+    78→    78→  const [newMessageText, setNewMessageText] = useState('');
+    79→    79→  // Active operator — drives the personal workspace + arena target editing.
+    80→    80→  const [currentUser, setCurrentUser] = useState<string>('Damon');
+    81→    81→  const [toast, setToast] = useState<TelegramToast>(null);
+    82→    82→  const [simulating, setSimulating] = useState(false);
+    83→    83→  const [busyRef, setBusyRef] = useState<string | null>(null);
+    84→    84→  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    85→    85→  const seenEvents = useRef<Set<string> | null>(null);
+    86→    86→  const seenHitl = useRef<Set<string> | null>(null);
+    87→    87→  const activeTenantRef = useRef(activeChatTenant);
+    88→    88→
+    89→    89→  // Portal invite management (Tenants tab) — issue, reveal-once, revoke.
+    90→    90→  const [invites, setInvites] = useState<InviteView[]>([]);
+    91→    91→  const [portalAccess, setPortalAccess] = useState<PortalAccessView[]>([]);
+    92→    92→  const [revealedCode, setRevealedCode] = useState<RevealedCode>(null);
+    93→    93→  const [inviteBusy, setInviteBusy] = useState<string | null>(null);
+    94→    94→  const [copiedCode, setCopiedCode] = useState(false);
+    95→    95→
+    96→    96→  // ── WebRTC call room (R-07) ──────────────────────────────────
+    97→    97→  const [callState, setCallState] = useState<CallState>('idle');
+    98→    98→  const [micOn, setMicOn] = useState(true);
+    99→    99→  const [camOn, setCamOn] = useState(true);
+   100→   100→  const videoRef = useRef<HTMLVideoElement | null>(null);
+   101→   101→  const localStreamRef = useRef<MediaStream | null>(null);
+   102→   102→  // ICE configuration pulled once from /api/rtc/config — STUN always,
+   103→   103→  // TURN relay when TURN_URL/USERNAME/CREDENTIAL env is set.
+   104→   104→  const rtcConfigRef = useRef<{ iceServers: RTCIceServer[]; turnConfigured: boolean } | null>(null);
+   105→   105→  const [rtcMode, setRtcMode] = useState<'local' | 'turn' | null>(null);
+   106→   106→  const [relayCount, setRelayCount] = useState(0);
+   107→   107→  const pcRef = useRef<RTCPeerConnection | null>(null);
+   108→   108→
+   109→   109→  const showToast = useCallback((title: string, body: string) => {
+   110→   110→    if (toastTimer.current) clearTimeout(toastTimer.current);
+   111→   111→    setToast({ title, body });
+   112→   112→    toastTimer.current = setTimeout(() => setToast(null), 4200);
+   113→   113→  }, []);
+   114→   114→
+   115→   115→  // Active-operator persistence + quarterly target adjustments (PATCH /api/team/[id]).
+   116→   116→  useEffect(() => {
+   117→   117→    const saved = window.localStorage.getItem('backbone.currentUser');
+   118→   118→    if (saved && ['Damon', 'Josias', 'Tyrell'].includes(saved)) setCurrentUser(saved);
+   119→   119→  }, []);
+   120→   120→  const switchUser = (name: string) => {
+   121→   121→    setCurrentUser(name);
+   122→   122→    window.localStorage.setItem('backbone.currentUser', name);
+   123→   123→  };
+   124→   124→
+   125→   125→  const fetchJson = useCallback(async <T,>(url: string, init?: RequestInit): Promise<T> => {
+   126→   126→    const res = await fetch(url, { cache: 'no-store', ...init });
+   127→   127→    if (!res.ok) throw new Error(`${url} → ${res.status}`);
+   128→   128→    return res.json() as Promise<T>;
+   129→   129→  }, []);
+   130→   130→
+   131→   131→  const handleUpdateTarget = useCallback(
+   132→   132→    async (memberId: string, nextTarget: number) => {
+   133→   133→      // Optimistic tick; server reconciliation follows via the 6s slow poll.
+   134→   134→      setLedger((prev) =>
+   135→   135→        prev
+   136→   136→          ? { ...prev, team: prev.team.map((m) => (m.id === memberId ? { ...m, qOutboundTarget: nextTarget } : m)) }
+   137→   137→          : prev,
+   138→   138→      );
+   139→   139→      try {
+   140→   140→        await fetchJson(`/api/team/${memberId}`, {
+   141→   141→          method: 'PATCH',
+   142→   142→          headers: { 'Content-Type': 'application/json' },
+   143→   143→          body: JSON.stringify({ qOutboundTarget: nextTarget }),
+   144→   144→        });
+   145→   145→        showToast('Target updated', `Quarterly outbound target set to ${nextTarget.toLocaleString()} — persisted to the backbone.`);
+   146→   146→      } catch {
+   147→   147→        showToast('Update failed', 'Could not persist the target — the next poll will restore the server value.');
+   148→   148→      }
+   149→   149→    },
+   150→   150→    [fetchJson, showToast],
+   151→   151→  );
+   152→   152→
+   153→   153→  const refreshIntercept = useCallback(
+   154→   154→    async (detect: boolean) => {
+   155→   155→      const rows = await fetchJson<InterceptView[]>('/api/intercept');
+   156→   156→      if (detect && seenEvents.current) {
+   157→   157→        for (const e of rows) {
+   158→   158→          if (!seenEvents.current.has(e.id) && e.diffCents > 250_000) {
+   159→   159→            showToast(
+   160→   160→              'High-value intercept detected',
+   161→   161→              `+${fmtUsd(e.diffCents, true)} defended on ${e.tenantName} — Telegram alert dispatched to the stream.`,
+   162→   162→            );
+   163→   163→          }
+   164→   164→        }
+   165→   165→      }
+   166→   166→      seenEvents.current = new Set(rows.map((r) => r.id));
+   167→   167→      setEvents(rows);
+   168→   168→    },
+   169→   169→    [fetchJson, showToast],
+   170→   170→  );
+   171→   171→
+   172→   172→  const refreshHitl = useCallback(
+   173→   173→    async (detect: boolean) => {
+   174→   174→      const rows = await fetchJson<HitlView[]>('/api/hitl');
+   175→   175→      if (detect && seenHitl.current) {
+   176→   176→        for (const i of rows) {
+   177→   177→          if (seenHitl.current.has(i.id)) continue;
+   178→   178→          if (i.kind === 'DISPATCH_FAILURE') {
+   179→   179→            showToast(
+   180→   180→              'Dispatch failure rerouted to HITL',
+   181→   181→              `${i.ref} · ${i.tenantName} — ${i.failureReason === 'MAILBOX_NOT_FOUND' ? 'mailbox not found' : 'mailbox locked'}. Manual resolution required.`,
+   182→   182→            );
+   183→   183→          } else {
+   184→   184→            showToast(
+   185→   185→              'Low-confidence OCR item queued',
+   186→   186→              `${i.ref} · ${i.tenantName} — confidence ${i.confidenceScore}% <95. Telegram alert dispatched.`,
+   187→   187→            );
+   188→   188→          }
+   189→   189→        }
+   190→   190→      }
+   191→   191→      seenHitl.current = new Set(rows.map((r) => r.id));
+   192→   192→      setHitlQueue(rows);
+   193→   193→    },
+   194→   194→    [fetchJson, showToast],
+   195→   195→  );
+   196→   196→
+   197→   197→  const markRead = useCallback(async (tenant: string) => {
+   198→   198→    await fetch('/api/messages/read', {
+   199→   199→      method: 'POST',
+   200→   200→      headers: { 'Content-Type': 'application/json' },
+   201→   201→      body: JSON.stringify({ tenantName: tenant }),
+   202→   202→    }).catch(() => undefined);
+   203→   203→  }, []);
+   204→   204→
+   205→   205→  // Invite management (issue / reveal-once / revoke) against /api/invites.
+   206→   206→  const refreshInvites = useCallback(async () => {
+   207→   207→    const data = await fetchJson<{ invites: InviteView[]; access: PortalAccessView[] }>('/api/invites');
+   208→   208→    setInvites(data.invites);
+   209→   209→    setPortalAccess(data.access);
+   210→   210→  }, [fetchJson]);
+   211→   211→
+   212→   212→  useEffect(() => {
+   213→   213→    if (activeTab === 'tenants_audits') refreshInvites().catch(() => undefined);
+   214→   214→  }, [activeTab, refreshInvites]);
+   215→   215→
+   216→   216→  const issueInvite = useCallback(
+   217→   217→    async (tenantName: string) => {
+   218→   218→      setInviteBusy(tenantName);
+   219→   219→      setCopiedCode(false);
+   220→   220→      try {
+   221→   221→        const data = await fetchJson<{ invite: InviteView; code: string }>('/api/invites', {
+   222→   222→          method: 'POST',
+   223→   223→          headers: { 'Content-Type': 'application/json' },
+   224→   224→          body: JSON.stringify({ tenantName, issuedBy: currentUser }),
+   225→   225→        });
+   226→   226→        setRevealedCode({ tenant: tenantName, email: data.invite.email, code: data.code, hint: data.invite.codeHint });
+   227→   227→        await refreshInvites();
+   228→   228→        showToast('Invite issued', `Fresh access code for ${tenantName} — outboxed to ${data.invite.email} (simulated SMTP). Shown once below.`);
+   229→   229→      } catch {
+   230→   230→        showToast('Invite failed', 'Could not issue the invite — check the dev log and retry.');
+   231→   231→      } finally {
+   232→   232→        setInviteBusy(null);
+   233→   233→      }
+   234→   234→    },
+   235→   235→    [currentUser, fetchJson, refreshInvites, showToast],
+   236→   236→  );
+   237→   237→
+   238→   238→  const revokeAccess = useCallback(
+   239→   239→    async (tenantName: string) => {
+   240→   240→      setInviteBusy(tenantName);
+   241→   241→      try {
+   242→   242→        await fetchJson('/api/invites', {
+   243→   243→          method: 'POST',
+   244→   244→          headers: { 'Content-Type': 'application/json' },
+   245→   245→          body: JSON.stringify({ tenantName, action: 'revoke', issuedBy: currentUser }),
+   246→   246→        });
+   247→   247→        setRevealedCode((prev) => (prev?.tenant === tenantName ? null : prev));
+   248→   248→        await refreshInvites();
+   249→   249→        showToast('Portal access disabled', `${tenantName} — code revoked, live enclave sessions invalidated. The next sign-in will be refused.`);
+   250→   250→      } catch {
+   251→   251→        showToast('Revoke failed', 'Could not disable portal access — check the dev log and retry.');
+   252→   252→      } finally {
+   253→   253→        setInviteBusy(null);
+   254→   254→      }
+   255→   255→    },
+   256→   256→    [currentUser, fetchJson, refreshInvites, showToast],
+   257→   257→  );
+   258→   258→
+   259→   259→  const copyRevealed = useCallback(() => {
+   260→   260→    if (!revealedCode) return;
+   261→   261→    navigator.clipboard?.writeText(revealedCode.code).catch(() => undefined);
+   262→   262→    setCopiedCode(true);
+   263→   263→    setTimeout(() => setCopiedCode(false), 2000);
+   264→   264→  }, [revealedCode]);
+   265→   265→
+   266→   266→  const refreshSlow = useCallback(async () => {
+   267→   267→    const [l, t, m, c] = await Promise.all([
+   268→   268→      fetchJson<LedgerView>('/api/ledger'),
+   269→   269→      fetchJson<TenantView[]>('/api/tenants'),
+   270→   270→      fetchJson<MessageView[]>('/api/messages'),
+   271→   271→      fetchJson<CallView[]>('/api/calls'),
+   272→   272→    ]);
+   273→   273→    setLedger(l);
+   274→   274→    setTenants(t);
+   275→   275→    setMessages(m);
+   276→   276→    setCalls(c);
+   277→   277→    return m;
+   278→   278→  }, [fetchJson]);
+   279→   279→
+   280→   280→  // Initial load + polling loops (2s intercept SLA · 6s ledger/comms).
+   281→   281→  useEffect(() => {
+   282→   282→    let alive = true;
+   283→   283→    (async () => {
+   284→   284→      try {
+   285→   285→        await refreshIntercept(false);
+   286→   286→        await refreshSlow();
+   287→   287→        await refreshHitl(false);
+   288→   288→      } catch {
+   289→   289→        // Backend warming up — polling loops will recover.
+   290→   290→      }
+   291→   291→    })();
+   292→   292→    const fast = setInterval(() => { refreshIntercept(true).catch(() => undefined); }, 2000);
+   293→   293→    const slow = setInterval(() => {
+   294→   294→      (async () => {
+   295→   295→        try {
+   296→   296→          const m = await refreshSlow();
+   297→   297→          await refreshHitl(true);
+   298→   298→          if (!alive) return;
+   299→   299→          const tenant = activeTenantRef.current;
+   300→   300→          if (m.some((x) => x.tenantName === tenant && x.unread)) {
+   301→   301→            await markRead(tenant);
+   302→   302→            setMessages(await fetchJson<MessageView[]>('/api/messages'));
+   303→   303→          }
+   304→   304→        } catch {
+   305→   305→          // Transient — next tick retries.
+   306→   306→        }
+   307→   307→      })();
+   308→   308→    }, 6000);
+   309→   309→    return () => {
+   310→   310→      alive = false;
+   311→   311→      clearInterval(fast);
+   312→   312→      clearInterval(slow);
+   313→   313→    };
+   314→   314→  }, [refreshIntercept, refreshSlow, refreshHitl, markRead, fetchJson]);
+   315→   315→
+   316→   316→  useEffect(() => {
+   317→   317→    activeTenantRef.current = activeChatTenant;
+   318→   318→    (async () => {
+   319→   319→      await markRead(activeChatTenant);
+   320→   320→      try {
+   321→   321→        setMessages(await fetchJson<MessageView[]>('/api/messages'));
+   322→   322→      } catch {
+   323→   323→        // Polling loop will resync.
+   324→   324→      }
+   325→   325→    })();
+   326→   326→  }, [activeChatTenant, markRead, fetchJson]);
+   327→   327→
+   328→   328→  // ── Actions ──────────────────────────────────────────────────
+   329→   329→  const act = useCallback(
+   330→   330→    async (ref: string, action: HitlAction) => {
+   331→   331→      setBusyRef(ref);
+   332→   332→      try {
+   333→   333→        const data = await fetchJson<{ dispatch?: { status: string; reason?: string; failureRef?: string } }>(
+   334→   334→          `/api/hitl/${encodeURIComponent(ref)}`,
+   335→   335→          { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) },
+   336→   336→        );
+   337→   337→        await Promise.all([refreshHitl(true), refreshIntercept(true), refreshSlow()]);
+   338→   338→        if (action === 'RETRY' && data.dispatch?.status === 'FAILED') {
+   339→   339→          showToast('Retry blocked', `${ref} — mailbox still locked. Item remains in the HITL queue for manual resolution.`);
+   340→   340→        } else if (action === 'APPROVE' && data.dispatch?.status === 'DISPATCHED') {
+   341→   341→          showToast('Verified & dispatched', `${ref} approved — margin defended now attached to the client portal ledger.`);
+   342→   342→        } else if (action === 'RETRY' && data.dispatch?.status === 'DISPATCHED') {
+   343→   343→          showToast('Dispatch restored', `${ref} — mailbox reachable again, draft delivered. Failure resolved.`);
+   344→   344→        }
+   345→   345→      } catch {
+   346→   346→        showToast('Action failed', `${ref} could not be ${action.toLowerCase()}d — check the dev log and retry.`);
+   347→   347→      } finally {
+   348→   348→        setBusyRef(null);
+   349→   349→      }
+   350→   350→    },
+   351→   351→    [fetchJson, refreshHitl, refreshIntercept, refreshSlow, showToast],
+   352→   352→  );
+   353→   353→
+   354→   354→  const handleSimulate = useCallback(async () => {
+   355→   355→    setSimulating(true);
+   356→   356→    try {
+   357→   357→      await fetchJson('/api/intercept/simulate', { method: 'POST' });
+   358→   358→      await Promise.all([refreshIntercept(true), refreshHitl(true), refreshSlow()]);
+   359→   359→    } catch {
+   360→   360→      showToast('Simulation failed', 'Inbound RFQ could not be ingested — check the dev log.');
+   361→   361→    } finally {
+   362→   362→      setSimulating(false);
+   363→   363→    }
+   364→   364→  }, [fetchJson, refreshHitl, refreshIntercept, refreshSlow, showToast]);
+   365→   365→
+   366→   366→  const handleSendMessage = async (e: React.FormEvent) => {
+   367→   367→    e.preventDefault();
+   368→   368→    if (!newMessageText.trim()) return;
+   369→   369→    await fetch('/api/messages', {
+   370→   370→      method: 'POST',
+   371→   371→      headers: { 'Content-Type': 'application/json' },
+   372→   372→      body: JSON.stringify({ tenantName: activeChatTenant, text: newMessageText }),
+   373→   373→    }).catch(() => undefined);
+   374→   374→    setNewMessageText('');
+   375→   375→    try {
+   376→   376→      setMessages(await fetchJson<MessageView[]>('/api/messages'));
+   377→   377→    } catch {
+   378→   378→      // Polling loop will resync.
+   379→   379→    }
+   380→   380→  };
+   381→   381→
+   382→   382→  // ── WebRTC handlers ──────────────────────────────────────────
+   383→   383→  const launchRoom = useCallback(async () => {
+   384→   384→    setCallState('connecting');
+   385→   385→    try {
+   386→   386→      // R-07: resolve ICE servers (STUN + optional TURN relay) before the room opens.
+   387→   387→      let rtc = rtcConfigRef.current;
+   388→   388→      if (!rtc) {
+   389→   389→        const res = await fetch('/api/rtc/config', { cache: 'no-store' }).catch(() => null);
+   390→   390→        const data: unknown = res && res.ok ? await res.json().catch(() => null) : null;
+   391→   391→        const raw = (data as { iceServers?: unknown; turnConfigured?: unknown }) ?? {};
+   392→   392→        rtc = {
+   393→   393→          iceServers: Array.isArray(raw.iceServers) ? (raw.iceServers as RTCIceServer[]) : [],
+   394→   394→          turnConfigured: Boolean(raw.turnConfigured),
+   395→   395→        };
+   396→   396→        rtcConfigRef.current = rtc;
+   397→   397→        setRtcMode(rtc.turnConfigured ? 'turn' : 'local');
+   398→   398→      }
+   399→   399→
+   400→   400→      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+   401→   401→      localStreamRef.current = stream;
+   402→   402→      setMicOn(true);
+   403→   403→      setCamOn(true);
+   404→   404→
+   405→   405→      // With TURN configured, warm a real peer connection and gather relay
+   406→   406→      // candidates so the room can be joined via the relay behind strict NATs.
+   407→   407→      if (rtc.turnConfigured && typeof RTCPeerConnection !== 'undefined') {
+   408→   408→        pcRef.current?.close();
+   409→   409→        const pc = new RTCPeerConnection({ iceServers: rtc.iceServers });
+   410→   410→        pcRef.current = pc;
+   411→   411→        stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+   412→   412→        pc.createOffer().then((offer) => pc.setLocalDescription(offer)).catch(() => undefined);
+   413→   413→        setRelayCount(0);
+   414→   414→        pc.addEventListener('icecandidate', (ev) => {
+   415→   415→          if (ev.candidate?.candidate.includes('typ relay')) setRelayCount((n) => n + 1);
+   416→   416→        });
+   417→   417→      }
+   418→   418→      setCallState('live');
+   419→   419→    } catch {
+   420→   420→      setCallState('error');
+   421→   421→    }
+   422→   422→  }, []);
+   423→   423→
+   424→   424→  useEffect(() => {
+   425→   425→    if (callState === 'live' && videoRef.current && localStreamRef.current) {
+   426→   426→      videoRef.current.srcObject = localStreamRef.current;
+   427→   427→    }
+   428→   428→  }, [callState]);
+   429→   429→
+   430→   430→  const endCall = useCallback(() => {
+   431→   431→    localStreamRef.current?.getTracks().forEach((t) => t.stop());
+   432→   432→    localStreamRef.current = null;
+   433→   433→    pcRef.current?.close();
+   434→   434→    pcRef.current = null;
+   435→   435→    setCallState('idle');
+   436→   436→  }, []);
+   437→   437→
+   438→   438→  const toggleMic = () => {
+   439→   439→    const track = localStreamRef.current?.getAudioTracks()[0];
+   440→   440→    if (track) { track.enabled = !track.enabled; setMicOn(track.enabled); }
+   441→   441→  };
+   442→   442→  const toggleCam = () => {
+   443→   443→    const track = localStreamRef.current?.getVideoTracks()[0];
+   444→   444→    if (track) { track.enabled = !track.enabled; setCamOn(track.enabled); }
+   445→   445→  };
+   446→   446→  useEffect(() => () => { localStreamRef.current?.getTracks().forEach((t) => t.stop()); }, []);
+   447→   447→
+   448→   448→  // ── Derived ──────────────────────────────────────────────────
+   449→   449→  const pendingCount = hitlQueue.filter((i) => i.status === 'PENDING').length;
+   450→   450→  const activeTenant = tenants.find((t) => t.name === activeChatTenant);
+   451→   451→  const visibleMessages = messages.filter((m) => m.tenantName === activeChatTenant);
+   452→   452→
+   453→   453→  return (
+   454→   454→    <div className="flex min-h-screen flex-col bg-paper text-ink selection:bg-blush selection:text-sienna">
+   455→   455→      {/* ── Masthead ─────────────────────────────────────────────── */}
+   456→   456→      <header className="sticky top-0 z-50 border-b border-hairline bg-paper/85 backdrop-blur-md">
+   457→   457→        <div className="mx-auto flex h-16 w-full max-w-[1280px] items-center justify-between px-5 sm:px-8 lg:px-10">
+   458→   458→          <div className="flex min-w-0 items-center gap-4">
+   459→   459→            <Link href="/backbone" className="shrink-0 font-display text-[21px] leading-none tracking-[-0.01em] text-ink">
+   460→   460→              backbone
+   461→   461→            </Link>
+   462→   462→            <span className="hidden text-[13px] text-smoke sm:inline">v1.0.4 · live</span>
+   463→   463→            <span className="hidden items-center gap-2 rounded-full border border-hairline px-3 py-1.5 text-[12px] text-steel md:inline-flex">
+   464→   464→              <LiveDot />
+   465→   465→              Operational · Telemetry live
+   466→   466→            </span>
+   467→   467→          </div>
+   468→   468→
+   469→   469→          <div className="flex shrink-0 items-center gap-3">
+   470→   470→            <button
+   471→   471→              onClick={handleSimulate}
+   472→   472→              disabled={simulating}
+   473→   473→              className="inline-flex items-center gap-2 rounded-full border border-ink px-3.5 py-1.5 text-[13px] font-medium text-ink transition-colors hover:bg-mist disabled:opacity-50"
+   474→   474→            >
+   475→   475→              {simulating ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.75} /> : <Bell className="h-3.5 w-3.5" strokeWidth={1.75} />}
+   476→   476→              <span className="hidden sm:inline">Simulate inbound RFQ</span>
+   477→   477→              <span className="sm:hidden">RFQ</span>
+   478→   478→            </button>
+   479→   479→            <label className="hidden items-center gap-2 rounded-full border border-hairline py-1.5 pl-3 pr-2 text-[12.5px] text-steel md:inline-flex">
+   480→   480→              <Users className="h-3.5 w-3.5" strokeWidth={1.75} />
+   481→   481→              Active user
+   482→   482→              <select
+   483→   483→                value={currentUser}
+   484→   484→                onChange={(e) => switchUser(e.target.value)}
+   485→   485→                aria-label="Active user"
+   486→   486→                className="cursor-pointer appearance-none bg-transparent pr-1 text-[12.5px] font-medium text-ink outline-none"
+   487→   487→              >
+   488→   488→                <option value="Damon">Damon (Architect)</option>
+   489→   489→                <option value="Josias">Josias (Execution)</option>
+   490→   490→                <option value="Tyrell">Tyrell (Security)</option>
+   491→   491→              </select>
+   492→   492→            </label>
+   493→   493→            <div className="hidden items-center gap-2 text-[13px] text-steel xl:flex">
+   494→   494→              <Database className="h-3.5 w-3.5" strokeWidth={1.75} />
+   495→   495→              SQLite · WAL · Prisma
+   496→   496→            </div>
+   497→   497→          </div>
+   498→   498→        </div>
+   499→   499→      </header>
+   500→   500→
+   501→   501→      {/* ── Telegram toast ───────────────────────────────────────── */}
+   502→   502→      {toast && (
+   503→   503→        <div
+   504→   504→          role="status"
+   505→   505→          className="fixed right-4 top-20 z-[60] flex max-w-sm items-start gap-3 rounded-[20px] bg-blush p-4 text-sienna shadow-[0_0_0_1px_rgba(93,42,26,0.06),0_12px_40px_rgba(0,0,0,0.14)] animate-in fade-in slide-in-from-top-2 duration-300 sm:right-8"
+   506→   506→        >
+   507→   507→          <Bell className="mt-0.5 h-5 w-5 shrink-0" strokeWidth={1.75} />
+   508→   508→          <div>
+   509→   509→            <div className="text-[13px] font-medium">{toast.title}</div>
+   510→   510→            <div className="mt-0.5 text-[12px] leading-relaxed text-sienna/80">{toast.body}</div>
+   511→   511→          </div>
+   512→   512→        </div>
+   513→   513→      )}
+   514→   514→
+   515→   515→      {/* ── Body ─────────────────────────────────────────────────── */}
+   516→   516→      <div className="mx-auto flex w-full max-w-[1280px] flex-1 flex-col gap-8 px-5 py-8 sm:px-8 md:flex-row md:gap-10 md:py-12 lg:px-10">
+   517→   517→        {/* Quiet rail */}
+   518→   518→        <aside className="shrink-0 md:w-60">
+   519→   519→          <div className="md:sticky md:top-24">
+   520→   520→            <div className="mb-3 text-[13px] text-ash">Command modules</div>
+   521→   521→            <nav aria-label="Command modules" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 md:mx-0 md:flex-col md:overflow-visible md:px-0 md:pb-0">
+   522→   522→              {NAV.map(({ id, num, label, icon: Icon }) => {
+   523→   523→                const active = activeTab === id;
+   524→   524→                return (
+   525→   525→                  <button
+   526→   526→                    key={id}
+   527→   527→                    onClick={() => setActiveTab(id)}
+   528→   528→                    aria-current={active ? 'page' : undefined}
+   529→   529→                    className={`inline-flex shrink-0 items-center gap-2.5 rounded-full px-4 py-2.5 text-[14px] transition-colors md:w-full ${
+   530→   530→                      active ? 'bg-ink text-paper' : 'text-steel hover:bg-mist hover:text-ink'
+   531→   531→                    }`}
+   532→   532→                  >
+   533→   533→                    <Icon className="h-4 w-4" strokeWidth={1.75} />
+   534→   534→                    <span className="tabular-nums opacity-55">{num}</span>
+   535→   535→                    <span className="whitespace-nowrap font-medium">{label}</span>
+   536→   536→                    {id === 'ingestion_hitl' && pendingCount > 0 && (
+   537→   537→                      <span className="ml-auto hidden h-5 min-w-5 items-center justify-center rounded-full bg-blush px-1.5 text-[11px] font-medium text-sienna md:inline-flex">
+   538→   538→                        {pendingCount}
+   539→   539→                      </span>
+   540→   540→                    )}
+   541→   541→                  </button>
+   542→   542→                );
+   543→   543→              })}
+   544→   544→            </nav>
+   545→   545→
+   546→   546→            {/* Personal workspace (active operator) */}
+   547→   547→            <div className="mt-10 hidden rounded-2xl bg-mist p-4 md:block">
+   548→   548→              <div className="mb-2.5 flex items-center justify-between">
+   549→   549→                <span className="text-[13px] font-medium text-steel">Personal workspace</span>
+   550→   550→                <span className="text-[11px] uppercase tracking-wide text-smoke">{currentUser}</span>
+   551→   551→              </div>
+   552→   552→              {(() => {
+   553→   553→                const me = ledger?.team.find((m) => m.name === currentUser);
+   554→   554→                const pct = me && me.qOutboundTarget > 0 ? Math.min(100, Math.round((me.qOutboundCompleted / me.qOutboundTarget) * 100)) : 0;
+   555→   555→                return me ? (
+   556→   556→                  <div className="space-y-2 text-[12px]">
+   557→   557→                    <div className="flex items-center justify-between">
+   558→   558→                      <span className="text-smoke">My outbound goal</span>
+   559→   559→                      <span className="font-medium tabular-nums text-ink">
+   560→   560→                        {me.qOutboundCompleted} / {me.qOutboundTarget}
+   561→   561→                      </span>
+   562→   562→                    </div>
+   563→   563→                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-paper">
+   564→   564→                      <div className="h-full rounded-full bg-sienna transition-all duration-500" style={{ width: `${pct}%` }} />
+   565→   565→                    </div>
+   566→   566→                    <div className="flex items-center justify-between text-[11px]">
+   567→   567→                      <span className="text-smoke">Q4 progress</span>
+   568→   568→                      <span className="tabular-nums text-steel">{pct}% completed</span>
+   569→   569→                    </div>
+   570→   570→                  </div>
+   571→   571→                ) : (
+   572→   572→                  <div className="text-[12px] text-smoke">Syncing operator…</div>
+   573→   573→                );
+   574→   574→              })()}
+   575→   575→            </div>
+   576→   576→
+   577→   577→            {/* Local storage status */}
+   578→   578→            <div className="mt-3 hidden rounded-2xl bg-mist p-4 md:block">
+   579→   579→              <div className="mb-2.5 text-[13px] font-medium text-steel">Local storage</div>
+   580→   580→              <div className="space-y-2 text-[12px]">
+   581→   581→                {[
+   582→   582→                  ['Database', 'SQLite active'],
+   583→   583→                  ['WAL mode', 'Enabled'],
+   584→   584→                  ['Rev-share ledger', ledger ? `${fmtUsd(ledger.revShareCents)} defended` : 'Syncing…'],
+   585→   585→                ].map(([k, v]) => (
+   586→   586→                  <div key={k} className="flex items-center justify-between gap-3">
+   587→   587→                    <span className="text-smoke">{k}</span>
+   588→   588→                    <span className="text-right font-medium text-ink">{v}</span>
+   589→   589→                  </div>
+   590→   590→                ))}
+   591→   591→              </div>
+   592→   592→            </div>
+   593→   593→          </div>
+   594→   594→        </aside>
+   595→   595→
+   596→   596→        {/* Workspace */}
+   597→   597→        <main className="min-w-0 flex-1">
+   598→   598→          {/* ════ 01 · TELEMETRY ════ */}
+   599→   599→          {activeTab === 'telemetry' && (
+   600→   600→            <div className="animate-in fade-in duration-300">
+   601→   601→              <ViewHeader
+   602→   602→                tag="System telemetry & founder intel"
+   603→   603→                title="Agency"
+   604→   604→                accent="command"
+   605→   605→                rest="deck"
+   606→   606→                sub="Live figures stream from the SQLite financial ledger. Click any widget card to inspect conversion pipelines, founder performance, and financial velocity."
+   607→   607→              />
+   608→   608→
+   609→   609→              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+   610→   610→                <IntelCard
+   611→   611→                  id="accounts"
+   612→   612→                  active={activeWidgetModal === 'accounts'}
+   613→   613→                  onToggle={toggleWidget}
+   614→   614→                  icon={Trophy}
+   615→   615→                  label="Active accounts"
+   616→   616→                  value={<>{ledger ? ledger.activeAccounts : '—'} <span className="text-[13px] font-normal text-smoke">/ sprint target {ledger ? ledger.sprintTarget : 10}</span></>}
+   617→   617→                  hint="Team arena — targets & conversion"
+   618→   618→                  spark={{ id: 'spark-accounts', path: 'M2 24 C 14 22, 20 15, 30 16 S 50 22, 60 13 S 84 4, 98 7' }}
+   619→   619→                />
+   620→   620→                <IntelCard
+   621→   621→                  id="margin"
+   622→   622→                  active={activeWidgetModal === 'margin'}
+   623→   623→                  onToggle={toggleWidget}
+   624→   624→                  icon={TrendingUp}
+   625→   625→                  label="Margin defended"
+   626→   626→                  value={ledger ? fmtUsd(ledger.marginDefendedCents) : '—'}
+   627→   627→                  hint="Client directory"
+   628→   628→                  spark={{ id: 'spark-margin', path: 'M2 20 C 16 24, 26 12, 40 14 S 66 20, 78 10 S 92 6, 98 8' }}
+   629→   629→                />
+   630→   630→                <IntelCard
+   631→   631→                  id="revshare"
+   632→   632→                  active={activeWidgetModal === 'revshare'}
+   633→   633→                  onToggle={toggleWidget}
+   634→   634→                  icon={DollarSign}
+   635→   635→                  label="Syntropic 20% rev-share"
+   636→   636→                  value={ledger ? fmtUsd(ledger.revShareCents) : '—'}
+   637→   637→                  hint="Financial horizons"
+   638→   638→                  peach
+   639→   639→                  spark={{ id: 'spark-revshare', path: 'M2 26 C 18 26, 26 18, 40 19 S 62 10, 76 12 S 92 4, 98 5' }}
+   640→   640→                />
+   641→   641→                <IntelCard
+   642→   642→                  id="guarantee"
+   643→   643→                  active={activeWidgetModal === 'guarantee'}
+   644→   644→                  onToggle={toggleWidget}
+   645→   645→                  icon={ShieldCheck}
+   646→   646→                  label="Audit guarantee status"
+   647→   647→                  value={ledger ? `${Math.round(ledger.guaranteePassRate * 100)}% passed` : '—'}
+   648→   648→                  hint="Audit sales log"
+   649→   649→                />
+   650→   650→              </div>
+   651→   651→
+   652→   652→              {ledger && activeWidgetModal === 'accounts' && (
+   653→   653→                <ArenaPanel ledger={ledger} currentUser={currentUser} onUpdateTarget={handleUpdateTarget} onClose={() => setActiveWidgetModal(null)} />
+   654→   654→              )}
+   655→   655→              {ledger && activeWidgetModal === 'margin' && <MarginPanel ledger={ledger} onClose={() => setActiveWidgetModal(null)} />}
+   656→   656→              {ledger && activeWidgetModal === 'revshare' && <RevsharePanel ledger={ledger} onClose={() => setActiveWidgetModal(null)} />}
+   657→   657→              {ledger && activeWidgetModal === 'guarantee' && <GuaranteePanel ledger={ledger} onClose={() => setActiveWidgetModal(null)} />}
+   658→   658→
+   659→   659→              {/* Intercept stream */}
+   660→   660→              <section className={`mt-6 p-2 sm:p-3 ${ARTIFACT}`}>
+   661→   661→                <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-2 pt-2.5 sm:px-4">
+   662→   662→                  <h2 className="flex items-center gap-2 text-[15px] font-medium text-ink">
+   663→   663→                    <Activity className="h-4 w-4 text-sienna" strokeWidth={1.75} />
+   664→   664→                    Live intercept stream
+   665→   665→                    <span className="hidden font-normal text-steel sm:inline">· under 90s response SLA</span>
+   666→   666→                  </h2>
+   667→   667→                  <span className="text-[12px] text-smoke">Auto-refresh · 2s</span>
+   668→   668→                </div>
+   669→   669→
+   670→   670→                <div className="divide-y divide-hairline">
+   671→   671→                  {events.map((log) => (
+   672→   672→                    <div
+   673→   673→                      key={log.id}
+   674→   674→                      className="flex flex-col justify-between gap-2 rounded-2xl px-3 py-3 transition-colors hover:bg-fog sm:px-4 lg:flex-row lg:items-center"
+   675→   675→                    >
+   676→   676→                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
+   677→   677→                        <span className="tabular-nums text-smoke">{clockTime(log.createdAt)}</span>
+   678→   678→                        <span className="rounded-full bg-mist px-2.5 py-0.5 text-[12px] text-ink">{log.tenantName}</span>
+   679→   679→                        <span className="text-ink">{log.item}</span>
+   680→   680→                      </div>
+   681→   681→                      <div className="flex items-center gap-3 text-[13px]">
+   682→   682→                        {log.origCents > 0 && <span className="tabular-nums text-smoke line-through">{fmtUsd(log.origCents, true)}</span>}
+   683→   683→                        <span className="font-medium tabular-nums text-ink">{fmtUsd(log.defendedCents, true)}</span>
+   684→   684→                        <span className="rounded-full bg-mist px-2.5 py-0.5 text-[12px] tabular-nums text-ink">+{fmtUsd(log.diffCents, true)}</span>
+   685→   685→                        <span className="hidden items-center gap-1 text-[12px] text-steel md:inline-flex">
+   686→   686→                          {log.source === 'HITL_APPROVAL' ? 'Attached via HITL approval' : `Injected into ${log.channel}`}
+   687→   687→                          <ArrowUpRight className="h-3 w-3" strokeWidth={1.75} />
+   688→   688→                        </span>
+   689→   689→                      </div>
+   690→   690→                    </div>
+   691→   691→                  ))}
+   692→   692→                </div>
+   693→   693→              </section>
+   694→   694→            </div>
+   695→   695→          )}
+   696→   696→
+   697→   697→          {/* ════ 02 · INGESTION & HITL ════ */}
+   698→   698→          {activeTab === 'ingestion_hitl' && (
+   699→   699→            <div className="animate-in fade-in duration-300">
+   700→   700→              <ViewHeader
+   701→   701→                tag="Spatial OCR & human-in-the-loop"
+   702→   702→                title="Ingestion &"
+   703→   703→                accent="quality"
+   704→   704→                rest="control"
+   705→   705→                sub="Docling spatial parsing flags every line item under 95% confidence. Telegram alerts dispatch the moment an item lands in the queue — and dispatch failures reroute here for manual resolution."
+   706→   706→              />
+   707→   707→
+   708→   708→              <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+   709→   709→                <h2 className="text-[15px] font-medium text-ink">Intercept review queue</h2>
+   710→   710→                {pendingCount > 0 ? (
+   711→   711→                  <BlushChip>
+   712→   712→                    <LiveDot />
+   713→   713→                    {pendingCount} action required
+   714→   714→                  </BlushChip>
+   715→   715→                ) : (
+   716→   716→                  <span className="text-[13px] text-steel">Queue clear — all items verified</span>
+   717→   717→                )}
+   718→   718→              </div>
+   719→   719→
+   720→   720→              <div className="space-y-4">
+   721→   721→                {hitlQueue.map((item) => {
+   722→   722→                  const isFailure = item.kind === 'DISPATCH_FAILURE';
+   723→   723→                  const busy = busyRef === item.ref;
+   724→   724→                  return (
+   725→   725→                    <article key={item.id} className={`space-y-5 p-5 sm:p-6 ${ARTIFACT}`}>
+   726→   726→                      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+   727→   727→                        <div className="min-w-0">
+   728→   728→                          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px]">
+   729→   729→                            <span className="font-medium text-steel">{item.ref}</span>
+   730→   730→                            <span className="text-smoke">·</span>
+   731→   731→                            <span className="text-steel">{item.tenantName}</span>
+   732→   732→                            <span className="text-smoke">({relTime(item.createdAt)})</span>
+   733→   733→                            {isFailure && <AlertTriangle className="h-3.5 w-3.5 text-sienna" strokeWidth={1.75} />}
+   734→   734→                          </div>
+   735→   735→                          <div className="mt-1.5 text-[17px] font-medium tracking-[-0.009em] text-ink">
+   736→   736→                            {isFailure ? (item.skuParsed ?? `Draft → ${item.tenantName} mailbox`) : item.skuParsed}
+   737→   737→                          </div>
+   738→   738→                          <div className="mt-1 text-[13px] text-steel">
+   739→   739→                            {isFailure ? 'Automated draft injection' : <>Source file · <span className="text-ink">{item.pdfName}</span></>}
+   740→   740→                          </div>
+   741→   741→                        </div>
+   742→   742→
+   743→   743→                        <div className="shrink-0 text-left sm:text-right">
+   744→   744→                          {isFailure ? (
+   745→   745→                            <>
+   746→   746→                              <div className="text-[12px] text-steel">Dispatch failure</div>
+   747→   747→                              <BlushChip className="mt-1.5">
+   748→   748→                                <AlertTriangle className="h-3 w-3" strokeWidth={1.75} />
+   749→   749→                                {item.failureReason === 'MAILBOX_NOT_FOUND' ? 'Mailbox not found' : 'Mailbox locked'}
+   750→   750→                              </BlushChip>
+   751→   751→                              <div className="mt-1.5 text-[12px] text-steel">Owner · <span className="font-medium text-ink">{item.owner}</span></div>
+   752→   752→                            </>
+   753→   753→                          ) : (
+   754→   754→                            <>
+   755→   755→                              <div className="text-[12px] text-steel">Docling confidence</div>
+   756→   756→                              <div className="mt-0.5 text-[22px] font-medium tabular-nums text-ink">{item.confidenceScore}%</div>
+   757→   757→                              <BlushChip className="mt-1.5">+{fmtUsd(item.extractedMarginLossCents, true)} loss identified</BlushChip>
+   758→   758→                            </>
+   759→   759→                          )}
+   760→   760→                        </div>
+   761→   761→                      </div>
+   762→   762→
+   763→   763→                      <div className="flex flex-col gap-2.5 border-t border-black/5 pt-4 sm:flex-row sm:justify-end">
+   764→   764→                        {item.status === 'PENDING' ? (
+   765→   765→                          isFailure ? (
+   766→   766→                            <>
+   767→   767→                              <GhostPill onClick={() => act(item.ref, 'RETRY')} disabled={busy}>
+   768→   768→                                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} /> : null}
+   769→   769→                                Retry dispatch
+   770→   770→                              </GhostPill>
+   771→   771→                              <FilledPill onClick={() => act(item.ref, 'RESOLVE')}>
+   772→   772→                                <Check className="h-3.5 w-3.5" strokeWidth={2} />
+   773→   773→                                Mark resolved
+   774→   774→                              </FilledPill>
+   775→   775→                            </>
+   776→   776→                          ) : (
+   777→   777→                            <>
+   778→   778→                              <GhostPill onClick={() => act(item.ref, 'OVERRIDE')} disabled={busy}>Manual override SKU</GhostPill>
+   779→   779→                              <FilledPill onClick={() => act(item.ref, 'APPROVE')} disabled={busy}>
+   780→   780→                                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} /> : <Check className="h-3.5 w-3.5" strokeWidth={2} />}
+   781→   781→                                Approve & dispatch to portal
+   782→   782→                              </FilledPill>
+   783→   783→                            </>
+   784→   784→                          )
+   785→   785→                        ) : (
+   786→   786→                          <span className="inline-flex items-center gap-2 text-[13px] text-steel">
+   787→   787→                            <CheckCircle2 className="h-4 w-4 text-sienna" strokeWidth={1.75} />
+   788→   788→                            {item.status === 'APPROVED'
+   789→   789→                              ? 'Verified & attached to client portal'
+   790→   790→                              : item.status === 'OVERRIDDEN'
+   791→   791→                                ? 'Manually overridden & attached to client portal'
+   792→   792→                                : 'Dispatch restored — failure resolved'}
+   793→   793→                          </span>
+   794→   794→                        )}
+   795→   795→                      </div>
+   796→   796→                    </article>
+   797→   797→                  );
+   798→   798→                })}
+   799→   799→              </div>
+   800→   800→            </div>
+   801→   801→          )}
+   802→   802→
+   803→   803→          {/* ════ 03 · TENANTS & AUDITS ════ */}
+   804→   804→          {activeTab === 'tenants_audits' && (
+   805→   805→            <div className="animate-in fade-in duration-300">
+   806→   806→              <ViewHeader
+   807→   807→                tag="Tenant enclave management"
+   808→   808→                title="Enterprise clients &"
+   809→   809→                accent="audits"
+   810→   810→                rest=""
+   811→   811→                sub="Isolated AST boundaries per tenant, with invite-only portal access, 48-hour audit briefings, and rev-share contracts tracked to the ledger."
+   812→   812→              />
+   813→   813→
+   814→   814→              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+   815→   815→                {tenants.map((tenant) => {
+   816→   816→                  const access = portalAccess.find((a) => a.name === tenant.name);
+   817→   817→                  const activeInvite = invites.find((i) => i.tenantName === tenant.name && i.status !== 'REVOKED');
+   818→   818→                  const accessLabel = !access?.hasCode
+   819→   819→                    ? 'Disabled — no active code'
+   820→   820→                    : activeInvite?.status === 'PENDING'
+   821→   821→                      ? 'Invite pending — first sign-in'
+   822→   822→                      : 'Access active';
+   823→   823→                  const revealing = revealedCode?.tenant === tenant.name;
+   824→   824→                  return (
+   825→   825→                  <article key={tenant.name} className="space-y-4 rounded-[24px] bg-mist p-6">
+   826→   826→                    <div className="flex items-start justify-between gap-3">
+   827→   827→                      <div>
+   828→   828→                        <h3 className="font-display text-[26px] font-normal leading-[1.18] tracking-[-0.01em] text-ink">{tenant.name}</h3>
+   829→   829→                        <div className="mt-1 text-[13px] text-steel">{tenant.erp} · AST isolated boundary</div>
+   830→   830→                      </div>
+   831→   831→                      <BlushChip className="shrink-0">{tenant.status}</BlushChip>
+   832→   832→                    </div>
+   833→   833→
+   834→   834→                    <div className="space-y-2 border-t border-black/5 pt-4 text-[13px]">
+   835→   835→                      <div className="flex items-center justify-between gap-3">
+   836→   836→                        <span className="text-steel">Deposit / fee</span>
+   837→   837→                        <span className="font-medium text-ink">{tenant.depositLabel}</span>
+   838→   838→                      </div>
+   839→   839→                      <div className="flex items-center justify-between gap-3">
+   840→   840→                        <span className="text-steel">Margin recovery baseline</span>
+   841→   841→                        <span className="font-medium text-ink">{tenant.guaranteeLabel}</span>
+   842→   842→                      </div>
+   843→   843→                      <div className="flex items-center justify-between gap-3">
+   844→   844→                        <span className="text-steel">Outlook mailbox</span>
+   845→   845→                        <span className={`font-medium ${tenant.mailboxStatus === 'ACTIVE' ? 'text-ink' : 'text-sienna'}`}>
+   846→   846→                          {mailboxLabel[tenant.mailboxStatus]}
+   847→   847→                        </span>
+   848→   848→                      </div>
+   849→   849→                    </div>
+   850→   850→
+   851→   851→                    {/* Portal access — invite-only, replaces demo codes */}
+   852→   852→                    <div className="space-y-3 border-t border-black/5 pt-4">
+   853→   853→                      <div className="flex items-center justify-between gap-3">
+   854→   854→                        <div className="flex items-center gap-2 text-[13px] font-medium text-ink">
+   855→   855→                          <KeyRound className="h-3.5 w-3.5 text-steel" strokeWidth={1.75} />
+   856→   856→                          Portal access
+   857→   857→                        </div>
+   858→   858→                        <span className={`text-[12px] font-medium ${access?.hasCode ? 'text-ink' : 'text-sienna'}`}>
+   859→   859→                          {accessLabel}
+   860→   860→                        </span>
+   861→   861→                      </div>
+   862→   862→                      <div className="text-[12px] leading-relaxed text-steel">
+   863→   863→                        {access?.contactEmail || 'No contact email on file'}
+   864→   864→                        {activeInvite && <> · invite <span className="font-mono text-[11.5px] text-ink">{activeInvite.codeHint}</span> ({activeInvite.status.toLowerCase()}, issued by {activeInvite.issuedBy})</>}
+   865→   865→                      </div>
+   866→   866→                      <div className="flex flex-wrap gap-2">
+   867→   867→                        <GhostPill onClick={() => issueInvite(tenant.name)} disabled={inviteBusy === tenant.name}>
+   868→   868→                          {inviteBusy === tenant.name ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} /> : <MailPlus className="h-3.5 w-3.5" strokeWidth={1.75} />}
+   869→   869→                          Email new invite
+   870→   870→                        </GhostPill>
+   871→   871→                        {access?.hasCode && (
+   872→   872→                          <GhostPill onClick={() => revokeAccess(tenant.name)} disabled={inviteBusy === tenant.name}>
+   873→   873→                            <Ban className="h-3.5 w-3.5" strokeWidth={1.75} />
+   874→   874→                            Disable access
+   875→   875→                          </GhostPill>
+   876→   876→                        )}
+   877→   877→                      </div>
+   878→   878→                      {revealing && revealedCode && (
+   879→   879→                        <div className="rounded-2xl bg-blush p-4 text-sienna">
+   880→   880→                          <div className="flex items-center justify-between gap-3">
+   881→   881→                            <div className="text-[12px] font-medium uppercase tracking-[0.06em]">Access code — shown once</div>
+   882→   882→                            <button
+   883→   883→                              onClick={copyRevealed}
+   884→   884→                              className="inline-flex items-center gap-1.5 rounded-full border border-sienna/30 px-2.5 py-1 text-[12px] font-medium transition-colors hover:bg-sienna/10"
+   885→   885→                            >
+   886→   886→                              {copiedCode ? <Check className="h-3 w-3" strokeWidth={2} /> : <Copy className="h-3 w-3" strokeWidth={1.75} />}
+   887→   887→                              {copiedCode ? 'Copied' : 'Copy'}
+   888→   888→                            </button>
+   889→   889→                          </div>
+   890→   890→                          <div className="mt-1.5 font-mono text-[16px] font-medium tracking-wide">{revealedCode.code}</div>
+   891→   891→                          <p className="mt-1.5 text-[12px] leading-relaxed text-sienna/80">
+   892→   892→                            Delivered to {revealedCode.email} (outbox · simulated SMTP). It replaces any previous code and signs this tenant into exactly one enclave — store it now; it will not be shown again.
+   893→   893→                          </p>
+   894→   894→                        </div>
+   895→   895→                      )}
+   896→   896→                    </div>
+   897→   897→
+   898→   898→                    <a
+   899→   899→                      href={`/portal?tenant=${encodeURIComponent(tenant.name)}`}
+   900→   900→                      target="_blank"
+   901→   901→                      rel="noreferrer"
+   902→   902→                      className="inline-flex items-center gap-1.5 pt-1 text-[14px] text-ink underline-offset-4 hover:underline"
+   903→   903→                    >
+   904→   904→                      Open client enclave view <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.75} />
+   905→   905→                    </a>
+   906→   906→                  </article>
+   907→   907→                  );
+   908→   908→                })}
+   909→   909→              </div>
+   910→   910→            </div>
+   911→   911→          )}
+   912→   912→
+   913→   913→          {/* ════ 04 · UNIFIED INBOX ════ */}
+   914→   914→          {activeTab === 'communications' && (
+   915→   915→            <div className="animate-in fade-in duration-300">
+   916→   916→              <ViewHeader
+   917→   917→                tag="Unified communications"
+   918→   918→                title="Client executive"
+   919→   919→                accent="messages"
+   920→   920→                rest=""
+   921→   921→                sub="One direct enclave line per tenant — portal messages, parsing updates, and executive replies in a single thread."
+   922→   922→              />
+   923→   923→
+   924→   924→              <section className={`overflow-hidden ${ARTIFACT}`}>
+   925→   925→                <div className="grid h-[560px] grid-cols-1 md:h-[600px] md:grid-cols-12">
+   926→   926→                  {/* Channel list */}
+   927→   927→                  <div className="flex min-h-0 flex-col border-b border-hairline p-4 md:col-span-4 md:border-b-0 md:border-r">
+   928→   928→                    <div className="px-2 pb-3 text-[13px] text-ash">Active enclave channels</div>
+   929→   929→                    <div className="scroll-slim max-h-32 space-y-1 overflow-y-auto md:max-h-none md:flex-1">
+   930→   930→                      {tenants.map((t) => {
+   931→   931→                        const active = activeChatTenant === t.name;
+   932→   932→                        const hasUnread = messages.some((m) => m.tenantName === t.name && m.unread);
+   933→   933→                        return (
+   934→   934→                          <button
+   935→   935→                            key={t.name}
+   936→   936→                            onClick={() => setActiveChatTenant(t.name)}
+   937→   937→                            aria-current={active ? 'true' : undefined}
+   938→   938→                            className={`w-full rounded-2xl px-3.5 py-3 text-left transition-colors ${active ? 'bg-mist' : 'hover:bg-fog'}`}
+   939→   939→                          >
+   940→   940→                            <div className="flex items-center justify-between gap-2">
+   941→   941→                              <span className="text-[14px] text-ink">{t.name}</span>
+   942→   942→                              {hasUnread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sienna" aria-label="Unread" />}
+   943→   943→                            </div>
+   944→   944→                            <div className="mt-0.5 text-[12px] text-smoke">Direct enclave line</div>
+   945→   945→                          </button>
+   946→   946→                        );
+   947→   947→                      })}
+   948→   948→                    </div>
+   949→   949→                  </div>
+   950→   950→
+   951→   951→                  {/* Thread */}
+   952→   952→                  <div className="flex min-h-0 flex-col bg-fog md:col-span-8">
+   953→   953→                    <div className="flex items-center justify-between border-b border-hairline bg-paper px-5 py-3.5">
+   954→   954→                      <div>
+   955→   955→                        <div className="text-[15px] font-medium text-ink">{activeChatTenant}</div>
+   956→   956→                        <div className="mt-0.5 flex items-center gap-2 text-[12px] text-steel">
+   957→   957→                          <LiveDot /> Direct line · Josias active
+   958→   958→                        </div>
+   959→   959→                      </div>
+   960→   960→                      {activeTenant && activeTenant.mailboxStatus !== 'ACTIVE' && (
+   961→   961→                        <QuietChip className="shrink-0 text-sienna">
+   962→   962→                          <AlertTriangle className="h-3 w-3" strokeWidth={1.75} />
+   963→   963→                          Mailbox {activeTenant.mailboxStatus === 'LOCKED' ? 'locked' : 'missing'}
+   964→   964→                        </QuietChip>
+   965→   965→                      )}
+   966→   966→                    </div>
+   967→   967→
+   968→   968→                    <div className="scroll-slim flex-1 space-y-3 overflow-y-auto p-4 sm:p-5">
+   969→   969→                      {visibleMessages.length === 0 ? (
+   970→   970→                        <div className="grid h-full place-items-center text-[13px] text-smoke">
+   971→   971→                          No messages yet — open the conversation with a hello.
+   972→   972→                        </div>
+   973→   973→                      ) : (
+   974→   974→                        visibleMessages.map((msg) => {
+   975→   975→                          const own = msg.sender.includes('Josias');
+   976→   976→                          return (
+   977→   977→                            <div
+   978→   978→                              key={msg.id}
+   979→   979→                              className={`max-w-[420px] rounded-[16px] px-4 py-3 ${
+   980→   980→                                own ? 'ml-auto bg-ink text-paper' : 'border border-hairline bg-paper text-ink'
+   981→   981→                              }`}
+   982→   982→                            >
+   983→   983→                              <div className={`mb-1 flex items-center justify-between gap-6 text-[11px] ${own ? 'text-paper/60' : 'text-smoke'}`}>
+   984→   984→                                <span>{msg.sender}</span>
+   985→   985→                                <span className="tabular-nums">{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+   986→   986→                              </div>
+   987→   987→                              <p className="text-[14px] leading-relaxed">{msg.text}</p>
+   988→   988→                            </div>
+   989→   989→                          );
+   990→   990→                        })
+   991→   991→                      )}
+   992→   992→                    </div>
+   993→   993→
+   994→   994→                    <form onSubmit={handleSendMessage} className="flex items-center gap-2 border-t border-hairline bg-paper p-4">
+   995→   995→                      <input
+   996→   996→                        type="text"
+   997→   997→                        value={newMessageText}
+   998→   998→                        onChange={(e) => setNewMessageText(e.target.value)}
+   999→   999→                        placeholder="Reply on the direct enclave line…"
+  1000→  1000→                        aria-label={`Message ${activeChatTenant}`}
+  1001→  1001→                        className="h-11 flex-1 rounded-2xl border border-hairline bg-paper px-4 text-[14px] text-ink transition-colors placeholder:text-smoke focus:border-ink/30 focus:outline-none"
+  1002→  1002→                      />
+  1003→  1003→                      <button
+  1004→  1004→                        type="submit"
+  1005→  1005→                        aria-label="Send message"
+  1006→  1006→                        className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-ink text-paper transition-colors hover:bg-[#33363b]"
+  1007→  1007→                      >
+  1008→  1008→                        <Send className="h-4 w-4" strokeWidth={1.75} />
+  1009→  1009→                      </button>
+  1010→  1010→                    </form>
+  1011→  1011→                  </div>
+  1012→  1012→                </div>
+  1013→  1013→              </section>
+  1014→  1014→            </div>
+  1015→  1015→          )}
+  1016→  1016→
+  1017→  1017→          {/* ════ 05 · CALENDAR & CALLS ════ */}
+  1018→  1018→          {activeTab === 'calendar_calls' && (
+  1019→  1019→            <div className="animate-in fade-in duration-300">
+  1020→  1020→              <ViewHeader
+  1021→  1021→                tag="Built-in WebRTC video rooms"
+  1022→  1022→                title="Executive call"
+  1023→  1023→                accent="operations"
+  1024→  1024→                rest=""
+  1025→  1025→                sub="Briefings and discovery sessions sync from the client portal — join in one click without leaving the enclave."
+  1026→  1026→              />
+  1027→  1027→
+  1028→  1028→              <div className="grid grid-cols-1 gap-4 md:grid-cols-12 md:gap-6">
+  1029→  1029→                {/* Scheduled sessions */}
+  1030→  1030→                <div className="space-y-3 rounded-[24px] bg-mist p-5 md:col-span-5">
+  1031→  1031→                  <div className="px-1 pb-1 text-[13px] font-medium text-steel">Scheduled calls · synced from portal</div>
+  1032→  1032→                  {calls.map((call) => (
+  1033→  1033→                    <div key={call.id} className="space-y-2 rounded-2xl bg-paper p-4">
+  1034→  1034→                      <div className="flex items-start justify-between gap-3">
+  1035→  1035→                        <div className="text-[14px] font-medium text-ink">{call.clientName}</div>
+  1036→  1036→                        <BlushChip className="shrink-0">{call.status}</BlushChip>
+  1037→  1037→                      </div>
+  1038→  1038→                      <div className="text-[13px] text-steel">{call.type}</div>
+  1039→  1039→                      <div className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
+  1040→  1040→                        <Clock className="h-3.5 w-3.5 text-steel" strokeWidth={1.75} />
+  1041→  1041→                        <span className="tabular-nums">{callWhen(call.scheduledAt)}</span>
+  1042→  1042→                      </div>
+  1043→  1043→                    </div>
+  1044→  1044→                  ))}
+  1045→  1045→                </div>
+  1046→  1046→
+  1047→  1047→                {/* Call room */}
+  1048→  1048→                <div className="flex flex-col rounded-[24px] bg-mist p-5 md:col-span-7">
+  1049→  1049→                  <div className="flex items-center justify-between px-1 pb-4">
+  1050→  1050→                    <div className="flex items-center gap-2 text-[14px] font-medium text-ink">
+  1051→  1051→                      <Video className="h-4 w-4 text-sienna" strokeWidth={1.75} />
+  1052→  1052→                      Syntropic built-in call room
+  1053→  1053→                    </div>
+  1054→  1054→                    <span className="text-[12px] text-steel">
+  1055→  1055→                      {callState === 'live'
+  1056→  1056→                        ? rtcMode === 'turn'
+  1057→  1057→                          ? `Relay room active · ${relayCount} TURN candidate${relayCount === 1 ? '' : 's'}`
+  1058→  1058→                          : 'Local room active'
+  1059→  1059→                        : rtcMode === 'turn'
+  1060→  1060→                          ? 'TURN relay · configured'
+  1061→  1061→                          : 'Encrypted P2P line'}
+  1062→  1062→                    </span>
+  1063→  1063→                  </div>
+  1064→  1064→
+  1065→  1065→                  <div className="grid flex-1 place-items-center rounded-2xl bg-paper p-6">
+  1066→  1066→                    {callState === 'live' ? (
+  1067→  1067→                      <div className="w-full">
+  1068→  1068→                        <video
+  1069→  1069→                          ref={videoRef}
+  1070→  1070→                          autoPlay
+  1071→  1071→                          muted
+  1072→  1072→                          playsInline
+  1073→  1073→                          className="aspect-video w-full rounded-2xl bg-ink object-cover"
+  1074→  1074→                        />
+  1075→  1075→                        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+  1076→  1076→                          <GhostPill onClick={toggleMic}>
+  1077→  1077→                            {micOn ? <Mic className="h-3.5 w-3.5" strokeWidth={1.75} /> : <MicOff className="h-3.5 w-3.5" strokeWidth={1.75} />}
+  1078→  1078→                            {micOn ? 'Mute' : 'Unmute'}
+  1079→  1079→                          </GhostPill>
+  1080→  1080→                          <GhostPill onClick={toggleCam}>
+  1081→  1081→                            {camOn ? <Video className="h-3.5 w-3.5" strokeWidth={1.75} /> : <VideoOff className="h-3.5 w-3.5" strokeWidth={1.75} />}
+  1082→  1082→                            {camOn ? 'Camera off' : 'Camera on'}
+  1083→  1083→                          </GhostPill>
+  1084→  1084→                          <FilledPill onClick={endCall}>
+  1085→  1085→                            <PhoneOff className="h-3.5 w-3.5" strokeWidth={1.75} />
+  1086→  1086→                            End call
+  1087→  1087→                          </FilledPill>
+  1088→  1088→                        </div>
+  1089→  1089→                      </div>
+  1090→  1090→                    ) : callState === 'connecting' ? (
+  1091→  1091→                      <div className="text-center">
+  1092→  1092→                        <Loader2 className="mx-auto h-10 w-10 animate-spin text-smoke" strokeWidth={1.25} />
+  1093→  1093→                        <div className="mt-3 text-[15px] font-medium text-ink">Requesting camera & microphone…</div>
+  1094→  1094→                        <div className="mx-auto mt-1.5 max-w-xs text-[13px] leading-relaxed text-steel">
+  1095→  1095→                          Grant browser permissions to initialize the encrypted room.
+  1096→  1096→                        </div>
+  1097→  1097→                      </div>
+  1098→  1098→                    ) : callState === 'error' ? (
+  1099→  1099→                      <div className="text-center">
+  1100→  1100→                        <VideoOff className="mx-auto h-10 w-10 text-smoke" strokeWidth={1.25} />
+  1101→  1101→                        <div className="mt-3 text-[15px] font-medium text-ink">Camera & microphone unavailable</div>
+  1102→  1102→                        <div className="mx-auto mt-1.5 max-w-xs text-[13px] leading-relaxed text-steel">
+  1103→  1103→                          Connect a device or grant permissions in your browser, then retry the room launch.
+  1104→  1104→                        </div>
+  1105→  1105→                        <FilledPill className="mt-4" onClick={launchRoom}>
+  1106→  1106→                          <Video className="h-4 w-4" strokeWidth={1.75} />
+  1107→  1107→                          Retry room launch
+  1108→  1108→                        </FilledPill>
+  1109→  1109→                      </div>
+  1110→  1110→                    ) : (
+  1111→  1111→                      <div className="text-center">
+  1112→  1112→                        <Video className="mx-auto h-10 w-10 animate-pulse text-smoke" strokeWidth={1.25} />
+  1113→  1113→                        <div className="mt-3 text-[15px] font-medium text-ink">No active call in session</div>
+  1114→  1114→                        <div className="mx-auto mt-1.5 max-w-xs text-[13px] leading-relaxed text-steel">
+  1115→  1115→                          When a client joins from their Executive Portal at the scheduled time, your camera preview initiates here automatically.
+  1116→  1116→                        </div>
+  1117→  1117→                      </div>
+  1118→  1118→                    )}
+  1119→  1119→                  </div>
+  1120→  1120→
+  1121→  1121→                  {callState !== 'live' && callState !== 'connecting' && (
+  1122→  1122→                    <FilledPill className="mt-4 w-full py-3" onClick={launchRoom}>
+  1123→  1123→                      <Video className="h-4 w-4" strokeWidth={1.75} />
+  1124→  1124→                      Launch test video room for Josias
+  1125→  1125→                    </FilledPill>
+  1126→  1126→                  )}
+  1127→  1127→                </div>
+  1128→  1128→              </div>
+  1129→  1129→            </div>
+  1130→  1130→          )}
+  1131→  1131→        </main>
+  1132→  1132→      </div>
+  1133→  1133→    </div>
+  1134→  1134→  );
+  1135→  1135→}
+  1136→  1136→

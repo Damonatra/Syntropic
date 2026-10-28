@@ -1,0 +1,1435 @@
+     1→'use client';
+     2→
+     3→/**
+     4→ * Syntropic Backbone — Layer 4 Command Tower.
+     5→ * Fully wired to the SQLite/Prisma backbone APIs (R-01…R-07, X-1…X-3):
+     6→ *  - Ledger figures stream from /api/ledger (single source of truth).
+     7→ *  - Intercept stream polls every 2s; >$2,500 defenses fire Telegram alerts.
+     8→ *  - HITL queue handles OCR + dispatch-failure rerouting with owners.
+     9→ *  - Unified inbox persists messages; threads mark read on open.
+    10→ *  - Call room launches a real local WebRTC preview.
+    11→ */
+    12→
+    13→import React, { useCallback, useEffect, useRef, useState } from 'react';
+    14→import Link from 'next/link';
+    15→import {
+    16→  Activity, UploadCloud, UserCheck, MessageSquare, Calendar as CalendarIcon, Bell, Database,
+    17→  Check, CheckCircle2, Send, Video, Clock, ArrowUpRight, AlertTriangle, Mic, MicOff,
+    18→  VideoOff, PhoneOff, Loader2, Trophy, TrendingUp, DollarSign, ShieldCheck, Users,
+    19→  KeyRound, MailPlus, Ban, Copy, Eye, ShieldCheck as ShieldCheckIcon, History as HistoryIcon, Rewind,
+    20→} from 'lucide-react';
+    21→import {
+    22→  ARTIFACT, LiveDot, ViewHeader, FilledPill, GhostPill, BlushChip, QuietChip, IntelCard,
+    23→  ArenaPanel, MarginPanel, RevsharePanel, GuaranteePanel, TrafficPanel, GeoHubPanel, ShipsLogPanel, SeasonStrip, fmtUsd,
+    24→} from './primitives';
+    25→import { parseCommand, type ParsedCommand } from '@/lib/say-it-plainly';
+    26→import type {
+    27→  CallView, CommandLogView, GeoIntelView, HitlAction, HitlView, InterceptView, InviteView, LedgerView, MessageView,
+    28→  PortalAccessView, ReconcileView, SeasonsView, TenantView,
+    29→} from '@/lib/types';
+    30→
+    31→export type BackboneTab = 'telemetry' | 'ingestion_hitl' | 'tenants_audits' | 'communications' | 'calendar_calls';
+    32→
+    33→type TelegramToast = { title: string; body: string } | null;
+    34→type CallState = 'idle' | 'connecting' | 'live' | 'error';
+    35→type RevealedCode = { tenant: string; email: string; code: string; hint: string } | null;
+    36→
+    37→const NAV: { id: BackboneTab; num: string; label: string; icon: React.ElementType }[] = [
+    38→  { id: 'telemetry', num: '01', label: 'Live telemetry', icon: Activity },
+    39→  { id: 'ingestion_hitl', num: '02', label: 'Ingestion & HITL', icon: UploadCloud },
+    40→  { id: 'tenants_audits', num: '03', label: 'Tenants & audits', icon: UserCheck },
+    41→  { id: 'communications', num: '04', label: 'Unified inbox', icon: MessageSquare },
+    42→  { id: 'calendar_calls', num: '05', label: 'Built-in calls', icon: CalendarIcon },
+    43→];
+    44→
+    45→const relTime = (iso: string) => {
+    46→  const mins = Math.max(1, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+    47→  if (mins < 60) return `${mins} min${mins === 1 ? '' : 's'} ago`;
+    48→  return `${Math.round(mins / 60)}h ago`;
+    49→};
+    50→
+    51→const clockTime = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour12: false });
+    52→
+    53→const callWhen = (iso: string) => {
+    54→  const d = new Date(iso);
+    55→  return `${d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' })}, ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+    56→};
+    57→
+    58→const mailboxLabel: Record<TenantView['mailboxStatus'], string> = {
+    59→  ACTIVE: 'Active',
+    60→  LOCKED: 'Locked — migration window',
+    61→  MISSING: 'Not provisioned',
+    62→};
+    63→
+    64→export default function SyntropicBackboneCommandTower() {
+    65→  const [activeTab, setActiveTab] = useState<BackboneTab>('telemetry');
+    66→  const [activeWidgetModal, setActiveWidgetModal] = useState<string | null>('accounts');
+    67→  const toggleWidget = (id: string) => setActiveWidgetModal((prev) => (prev === id ? null : id));
+    68→
+    69→  // ── Backbone data ────────────────────────────────────────────
+    70→  const [ledger, setLedger] = useState<LedgerView | null>(null);
+    71→  const [tenants, setTenants] = useState<TenantView[]>([]);
+    72→  const [hitlQueue, setHitlQueue] = useState<HitlView[]>([]);
+    73→  const [events, setEvents] = useState<InterceptView[]>([]);
+    74→  const [messages, setMessages] = useState<MessageView[]>([]);
+    75→  const [calls, setCalls] = useState<CallView[]>([]);
+    76→  // Phase 11.9 — GEO-IP intelligence slice (SSE-refreshed).
+    77→  const [geo, setGeo] = useState<GeoIntelView | null>(null);
+    78→  // The Ship's Log — append-only command journal, refreshed with the slow loop.
+    79→  const [commandLog, setCommandLog] = useState<CommandLogView[]>([]);
+    80→  // Reconciliation stamp — the station audits itself; drift must read $0.
+    81→  const [reconcile, setReconcile] = useState<ReconcileView | null>(null);
+    82→  const [reconciling, setReconciling] = useState(false);
+    83→  // Time travel — '' means live; a YYYY-MM-DD re-anchors the whole deck.
+    84→  const [timeTravel, setTimeTravel] = useState('');
+    85→  // Arena seasons — weekly head-to-head + the belt, computed from the ledger.
+    86→  const [seasons, setSeasons] = useState<SeasonsView | null>(null);
+    87→
+    88→  // ── UI state ─────────────────────────────────────────────────
+    89→  const [activeChatTenant, setActiveChatTenant] = useState('Apex Piping & Supply');
+    90→  const [newMessageText, setNewMessageText] = useState('');
+    91→  // Active operator — drives the personal workspace + arena target editing.
+    92→  const [currentUser, setCurrentUser] = useState<string>('Damon');
+    93→  const [toast, setToast] = useState<TelegramToast>(null);
+    94→  const [simulating, setSimulating] = useState(false);
+    95→  const [busyRef, setBusyRef] = useState<string | null>(null);
+    96→  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    97→  const seenEvents = useRef<Set<string> | null>(null);
+    98→  const seenHitl = useRef<Set<string> | null>(null);
+    99→  const activeTenantRef = useRef(activeChatTenant);
+   100→
+   101→  // Portal invite management (Tenants tab) — issue, reveal-once, revoke.
+   102→  const [invites, setInvites] = useState<InviteView[]>([]);
+   103→  const [portalAccess, setPortalAccess] = useState<PortalAccessView[]>([]);
+   104→  const [revealedCode, setRevealedCode] = useState<RevealedCode>(null);
+   105→  const [inviteBusy, setInviteBusy] = useState<string | null>(null);
+   106→  const [copiedCode, setCopiedCode] = useState(false);
+   107→
+   108→  // ── WebRTC call room (R-07) ──────────────────────────────────
+   109→  const [callState, setCallState] = useState<CallState>('idle');
+   110→  const [micOn, setMicOn] = useState(true);
+   111→  const [camOn, setCamOn] = useState(true);
+   112→  const videoRef = useRef<HTMLVideoElement | null>(null);
+   113→  const localStreamRef = useRef<MediaStream | null>(null);
+   114→  // ICE configuration pulled once from /api/rtc/config — STUN always,
+   115→  // TURN relay when TURN_URL/USERNAME/CREDENTIAL env is set.
+   116→  const rtcConfigRef = useRef<{ iceServers: RTCIceServer[]; turnConfigured: boolean } | null>(null);
+   117→  const [rtcMode, setRtcMode] = useState<'local' | 'turn' | null>(null);
+   118→  const [relayCount, setRelayCount] = useState(0);
+   119→  const pcRef = useRef<RTCPeerConnection | null>(null);
+   120→
+   121→  const showToast = useCallback((title: string, body: string) => {
+   122→    if (toastTimer.current) clearTimeout(toastTimer.current);
+   123→    setToast({ title, body });
+   124→    toastTimer.current = setTimeout(() => setToast(null), 4200);
+   125→  }, []);
+   126→
+   127→  // Active-operator persistence + quarterly target adjustments (PATCH /api/team/[id]).
+   128→  useEffect(() => {
+   129→    const saved = window.localStorage.getItem('backbone.currentUser');
+   130→    if (saved && ['Damon', 'Josias'].includes(saved)) setCurrentUser(saved);
+   131→  }, []);
+   132→  const switchUser = (name: string) => {
+   133→    setCurrentUser(name);
+   134→    window.localStorage.setItem('backbone.currentUser', name);
+   135→  };
+   136→
+   137→  const fetchJson = useCallback(async <T,>(url: string, init?: RequestInit): Promise<T> => {
+   138→    const res = await fetch(url, { cache: 'no-store', ...init });
+   139→    if (!res.ok) throw new Error(`${url} → ${res.status}`);
+   140→    return res.json() as Promise<T>;
+   141→  }, []);
+   142→
+   143→  const handleUpdateTarget = useCallback(
+   144→    async (memberId: string, nextTarget: number) => {
+   145→      // Optimistic tick; server reconciliation follows via the 6s slow poll.
+   146→      setLedger((prev) =>
+   147→        prev
+   148→          ? { ...prev, team: prev.team.map((m) => (m.id === memberId ? { ...m, qOutboundTarget: nextTarget } : m)) }
+   149→          : prev,
+   150→      );
+   151→      try {
+   152→        await fetchJson(`/api/team/${memberId}`, {
+   153→          method: 'PATCH',
+   154→          headers: { 'Content-Type': 'application/json' },
+   155→          body: JSON.stringify({ qOutboundTarget: nextTarget, actor: currentUser }),
+   156→        });
+   157→        showToast('Target updated', `Quarterly outbound target set to ${nextTarget.toLocaleString()} — persisted to the backbone and signed in the ship's log.`);
+   158→      } catch {
+   159→        showToast('Update failed', 'Could not persist the target — the next poll will restore the server value.');
+   160→      }
+   161→    },
+   162→    [fetchJson, showToast, currentUser],
+   163→  );
+   164→
+   165→  const refreshIntercept = useCallback(
+   166→    async (detect: boolean) => {
+   167→      const rows = await fetchJson<InterceptView[]>('/api/intercept');
+   168→      if (detect && seenEvents.current) {
+   169→        for (const e of rows) {
+   170→          if (!seenEvents.current.has(e.id) && e.diffCents > 250_000) {
+   171→            showToast(
+   172→              'High-value intercept detected',
+   173→              `+${fmtUsd(e.diffCents, true)} defended on ${e.tenantName} — Telegram alert dispatched to the stream.`,
+   174→            );
+   175→          }
+   176→        }
+   177→      }
+   178→      seenEvents.current = new Set(rows.map((r) => r.id));
+   179→      setEvents(rows);
+   180→    },
+   181→    [fetchJson, showToast],
+   182→  );
+   183→
+   184→  const refreshHitl = useCallback(
+   185→    async (detect: boolean) => {
+   186→      const rows = await fetchJson<HitlView[]>('/api/hitl');
+   187→      if (detect && seenHitl.current) {
+   188→        for (const i of rows) {
+   189→          if (seenHitl.current.has(i.id)) continue;
+   190→          if (i.kind === 'DISPATCH_FAILURE') {
+   191→            showToast(
+   192→              'Dispatch failure rerouted to HITL',
+   193→              `${i.ref} · ${i.tenantName} — ${i.failureReason === 'MAILBOX_NOT_FOUND' ? 'mailbox not found' : 'mailbox locked'}. Manual resolution required.`,
+   194→            );
+   195→          } else {
+   196→            showToast(
+   197→              'Low-confidence OCR item queued',
+   198→              `${i.ref} · ${i.tenantName} — confidence ${i.confidenceScore}% <95. Telegram alert dispatched.`,
+   199→            );
+   200→          }
+   201→        }
+   202→      }
+   203→      seenHitl.current = new Set(rows.map((r) => r.id));
+   204→      setHitlQueue(rows);
+   205→    },
+   206→    [fetchJson, showToast],
+   207→  );
+   208→
+   209→  const markRead = useCallback(async (tenant: string) => {
+   210→    await fetch('/api/messages/read', {
+   211→      method: 'POST',
+   212→      headers: { 'Content-Type': 'application/json' },
+   213→      body: JSON.stringify({ tenantName: tenant }),
+   214→    }).catch(() => undefined);
+   215→  }, []);
+   216→
+   217→  // Invite management (issue / reveal-once / revoke) against /api/invites.
+   218→  const refreshInvites = useCallback(async () => {
+   219→    const data = await fetchJson<{ invites: InviteView[]; access: PortalAccessView[] }>('/api/invites');
+   220→    setInvites(data.invites);
+   221→    setPortalAccess(data.access);
+   222→  }, [fetchJson]);
+   223→
+   224→  useEffect(() => {
+   225→    if (activeTab === 'tenants_audits') refreshInvites().catch(() => undefined);
+   226→  }, [activeTab, refreshInvites]);
+   227→
+   228→  const issueInvite = useCallback(
+   229→    async (tenantName: string) => {
+   230→      setInviteBusy(tenantName);
+   231→      setCopiedCode(false);
+   232→      try {
+   233→        const data = await fetchJson<{ invite: InviteView; code: string }>('/api/invites', {
+   234→          method: 'POST',
+   235→          headers: { 'Content-Type': 'application/json' },
+   236→          body: JSON.stringify({ tenantName, issuedBy: currentUser }),
+   237→        });
+   238→        setRevealedCode({ tenant: tenantName, email: data.invite.email, code: data.code, hint: data.invite.codeHint });
+   239→        await refreshInvites();
+   240→        showToast('Invite issued', `Fresh access code for ${tenantName} — outboxed to ${data.invite.email} (simulated SMTP). Shown once below.`);
+   241→      } catch {
+   242→        showToast('Invite failed', 'Could not issue the invite — check the dev log and retry.');
+   243→      } finally {
+   244→        setInviteBusy(null);
+   245→      }
+   246→    },
+   247→    [currentUser, fetchJson, refreshInvites, showToast],
+   248→  );
+   249→
+   250→  const revokeAccess = useCallback(
+   251→    async (tenantName: string) => {
+   252→      setInviteBusy(tenantName);
+   253→      try {
+   254→        await fetchJson('/api/invites', {
+   255→          method: 'POST',
+   256→          headers: { 'Content-Type': 'application/json' },
+   257→          body: JSON.stringify({ tenantName, action: 'revoke', issuedBy: currentUser }),
+   258→        });
+   259→        setRevealedCode((prev) => (prev?.tenant === tenantName ? null : prev));
+   260→        await refreshInvites();
+   261→        showToast('Portal access disabled', `${tenantName} — code revoked, live enclave sessions invalidated. The next sign-in will be refused.`);
+   262→      } catch {
+   263→        showToast('Revoke failed', 'Could not disable portal access — check the dev log and retry.');
+   264→      } finally {
+   265→        setInviteBusy(null);
+   266→      }
+   267→    },
+   268→    [currentUser, fetchJson, refreshInvites, showToast],
+   269→  );
+   270→
+   271→  const copyRevealed = useCallback(() => {
+   272→    if (!revealedCode) return;
+   273→    navigator.clipboard?.writeText(revealedCode.code).catch(() => undefined);
+   274→    setCopiedCode(true);
+   275→    setTimeout(() => setCopiedCode(false), 2000);
+   276→  }, [revealedCode]);
+   277→
+   278→  const refreshSlow = useCallback(async () => {
+   279→    const asOfQuery = timeTravel ? `?asOf=${encodeURIComponent(timeTravel)}` : '';
+   280→    const [l, t, m, c] = await Promise.all([
+   281→      fetchJson<LedgerView>(`/api/ledger${asOfQuery}`),
+   282→      fetchJson<TenantView[]>('/api/tenants'),
+   283→      fetchJson<MessageView[]>('/api/messages'),
+   284→      fetchJson<CallView[]>('/api/calls'),
+   285→    ]);
+   286→    setLedger(l);
+   287→    setTenants(t);
+   288→    setMessages(m);
+   289→    setCalls(c);
+   290→    fetchJson<CommandLogView[]>(`/api/command-log?limit=60${timeTravel ? `&asOf=${encodeURIComponent(timeTravel)}` : ''}`)
+   291→      .then(setCommandLog)
+   292→      .catch(() => undefined);
+   293→    // Seasons are ledger-derived — the live board only; history doesn't travel.
+   294→    if (!timeTravel) {
+   295→      fetchJson<SeasonsView>('/api/arena/seasons').then(setSeasons).catch(() => undefined);
+   296→    }
+   297→    return m;
+   298→  }, [fetchJson, timeTravel]);
+   299→
+   300→  // Geo slice re-pull — called on load and every time the SSE stream
+   301→  // carries a landing/enclave traffic event (Phase 11.9 live geo stream).
+   302→  const refreshGeo = useCallback(async () => {
+   303→    try {
+   304→      setGeo(await fetchJson<GeoIntelView>('/api/backbone/geo'));
+   305→    } catch {
+   306→      // Slice unavailable — the panel keeps its last computed snapshot.
+   307→    }
+   308→  }, [fetchJson]);
+   309→
+   310→  // Reconciliation — recompute every headline figure through independent
+   311→  // code paths and stamp the masthead. Clicking the pill re-runs the audit.
+   312→  const runReconcile = useCallback(
+   313→    async (announce: boolean) => {
+   314→      setReconciling(true);
+   315→      try {
+   316→        const result = await fetchJson<ReconcileView>('/api/ledger/reconcile');
+   317→        setReconcile(result);
+   318→        if (announce) {
+   319→          const failed = result.checks.filter((c) => !c.match);
+   320→          showToast(
+   321→            result.ok ? 'Books reconciled' : 'Drift detected',
+   322→            result.ok
+   323→              ? `${result.checks.length} independent checks passed — every figure recomputed from raw rows, drift $0. Logged to the ship's log.`
+   324→              : `${failed.length} check(s) disagree: ${failed.map((f) => f.key).join(', ')}. The masthead stamp stays red until the ledger answers for it.`,
+   325→          );
+   326→        }
+   327→      } catch {
+   328→        if (announce) showToast('Reconciliation failed', 'The self-audit could not complete — check the dev log and retry.');
+   329→      } finally {
+   330→        setReconciling(false);
+   331→      }
+   332→    },
+   333→    [fetchJson, showToast],
+   334→  );
+   335→
+   336→  // Initial load + polling loops (2s intercept SLA · 6s ledger/comms).
+   337→  useEffect(() => {
+   338→    let alive = true;
+   339→    (async () => {
+   340→      try {
+   341→        await refreshIntercept(false);
+   342→        await refreshSlow();
+   343→        await refreshHitl(false);
+   344→        await refreshGeo();
+   345→      } catch {
+   346→        // Backend warming up — polling loops will recover.
+   347→      }
+   348→    })();
+   349→    runReconcile(false);
+   350→    const fast = setInterval(() => { refreshIntercept(true).catch(() => undefined); }, 2000);
+   351→    const slow = setInterval(() => {
+   352→      (async () => {
+   353→        try {
+   354→          const m = await refreshSlow();
+   355→          await refreshHitl(true);
+   356→          if (!alive) return;
+   357→          const tenant = activeTenantRef.current;
+   358→          if (m.some((x) => x.tenantName === tenant && x.unread)) {
+   359→            await markRead(tenant);
+   360→            setMessages(await fetchJson<MessageView[]>('/api/messages'));
+   361→          }
+   362→        } catch {
+   363→          // Transient — next tick retries.
+   364→        }
+   365→      })();
+   366→    }, 6000);
+   367→    return () => {
+   368→      alive = false;
+   369→      clearInterval(fast);
+   370→      clearInterval(slow);
+   371→    };
+   372→  }, [refreshIntercept, refreshSlow, refreshHitl, refreshGeo, markRead, fetchJson, runReconcile]);
+   373→
+   374→  // SSE push layer — the traffic event refreshes the geo slice instantly
+   375→  // (landing surfaces + enclave logins/uploads appear within one beat).
+   376→  useEffect(() => {
+   377→    const es = new EventSource('/api/telemetry/stream');
+   378→    const onTraffic = () => {
+   379→      refreshGeo().catch(() => undefined);
+   380→      // Nudge the funnel card too — the 6s poll reconciles the rest.
+   381→      fetchJson<LedgerView>('/api/ledger').then(setLedger).catch(() => undefined);
+   382→    };
+   383→    es.addEventListener('traffic', onTraffic);
+   384→    return () => {
+   385→      es.removeEventListener('traffic', onTraffic);
+   386→      es.close();
+   387→    };
+   388→  }, [refreshGeo, fetchJson]);
+   389→
+   390→  useEffect(() => {
+   391→    activeTenantRef.current = activeChatTenant;
+   392→    (async () => {
+   393→      await markRead(activeChatTenant);
+   394→      try {
+   395→        setMessages(await fetchJson<MessageView[]>('/api/messages'));
+   396→      } catch {
+   397→        // Polling loop will resync.
+   398→      }
+   399→    })();
+   400→  }, [activeChatTenant, markRead, fetchJson]);
+   401→
+   402→  // ── Actions ──────────────────────────────────────────────────
+   403→  const act = useCallback(
+   404→    async (ref: string, action: HitlAction) => {
+   405→      setBusyRef(ref);
+   406→      try {
+   407→        const data = await fetchJson<{ dispatch?: { status: string; reason?: string; failureRef?: string } }>(
+   408→          `/api/hitl/${encodeURIComponent(ref)}`,
+   409→          { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, actor: currentUser }) },
+   410→        );
+   411→        await Promise.all([refreshHitl(true), refreshIntercept(true), refreshSlow()]);
+   412→        if (action === 'RETRY' && data.dispatch?.status === 'FAILED') {
+   413→          showToast('Retry blocked', `${ref} — mailbox still locked. Item remains in the HITL queue for manual resolution.`);
+   414→        } else if (action === 'APPROVE' && data.dispatch?.status === 'DISPATCHED') {
+   415→          showToast('Verified & dispatched', `${ref} approved — margin defended now attached to the client portal ledger.`);
+   416→        } else if (action === 'RETRY' && data.dispatch?.status === 'DISPATCHED') {
+   417→          showToast('Dispatch restored', `${ref} — mailbox reachable again, draft delivered. Failure resolved.`);
+   418→        }
+   419→      } catch {
+   420→        showToast('Action failed', `${ref} could not be ${action.toLowerCase()}d — check the dev log and retry.`);
+   421→      } finally {
+   422→        setBusyRef(null);
+   423→      }
+   424→    },
+   425→    [fetchJson, refreshHitl, refreshIntercept, refreshSlow, showToast, currentUser],
+   426→  );
+   427→
+   428→  const handleSimulate = useCallback(async () => {
+   429→    setSimulating(true);
+   430→    try {
+   431→      await fetchJson('/api/intercept/simulate', {
+   432→        method: 'POST',
+   433→        headers: { 'Content-Type': 'application/json' },
+   434→        body: JSON.stringify({ actor: currentUser }),
+   435→      });
+   436→      await Promise.all([refreshIntercept(true), refreshHitl(true), refreshSlow()]);
+   437→    } catch {
+   438→      showToast('Simulation failed', 'Inbound RFQ could not be ingested — check the dev log.');
+   439→    } finally {
+   440→      setSimulating(false);
+   441→    }
+   442→  }, [fetchJson, refreshHitl, refreshIntercept, refreshSlow, showToast, currentUser]);
+   443→
+   444→  const handleSendMessage = async (e: React.FormEvent) => {
+   445→    e.preventDefault();
+   446→    if (!newMessageText.trim()) return;
+   447→    await fetch('/api/messages', {
+   448→      method: 'POST',
+   449→      headers: { 'Content-Type': 'application/json' },
+   450→      body: JSON.stringify({ tenantName: activeChatTenant, text: newMessageText, actor: currentUser }),
+   451→    }).catch(() => undefined);
+   452→    setNewMessageText('');
+   453→    try {
+   454→      setMessages(await fetchJson<MessageView[]>('/api/messages'));
+   455→    } catch {
+   456→      // Polling loop will resync.
+   457→    }
+   458→  };
+   459→
+   460→  // ── Say it plainly — the command line (the station listens) ──
+   461→  const [commandInput, setCommandInput] = useState('');
+   462→  const [commandDraft, setCommandDraft] = useState<ParsedCommand | null>(null);
+   463→  const [commandBusy, setCommandBusy] = useState(false);
+   464→
+   465→  const submitCommand = (e: React.FormEvent) => {
+   466→    e.preventDefault();
+   467→    if (!commandInput.trim()) return;
+   468→    const draft = parseCommand(commandInput, {
+   469→      currentUser,
+   470→      teamNames: ledger?.team.map((m) => m.name) ?? [],
+   471→      tenantNames: tenants.map((t) => t.name),
+   472→      hitlRefs: hitlQueue.filter((h) => h.status === 'PENDING').map((h) => h.ref),
+   473→    });
+   474→    setCommandDraft(draft);
+   475→  };
+   476→
+   477→  const executeCommand = async () => {
+   478→    if (!commandDraft || commandDraft.kind === 'unknown') return;
+   479→    setCommandBusy(true);
+   480→    try {
+   481→      if (commandDraft.kind === 'target') {
+   482→        const member = ledger?.team.find((m) => m.name === commandDraft.memberName);
+   483→        if (member) await handleUpdateTarget(member.id, commandDraft.target);
+   484→      } else if (commandDraft.kind === 'hitl') {
+   485→        await act(commandDraft.ref, commandDraft.action);
+   486→      } else if (commandDraft.kind === 'invite') {
+   487→        await issueInvite(commandDraft.tenantName);
+   488→      } else if (commandDraft.kind === 'message') {
+   489→        await fetch('/api/messages', {
+   490→          method: 'POST',
+   491→          headers: { 'Content-Type': 'application/json' },
+   492→          body: JSON.stringify({ tenantName: commandDraft.tenantName, text: commandDraft.text, actor: currentUser }),
+   493→        }).catch(() => undefined);
+   494→        try {
+   495→          setMessages(await fetchJson<MessageView[]>('/api/messages'));
+   496→        } catch {
+   497→          // Polling loop will resync.
+   498→        }
+   499→        showToast('Message sent', `Delivered to the ${commandDraft.tenantName} enclave line — signed in the ship's log.`);
+   500→        refreshSlow().catch(() => undefined);
+   501→      }
+   502→      setCommandDraft(null);
+   503→      setCommandInput('');
+   504→    } finally {
+   505→      setCommandBusy(false);
+   506→    }
+   507→  };
+   508→
+   509→  // ── WebRTC handlers ──────────────────────────────────────────
+   510→  const launchRoom = useCallback(async () => {
+   511→    setCallState('connecting');
+   512→    try {
+   513→      // R-07: resolve ICE servers (STUN + optional TURN relay) before the room opens.
+   514→      let rtc = rtcConfigRef.current;
+   515→      if (!rtc) {
+   516→        const res = await fetch('/api/rtc/config', { cache: 'no-store' }).catch(() => null);
+   517→        const data: unknown = res && res.ok ? await res.json().catch(() => null) : null;
+   518→        const raw = (data as { iceServers?: unknown; turnConfigured?: unknown }) ?? {};
+   519→        rtc = {
+   520→          iceServers: Array.isArray(raw.iceServers) ? (raw.iceServers as RTCIceServer[]) : [],
+   521→          turnConfigured: Boolean(raw.turnConfigured),
+   522→        };
+   523→        rtcConfigRef.current = rtc;
+   524→        setRtcMode(rtc.turnConfigured ? 'turn' : 'local');
+   525→      }
+   526→
+   527→      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+   528→      localStreamRef.current = stream;
+   529→      setMicOn(true);
+   530→      setCamOn(true);
+   531→
+   532→      // With TURN configured, warm a real peer connection and gather relay
+   533→      // candidates so the room can be joined via the relay behind strict NATs.
+   534→      if (rtc.turnConfigured && typeof RTCPeerConnection !== 'undefined') {
+   535→        pcRef.current?.close();
+   536→        const pc = new RTCPeerConnection({ iceServers: rtc.iceServers });
+   537→        pcRef.current = pc;
+   538→        stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+   539→        pc.createOffer().then((offer) => pc.setLocalDescription(offer)).catch(() => undefined);
+   540→        setRelayCount(0);
+   541→        pc.addEventListener('icecandidate', (ev) => {
+   542→          if (ev.candidate?.candidate.includes('typ relay')) setRelayCount((n) => n + 1);
+   543→        });
+   544→      }
+   545→      setCallState('live');
+   546→    } catch {
+   547→      setCallState('error');
+   548→    }
+   549→  }, []);
+   550→
+   551→  useEffect(() => {
+   552→    if (callState === 'live' && videoRef.current && localStreamRef.current) {
+   553→      videoRef.current.srcObject = localStreamRef.current;
+   554→    }
+   555→  }, [callState]);
+   556→
+   557→  const endCall = useCallback(() => {
+   558→    localStreamRef.current?.getTracks().forEach((t) => t.stop());
+   559→    localStreamRef.current = null;
+   560→    pcRef.current?.close();
+   561→    pcRef.current = null;
+   562→    setCallState('idle');
+   563→  }, []);
+   564→
+   565→  const toggleMic = () => {
+   566→    const track = localStreamRef.current?.getAudioTracks()[0];
+   567→    if (track) { track.enabled = !track.enabled; setMicOn(track.enabled); }
+   568→  };
+   569→  const toggleCam = () => {
+   570→    const track = localStreamRef.current?.getVideoTracks()[0];
+   571→    if (track) { track.enabled = !track.enabled; setCamOn(track.enabled); }
+   572→  };
+   573→  useEffect(() => () => { localStreamRef.current?.getTracks().forEach((t) => t.stop()); }, []);
+   574→
+   575→  // ── Derived ──────────────────────────────────────────────────
+   576→  const pendingCount = hitlQueue.filter((i) => i.status === 'PENDING').length;
+   577→  const activeTenant = tenants.find((t) => t.name === activeChatTenant);
+   578→  const visibleMessages = messages.filter((m) => m.tenantName === activeChatTenant);
+   579→  // Time-travel mode — the ledger panels re-anchor; the live wire stays present.
+   580→  const traveling = Boolean(ledger?.asOf);
+   581→
+   582→  return (
+   583→    <div className="flex min-h-screen flex-col bg-paper text-ink selection:bg-blush selection:text-sienna">
+   584→      {/* ── Masthead ─────────────────────────────────────────────── */}
+   585→      <header className="sticky top-0 z-50 border-b border-hairline bg-paper/85 backdrop-blur-md">
+   586→        <div className="mx-auto flex h-16 w-full max-w-[1280px] items-center justify-between px-5 sm:px-8 lg:px-10">
+   587→          <div className="flex min-w-0 items-center gap-4">
+   588→            <Link href="/backbone" className="shrink-0 font-display text-[21px] leading-none tracking-[-0.01em] text-ink">
+   589→              backbone
+   590→            </Link>
+   591→            <span className="hidden text-[13px] text-smoke sm:inline">v1.2.0 · live</span>
+   592→            {/* Reconciliation stamp — the station audits itself. Click to re-run. */}
+   593→            <button
+   594→              type="button"
+   595→              onClick={() => runReconcile(true)}
+   596→              disabled={reconciling || !reconcile}
+   597→              title={reconcile ? `Self-audit ${reconcile.ok ? 'passed' : 'FLAGGED'} at ${new Date(reconcile.checkedAt).toLocaleTimeString('en-US', { hour12: false })} — click to re-run` : 'Running the self-audit…'}
+   598→              className={`hidden items-center gap-2 rounded-full border px-3 py-1.5 text-[12px] transition-colors md:inline-flex ${
+   599→                !reconcile
+   600→                  ? 'border-hairline text-smoke'
+   601→                  : reconcile.ok
+   602→                    ? 'border-hairline text-steel hover:bg-mist hover:text-ink'
+   603→                    : 'border-sienna/40 bg-blush text-sienna hover:bg-blush/80'
+   604→              }`}
+   605→            >
+   606→              {reconciling ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.75} /> : <ShieldCheckIcon className="h-3.5 w-3.5" strokeWidth={1.75} />}
+   607→              {reconcile
+   608→                ? reconcile.ok
+   609→                  ? `reconciled · drift $0 · ${new Date(reconcile.checkedAt).toLocaleTimeString('en-US', { hour12: false })}`
+   610→                  : `drift ${(reconcile.driftCents / 100).toFixed(2)} — flagged`
+   611→                : 'reconciling…'}
+   612→            </button>
+   613→            <span className="hidden items-center gap-2 rounded-full border border-hairline px-3 py-1.5 text-[12px] text-steel lg:inline-flex">
+   614→              <LiveDot />
+   615→              Operational · Telemetry live
+   616→            </span>
+   617→          </div>
+   618→
+   619→          <div className="flex shrink-0 items-center gap-3">
+   620→            <button
+   621→              onClick={handleSimulate}
+   622→              disabled={simulating}
+   623→              className="inline-flex items-center gap-2 rounded-full border border-ink px-3.5 py-1.5 text-[13px] font-medium text-ink transition-colors hover:bg-mist disabled:opacity-50"
+   624→            >
+   625→              {simulating ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.75} /> : <Bell className="h-3.5 w-3.5" strokeWidth={1.75} />}
+   626→              <span className="hidden sm:inline">Simulate inbound RFQ</span>
+   627→              <span className="sm:hidden">RFQ</span>
+   628→            </button>
+   629→            <label className="hidden items-center gap-2 rounded-full border border-hairline py-1.5 pl-3 pr-2 text-[12.5px] text-steel md:inline-flex">
+   630→              <Users className="h-3.5 w-3.5" strokeWidth={1.75} />
+   631→              Active profile
+   632→              <select
+   633→                value={currentUser}
+   634→                onChange={(e) => switchUser(e.target.value)}
+   635→                aria-label="Active profile"
+   636→                className="cursor-pointer appearance-none bg-transparent pr-1 text-[12.5px] font-medium text-ink outline-none"
+   637→              >
+   638→                <option value="Damon">Damon (Lead Architect)</option>
+   639→                <option value="Josias">Josias (Execution Lead)</option>
+   640→              </select>
+   641→            </label>
+   642→            <div className="hidden items-center gap-2 text-[13px] text-steel xl:flex">
+   643→              <Database className="h-3.5 w-3.5" strokeWidth={1.75} />
+   644→              SQLite · WAL · Prisma
+   645→            </div>
+   646→          </div>
+   647→        </div>
+   648→      </header>
+   649→
+   650→      {/* ── Telegram toast ───────────────────────────────────────── */}
+   651→      {toast && (
+   652→        <div
+   653→          role="status"
+   654→          className="fixed right-4 top-20 z-[60] flex max-w-sm items-start gap-3 rounded-[20px] bg-blush p-4 text-sienna shadow-[0_0_0_1px_rgba(93,42,26,0.06),0_12px_40px_rgba(0,0,0,0.14)] animate-in fade-in slide-in-from-top-2 duration-300 sm:right-8"
+   655→        >
+   656→          <Bell className="mt-0.5 h-5 w-5 shrink-0" strokeWidth={1.75} />
+   657→          <div>
+   658→            <div className="text-[13px] font-medium">{toast.title}</div>
+   659→            <div className="mt-0.5 text-[12px] leading-relaxed text-sienna/80">{toast.body}</div>
+   660→          </div>
+   661→        </div>
+   662→      )}
+   663→
+   664→      {/* ── Body ─────────────────────────────────────────────────── */}
+   665→      <div className="mx-auto flex w-full max-w-[1280px] flex-1 flex-col gap-8 px-5 py-8 sm:px-8 md:flex-row md:gap-10 md:py-12 lg:px-10">
+   666→        {/* Quiet rail */}
+   667→        <aside className="shrink-0 md:w-60">
+   668→          <div className="md:sticky md:top-24">
+   669→            <div className="mb-3 text-[13px] text-ash">Command modules</div>
+   670→            <nav aria-label="Command modules" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 md:mx-0 md:flex-col md:overflow-visible md:px-0 md:pb-0">
+   671→              {NAV.map(({ id, num, label, icon: Icon }) => {
+   672→                const active = activeTab === id;
+   673→                return (
+   674→                  <button
+   675→                    key={id}
+   676→                    onClick={() => setActiveTab(id)}
+   677→                    aria-current={active ? 'page' : undefined}
+   678→                    className={`inline-flex shrink-0 items-center gap-2.5 rounded-full px-4 py-2.5 text-[14px] transition-colors md:w-full ${
+   679→                      active ? 'bg-ink text-paper' : 'text-steel hover:bg-mist hover:text-ink'
+   680→                    }`}
+   681→                  >
+   682→                    <Icon className="h-4 w-4" strokeWidth={1.75} />
+   683→                    <span className="tabular-nums opacity-55">{num}</span>
+   684→                    <span className="whitespace-nowrap font-medium">{label}</span>
+   685→                    {id === 'ingestion_hitl' && pendingCount > 0 && (
+   686→                      <span className="ml-auto hidden h-5 min-w-5 items-center justify-center rounded-full bg-blush px-1.5 text-[11px] font-medium text-sienna md:inline-flex">
+   687→                        {pendingCount}
+   688→                      </span>
+   689→                    )}
+   690→                  </button>
+   691→                );
+   692→              })}
+   693→            </nav>
+   694→
+   695→            {/* Personal workspace (active operator) */}
+   696→            <div className="mt-10 hidden rounded-2xl bg-mist p-4 md:block">
+   697→              <div className="mb-2.5 flex items-center justify-between">
+   698→                <span className="text-[13px] font-medium text-steel">Personal workspace</span>
+   699→                <span className="text-[11px] uppercase tracking-wide text-smoke">{currentUser}</span>
+   700→              </div>
+   701→              {(() => {
+   702→                const me = ledger?.team.find((m) => m.name === currentUser);
+   703→                const pct = me && me.qOutboundTarget > 0 ? Math.min(100, Math.round((me.qOutboundCompleted / me.qOutboundTarget) * 100)) : 0;
+   704→                return me ? (
+   705→                  <div className="space-y-2 text-[12px]">
+   706→                    <div className="flex items-center justify-between">
+   707→                      <span className="text-smoke">My outbound goal</span>
+   708→                      <span className="font-medium tabular-nums text-ink">
+   709→                        {me.qOutboundCompleted} / {me.qOutboundTarget}
+   710→                      </span>
+   711→                    </div>
+   712→                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-paper">
+   713→                      <div className="h-full rounded-full bg-sienna transition-all duration-500" style={{ width: `${pct}%` }} />
+   714→                    </div>
+   715→                    <div className="flex items-center justify-between text-[11px]">
+   716→                      <span className="text-smoke">Q4 progress</span>
+   717→                      <span className="tabular-nums text-steel">{pct}% completed</span>
+   718→                    </div>
+   719→                  </div>
+   720→                ) : (
+   721→                  <div className="text-[12px] text-smoke">Syncing operator…</div>
+   722→                );
+   723→              })()}
+   724→            </div>
+   725→
+   726→            {/* Local storage status */}
+   727→            <div className="mt-3 hidden rounded-2xl bg-mist p-4 md:block">
+   728→              <div className="mb-2.5 text-[13px] font-medium text-steel">Local storage</div>
+   729→              <div className="space-y-2 text-[12px]">
+   730→                {[
+   731→                  ['Database', 'SQLite active'],
+   732→                  ['WAL mode', 'Enabled'],
+   733→                  ['Rev-share ledger', ledger ? `${fmtUsd(ledger.revShareCents)} defended` : 'Syncing…'],
+   734→                ].map(([k, v]) => (
+   735→                  <div key={k} className="flex items-center justify-between gap-3">
+   736→                    <span className="text-smoke">{k}</span>
+   737→                    <span className="text-right font-medium text-ink">{v}</span>
+   738→                  </div>
+   739→                ))}
+   740→              </div>
+   741→            </div>
+   742→          </div>
+   743→        </aside>
+   744→
+   745→        {/* Workspace */}
+   746→        <main className="min-w-0 flex-1">
+   747→          {/* ════ 01 · TELEMETRY ════ */}
+   748→          {activeTab === 'telemetry' && (
+   749→            <div className="animate-in fade-in duration-300">
+   750→              <ViewHeader
+   751→                tag="System telemetry & founder intel"
+   752→                title="Agency"
+   753→                accent="command"
+   754→                rest="deck"
+   755→                sub="Live figures stream from the SQLite financial ledger. Click any widget card to inspect conversion pipelines, founder performance, and financial velocity."
+   756→              />
+   757→
+   758→              {/* Time travel — the station as time machine. Every ledger panel
+   759→                  re-anchors to the chosen day; the live wire stays in the present. */}
+   760→              <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2.5 rounded-2xl bg-mist px-4 py-3">
+   761→                <span className="flex items-center gap-2 text-[13px] font-medium text-ink">
+   762→                  <Rewind className="h-3.5 w-3.5 text-sienna" strokeWidth={1.75} />
+   763→                  Time travel
+   764→                </span>
+   765→                <input
+   766→                  type="date"
+   767→                  aria-label="View the deck as of a past date"
+   768→                  value={timeTravel}
+   769→                  max={new Date().toISOString().slice(0, 10)}
+   770→                  onChange={(e) => setTimeTravel(e.target.value)}
+   771→                  className="h-8 rounded-full border border-hairline bg-paper px-3 text-[12.5px] tabular-nums text-ink outline-none transition-shadow focus-visible:shadow-[0_0_0_2px_rgba(93,42,26,0.25)]"
+   772→                />
+   773→                {timeTravel ? (
+   774→                  <>
+   775→                    <BlushChip>
+   776→                      <HistoryIcon className="h-3 w-3" strokeWidth={1.75} />
+   777→                      Viewing ledger as of {timeTravel}
+   778→                    </BlushChip>
+   779→                    <button
+   780→                      type="button"
+   781→                      onClick={() => setTimeTravel('')}
+   782→                      className="inline-flex items-center gap-1.5 rounded-full border border-ink px-3 py-1 text-[12px] font-medium text-ink transition-colors hover:bg-mist"
+   783→                    >
+   784→                      Return to live
+   785→                    </button>
+   786→                    <span className="text-[12px] text-smoke">Team counters are engine-reported live state — they don't travel.</span>
+   787→                  </>
+   788→                ) : (
+   789→                  <span className="text-[12px] text-smoke">Pick a date to re-anchor every horizon — lifetime, monthly, and the 24h delta all move with it.</span>
+   790→                )}
+   791→              </div>
+   792→
+   793→              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+   794→                <IntelCard
+   795→                  id="accounts"
+   796→                  active={activeWidgetModal === 'accounts'}
+   797→                  onToggle={toggleWidget}
+   798→                  icon={Trophy}
+   799→                  label="Active accounts"
+   800→                  value={<>{ledger ? ledger.activeAccounts : '—'} <span className="text-[13px] font-normal text-smoke">/ sprint target {ledger ? ledger.sprintTarget : 10}</span></>}
+   801→                  hint="Team arena — targets & conversion"
+   802→                  spark={{ id: 'spark-accounts', path: 'M2 24 C 14 22, 20 15, 30 16 S 50 22, 60 13 S 84 4, 98 7' }}
+   803→                />
+   804→                <IntelCard
+   805→                  id="margin"
+   806→                  active={activeWidgetModal === 'margin'}
+   807→                  onToggle={toggleWidget}
+   808→                  icon={TrendingUp}
+   809→                  label="Margin defended"
+   810→                  value={ledger ? fmtUsd(ledger.marginDefendedCents) : '—'}
+   811→                  hint="Client directory"
+   812→                  spark={{ id: 'spark-margin', path: 'M2 20 C 16 24, 26 12, 40 14 S 66 20, 78 10 S 92 6, 98 8' }}
+   813→                />
+   814→                <IntelCard
+   815→                  id="revshare"
+   816→                  active={activeWidgetModal === 'revshare'}
+   817→                  onToggle={toggleWidget}
+   818→                  icon={DollarSign}
+   819→                  label="Syntropic 20% rev-share"
+   820→                  value={ledger ? fmtUsd(ledger.revShareCents) : '—'}
+   821→                  hint="Financial horizons"
+   822→                  peach
+   823→                  spark={{ id: 'spark-revshare', path: 'M2 26 C 18 26, 26 18, 40 19 S 62 10, 76 12 S 92 4, 98 5' }}
+   824→                />
+   825→                <IntelCard
+   826→                  id="guarantee"
+   827→                  active={activeWidgetModal === 'guarantee'}
+   828→                  onToggle={toggleWidget}
+   829→                  icon={ShieldCheck}
+   830→                  label="Audit guarantee status"
+   831→                  value={ledger ? `${Math.round(ledger.guaranteePassRate * 100)}% passed` : '—'}
+   832→                  hint="Audit sales log"
+   833→                />
+   834→                <IntelCard
+   835→                  id="traffic"
+   836→                  active={activeWidgetModal === 'traffic'}
+   837→                  onToggle={toggleWidget}
+   838→                  icon={Eye}
+   839→                  label="Today · traffic"
+   840→                  value={ledger?.traffic ? ledger.traffic.uniqueSessions.toLocaleString('en-US') : traveling ? '—' : '0'}
+   841→                  hint={traveling ? 'Funnel — lives in the present' : "Funnel — today's intake"}
+   842→                />
+   843→              </div>
+   844→
+   845→              {ledger && activeWidgetModal === 'accounts' && (
+   846→                <ArenaPanel
+   847→                  ledger={ledger}
+   848→                  currentUser={currentUser}
+   849→                  seasons={traveling ? null : seasons}
+   850→                  onUpdateTarget={handleUpdateTarget}
+   851→                  onClose={() => setActiveWidgetModal(null)}
+   852→                />
+   853→              )}
+   854→              {ledger && activeWidgetModal === 'margin' && <MarginPanel ledger={ledger} onClose={() => setActiveWidgetModal(null)} />}
+   855→              {ledger && activeWidgetModal === 'revshare' && <RevsharePanel ledger={ledger} onClose={() => setActiveWidgetModal(null)} />}
+   856→              {ledger && activeWidgetModal === 'guarantee' && <GuaranteePanel ledger={ledger} onClose={() => setActiveWidgetModal(null)} />}
+   857→              {ledger && activeWidgetModal === 'traffic' && ledger.traffic && (
+   858→                <TrafficPanel traffic={ledger.traffic} onClose={() => setActiveWidgetModal(null)} />
+   859→              )}
+   860→
+   861→              {/* Phase 11.9 — Inbound industrial hubs (live geo stream). */}
+   862→              {/* Time travel leaves today's map behind — the geo slice is a present-tense artifact. */}
+   863→              {geo && !traveling && <GeoHubPanel geo={geo} />}
+   864→
+   865→              {/* Intercept stream — live only. Time travel pauses the wire. */}
+   866→              {traveling ? (
+   867→                <section className={`mt-6 p-6 sm:p-8 ${ARTIFACT}`}>
+   868→                  <div className="flex items-center gap-2 text-[15px] font-medium text-ink">
+   869→                    <Activity className="h-4 w-4 text-smoke" strokeWidth={1.75} />
+   870→                    Live intercept stream
+   871→                  </div>
+   872→                  <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-steel">
+   873→                    The wire only exists in the present — intercepts stream in real time and are not replayed by the ledger.
+   874→                    Return to live to watch the defense engine work; the ship's log below still shows everything as it stood on {timeTravel}.
+   875→                  </p>
+   876→                </section>
+   877→              ) : (
+   878→              <section className={`mt-6 p-2 sm:p-3 ${ARTIFACT}`}>
+   879→                <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-2 pt-2.5 sm:px-4">
+   880→                  <h2 className="flex items-center gap-2 text-[15px] font-medium text-ink">
+   881→                    <Activity className="h-4 w-4 text-sienna" strokeWidth={1.75} />
+   882→                    Live intercept stream
+   883→                    <span className="hidden font-normal text-steel sm:inline">· under 90s response SLA</span>
+   884→                  </h2>
+   885→                  <span className="text-[12px] text-smoke">Auto-refresh · 2s</span>
+   886→                </div>
+   887→                <div className="divide-y divide-hairline">
+   888→                  {events.map((log) => (
+   889→                    <div
+   890→                      key={log.id}
+   891→                      className="flex flex-col justify-between gap-2 rounded-2xl px-3 py-3 transition-colors hover:bg-fog sm:px-4 lg:flex-row lg:items-center"
+   892→                    >
+   893→                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
+   894→                        <span className="tabular-nums text-smoke">{clockTime(log.createdAt)}</span>
+   895→                        <span className="rounded-full bg-mist px-2.5 py-0.5 text-[12px] text-ink">{log.tenantName}</span>
+   896→                        <span className="text-ink">{log.item}</span>
+   897→                      </div>
+   898→                      <div className="flex items-center gap-3 text-[13px]">
+   899→                        {log.origCents > 0 && <span className="tabular-nums text-smoke line-through">{fmtUsd(log.origCents, true)}</span>}
+   900→                        <span className="font-medium tabular-nums text-ink">{fmtUsd(log.defendedCents, true)}</span>
+   901→                        <span className="rounded-full bg-mist px-2.5 py-0.5 text-[12px] tabular-nums text-ink">+{fmtUsd(log.diffCents, true)}</span>
+   902→                        <span className="hidden items-center gap-1 text-[12px] text-steel md:inline-flex">
+   903→                          {log.source === 'HITL_APPROVAL' ? 'Attached via HITL approval' : `Injected into ${log.channel}`}
+   904→                          <ArrowUpRight className="h-3 w-3" strokeWidth={1.75} />
+   905→                        </span>
+   906→                      </div>
+   907→                    </div>
+   908→                  ))}
+   909→                </div>
+   910→              </section>
+   911→              )}
+   912→
+   913→              {/* The Ship's Log — append-only command journal (attribution feature) */}
+   914→              <ShipsLogPanel log={commandLog} />
+   915→
+   916→              {/* Say it plainly — one input, confirmable drafts, no guessing */}
+   917→              <section className={`mt-4 p-6 sm:p-8 ${ARTIFACT}`}>
+   918→                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-hairline pb-5">
+   919→                  <div>
+   920→                    <div className="text-[14px] text-ash">One input · parsed into a draft · confirmed by you</div>
+   921→                    <h3 className="mt-1.5 flex items-center gap-2.5 font-display text-[26px] font-normal leading-[1.18] tracking-[-0.01em] text-ink">
+   922→                      Say it <em className="italic">plainly</em>
+   923→                    </h3>
+   924→                  </div>
+   925→                  <span className="inline-flex items-center gap-2 rounded-full bg-mist px-3 py-1 text-[12px] font-medium text-steel">
+   926→                    Signed as {currentUser}
+   927→                  </span>
+   928→                </div>
+   929→
+   930→                <form onSubmit={submitCommand} className="flex flex-col gap-2 pt-5 sm:flex-row">
+   931→                  <input
+   932→                    type="text"
+   933→                    value={commandInput}
+   934→                    onChange={(e) => setCommandInput(e.target.value)}
+   935→                    placeholder='Say it plainly — "raise my target to 180" · "approve HITL-8092" · "invite gulf to the portal"'
+   936→                    aria-label="Plain-English command line"
+   937→                    className="h-11 flex-1 rounded-2xl border border-hairline bg-fog px-4 text-[14px] text-ink transition-colors placeholder:text-smoke focus:border-ink/30 focus:bg-paper focus:outline-none"
+   938→                  />
+   939→                  <FilledPill type="submit" className="h-11 shrink-0">
+   940→                    Parse draft
+   941→                  </FilledPill>
+   942→                </form>
+   943→
+   944→                {commandDraft && (
+   945→                  <div className="mt-4 animate-in fade-in slide-in-from-bottom-1 duration-200 rounded-2xl bg-fog p-4 sm:p-5">
+   946→                    {commandDraft.kind === 'unknown' ? (
+   947→                      <>
+   948→                        <div className="text-[12px] font-medium uppercase tracking-[0.06em] text-sienna">Couldn't parse that</div>
+   949→                        <p className="mt-1.5 text-[13.5px] leading-relaxed text-steel">{commandDraft.hint}</p>
+   950→                      </>
+   951→                    ) : (
+   952→                      <>
+   953→                        <div className="text-[12px] font-medium uppercase tracking-[0.06em] text-smoke">Draft command · parsed from plain English</div>
+   954→                        <div className="mt-1.5 text-[15px] font-medium text-ink">{commandDraft.summary}</div>
+   955→                        <div className="mt-3 flex flex-wrap gap-2">
+   956→                          <FilledPill onClick={executeCommand} disabled={commandBusy}>
+   957→                            {commandBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} /> : <Check className="h-3.5 w-3.5" strokeWidth={2} />}
+   958→                            Confirm & execute
+   959→                          </FilledPill>
+   960→                          <GhostPill onClick={() => setCommandDraft(null)} disabled={commandBusy}>
+   961→                            Discard
+   962→                          </GhostPill>
+   963→                        </div>
+   964→                        <p className="mt-2.5 text-[12px] text-smoke">
+   965→                          Nothing runs until you confirm — the station listens, but never acts on its own.
+   966→                        </p>
+   967→                      </>
+   968→                    )}
+   969→                  </div>
+   970→                )}
+   971→
+   972→                {!commandDraft && (
+   973→                  <div className="mt-3.5 flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] text-smoke">
+   974→                    <span>Try:</span>
+   975→                    {[
+   976→                      'raise my target to 180',
+   977→                      'approve HITL-8092',
+   978→                      'invite gulf to the portal',
+   979→                      "message apex saying we're on it",
+   980→                    ].map((example) => (
+   981→                      <button
+   982→                        key={example}
+   983→                        type="button"
+   984→                        onClick={() => setCommandInput(example)}
+   985→                        className="rounded-full bg-fog px-2.5 py-1 font-mono text-[11.5px] text-steel transition-colors hover:bg-mist hover:text-ink"
+   986→                      >
+   987→                        {example}
+   988→                      </button>
+   989→                    ))}
+   990→                  </div>
+   991→                )}
+   992→              </section>
+   993→            </div>
+   994→          )}
+   995→
+   996→          {/* ════ 02 · INGESTION & HITL ════ */}
+   997→          {activeTab === 'ingestion_hitl' && (
+   998→            <div className="animate-in fade-in duration-300">
+   999→              <ViewHeader
+  1000→                tag="Spatial OCR & human-in-the-loop"
+  1001→                title="Ingestion &"
+  1002→                accent="quality"
+  1003→                rest="control"
+  1004→                sub="Docling spatial parsing flags every line item under 95% confidence. Telegram alerts dispatch the moment an item lands in the queue — and dispatch failures reroute here for manual resolution."
+  1005→              />
+  1006→
+  1007→              <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+  1008→                <h2 className="text-[15px] font-medium text-ink">Intercept review queue</h2>
+  1009→                {pendingCount > 0 ? (
+  1010→                  <BlushChip>
+  1011→                    <LiveDot />
+  1012→                    {pendingCount} action required
+  1013→                  </BlushChip>
+  1014→                ) : (
+  1015→                  <span className="text-[13px] text-steel">Queue clear — all items verified</span>
+  1016→                )}
+  1017→              </div>
+  1018→
+  1019→              <div className="space-y-4">
+  1020→                {hitlQueue.map((item) => {
+  1021→                  const isFailure = item.kind === 'DISPATCH_FAILURE';
+  1022→                  const busy = busyRef === item.ref;
+  1023→                  return (
+  1024→                    <article key={item.id} className={`space-y-5 p-5 sm:p-6 ${ARTIFACT}`}>
+  1025→                      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+  1026→                        <div className="min-w-0">
+  1027→                          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px]">
+  1028→                            <span className="font-medium text-steel">{item.ref}</span>
+  1029→                            <span className="text-smoke">·</span>
+  1030→                            <span className="text-steel">{item.tenantName}</span>
+  1031→                            <span className="text-smoke">({relTime(item.createdAt)})</span>
+  1032→                            {isFailure && <AlertTriangle className="h-3.5 w-3.5 text-sienna" strokeWidth={1.75} />}
+  1033→                          </div>
+  1034→                          <div className="mt-1.5 text-[17px] font-medium tracking-[-0.009em] text-ink">
+  1035→                            {isFailure ? (item.skuParsed ?? `Draft → ${item.tenantName} mailbox`) : item.skuParsed}
+  1036→                          </div>
+  1037→                          <div className="mt-1 text-[13px] text-steel">
+  1038→                            {isFailure ? 'Automated draft injection' : <>Source file · <span className="text-ink">{item.pdfName}</span></>}
+  1039→                          </div>
+  1040→                        </div>
+  1041→
+  1042→                        <div className="shrink-0 text-left sm:text-right">
+  1043→                          {isFailure ? (
+  1044→                            <>
+  1045→                              <div className="text-[12px] text-steel">Dispatch failure</div>
+  1046→                              <BlushChip className="mt-1.5">
+  1047→                                <AlertTriangle className="h-3 w-3" strokeWidth={1.75} />
+  1048→                                {item.failureReason === 'MAILBOX_NOT_FOUND' ? 'Mailbox not found' : 'Mailbox locked'}
+  1049→                              </BlushChip>
+  1050→                              <div className="mt-1.5 text-[12px] text-steel">Owner · <span className="font-medium text-ink">{item.owner}</span></div>
+  1051→                            </>
+  1052→                          ) : (
+  1053→                            <>
+  1054→                              <div className="text-[12px] text-steel">Docling confidence</div>
+  1055→                              <div className="mt-0.5 text-[22px] font-medium tabular-nums text-ink">{item.confidenceScore}%</div>
+  1056→                              <BlushChip className="mt-1.5">+{fmtUsd(item.extractedMarginLossCents, true)} loss identified</BlushChip>
+  1057→                            </>
+  1058→                          )}
+  1059→                        </div>
+  1060→                      </div>
+  1061→
+  1062→                      <div className="flex flex-col gap-2.5 border-t border-black/5 pt-4 sm:flex-row sm:justify-end">
+  1063→                        {item.status === 'PENDING' ? (
+  1064→                          isFailure ? (
+  1065→                            <>
+  1066→                              <GhostPill onClick={() => act(item.ref, 'RETRY')} disabled={busy}>
+  1067→                                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} /> : null}
+  1068→                                Retry dispatch
+  1069→                              </GhostPill>
+  1070→                              <FilledPill onClick={() => act(item.ref, 'RESOLVE')}>
+  1071→                                <Check className="h-3.5 w-3.5" strokeWidth={2} />
+  1072→                                Mark resolved
+  1073→                              </FilledPill>
+  1074→                            </>
+  1075→                          ) : (
+  1076→                            <>
+  1077→                              <GhostPill onClick={() => act(item.ref, 'OVERRIDE')} disabled={busy}>Manual override SKU</GhostPill>
+  1078→                              <FilledPill onClick={() => act(item.ref, 'APPROVE')} disabled={busy}>
+  1079→                                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} /> : <Check className="h-3.5 w-3.5" strokeWidth={2} />}
+  1080→                                Approve & dispatch to portal
+  1081→                              </FilledPill>
+  1082→                            </>
+  1083→                          )
+  1084→                        ) : (
+  1085→                          <span className="inline-flex items-center gap-2 text-[13px] text-steel">
+  1086→                            <CheckCircle2 className="h-4 w-4 text-sienna" strokeWidth={1.75} />
+  1087→                            {item.status === 'APPROVED'
+  1088→                              ? 'Verified & attached to client portal'
+  1089→                              : item.status === 'OVERRIDDEN'
+  1090→                                ? 'Manually overridden & attached to client portal'
+  1091→                                : 'Dispatch restored — failure resolved'}
+  1092→                          </span>
+  1093→                        )}
+  1094→                      </div>
+  1095→                    </article>
+  1096→                  );
+  1097→                })}
+  1098→              </div>
+  1099→            </div>
+  1100→          )}
+  1101→
+  1102→          {/* ════ 03 · TENANTS & AUDITS ════ */}
+  1103→          {activeTab === 'tenants_audits' && (
+  1104→            <div className="animate-in fade-in duration-300">
+  1105→              <ViewHeader
+  1106→                tag="Tenant enclave management"
+  1107→                title="Enterprise clients &"
+  1108→                accent="audits"
+  1109→                rest=""
+  1110→                sub="Isolated AST boundaries per tenant, with invite-only portal access, 48-hour audit briefings, and rev-share contracts tracked to the ledger."
+  1111→              />
+  1112→
+  1113→              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+  1114→                {tenants.map((tenant) => {
+  1115→                  const access = portalAccess.find((a) => a.name === tenant.name);
+  1116→                  const activeInvite = invites.find((i) => i.tenantName === tenant.name && i.status !== 'REVOKED');
+  1117→                  const accessLabel = !access?.hasCode
+  1118→                    ? 'Disabled — no active code'
+  1119→                    : activeInvite?.status === 'PENDING'
+  1120→                      ? 'Invite pending — first sign-in'
+  1121→                      : 'Access active';
+  1122→                  const revealing = revealedCode?.tenant === tenant.name;
+  1123→                  return (
+  1124→                  <article key={tenant.name} className="space-y-4 rounded-[24px] bg-mist p-6">
+  1125→                    <div className="flex items-start justify-between gap-3">
+  1126→                      <div>
+  1127→                        <h3 className="font-display text-[26px] font-normal leading-[1.18] tracking-[-0.01em] text-ink">{tenant.name}</h3>
+  1128→                        <div className="mt-1 text-[13px] text-steel">{tenant.erp} · AST isolated boundary</div>
+  1129→                      </div>
+  1130→                      <BlushChip className="shrink-0">{tenant.status}</BlushChip>
+  1131→                    </div>
+  1132→
+  1133→                    <div className="space-y-2 border-t border-black/5 pt-4 text-[13px]">
+  1134→                      <div className="flex items-center justify-between gap-3">
+  1135→                        <span className="text-steel">Deposit / fee</span>
+  1136→                        <span className="font-medium text-ink">{tenant.depositLabel}</span>
+  1137→                      </div>
+  1138→                      <div className="flex items-center justify-between gap-3">
+  1139→                        <span className="text-steel">Margin recovery baseline</span>
+  1140→                        <span className="font-medium text-ink">{tenant.guaranteeLabel}</span>
+  1141→                      </div>
+  1142→                      <div className="flex items-center justify-between gap-3">
+  1143→                        <span className="text-steel">Outlook mailbox</span>
+  1144→                        <span className={`font-medium ${tenant.mailboxStatus === 'ACTIVE' ? 'text-ink' : 'text-sienna'}`}>
+  1145→                          {mailboxLabel[tenant.mailboxStatus]}
+  1146→                        </span>
+  1147→                      </div>
+  1148→                    </div>
+  1149→
+  1150→                    {/* Portal access — invite-only, replaces demo codes */}
+  1151→                    <div className="space-y-3 border-t border-black/5 pt-4">
+  1152→                      <div className="flex items-center justify-between gap-3">
+  1153→                        <div className="flex items-center gap-2 text-[13px] font-medium text-ink">
+  1154→                          <KeyRound className="h-3.5 w-3.5 text-steel" strokeWidth={1.75} />
+  1155→                          Portal access
+  1156→                        </div>
+  1157→                        <span className={`text-[12px] font-medium ${access?.hasCode ? 'text-ink' : 'text-sienna'}`}>
+  1158→                          {accessLabel}
+  1159→                        </span>
+  1160→                      </div>
+  1161→                      <div className="text-[12px] leading-relaxed text-steel">
+  1162→                        {access?.contactEmail || 'No contact email on file'}
+  1163→                        {activeInvite && <> · invite <span className="font-mono text-[11.5px] text-ink">{activeInvite.codeHint}</span> ({activeInvite.status.toLowerCase()}, issued by {activeInvite.issuedBy})</>}
+  1164→                      </div>
+  1165→                      <div className="flex flex-wrap gap-2">
+  1166→                        <GhostPill onClick={() => issueInvite(tenant.name)} disabled={inviteBusy === tenant.name}>
+  1167→                          {inviteBusy === tenant.name ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} /> : <MailPlus className="h-3.5 w-3.5" strokeWidth={1.75} />}
+  1168→                          Email new invite
+  1169→                        </GhostPill>
+  1170→                        {access?.hasCode && (
+  1171→                          <GhostPill onClick={() => revokeAccess(tenant.name)} disabled={inviteBusy === tenant.name}>
+  1172→                            <Ban className="h-3.5 w-3.5" strokeWidth={1.75} />
+  1173→                            Disable access
+  1174→                          </GhostPill>
+  1175→                        )}
+  1176→                      </div>
+  1177→                      {revealing && revealedCode && (
+  1178→                        <div className="rounded-2xl bg-blush p-4 text-sienna">
+  1179→                          <div className="flex items-center justify-between gap-3">
+  1180→                            <div className="text-[12px] font-medium uppercase tracking-[0.06em]">Access code — shown once</div>
+  1181→                            <button
+  1182→                              onClick={copyRevealed}
+  1183→                              className="inline-flex items-center gap-1.5 rounded-full border border-sienna/30 px-2.5 py-1 text-[12px] font-medium transition-colors hover:bg-sienna/10"
+  1184→                            >
+  1185→                              {copiedCode ? <Check className="h-3 w-3" strokeWidth={2} /> : <Copy className="h-3 w-3" strokeWidth={1.75} />}
+  1186→                              {copiedCode ? 'Copied' : 'Copy'}
+  1187→                            </button>
+  1188→                          </div>
+  1189→                          <div className="mt-1.5 font-mono text-[16px] font-medium tracking-wide">{revealedCode.code}</div>
+  1190→                          <p className="mt-1.5 text-[12px] leading-relaxed text-sienna/80">
+  1191→                            Delivered to {revealedCode.email} (outbox · simulated SMTP). It replaces any previous code and signs this tenant into exactly one enclave — store it now; it will not be shown again.
+  1192→                          </p>
+  1193→                        </div>
+  1194→                      )}
+  1195→                    </div>
+  1196→
+  1197→                    <a
+  1198→                      href={`/portal?tenant=${encodeURIComponent(tenant.name)}`}
+  1199→                      target="_blank"
+  1200→                      rel="noreferrer"
+  1201→                      className="inline-flex items-center gap-1.5 pt-1 text-[14px] text-ink underline-offset-4 hover:underline"
+  1202→                    >
+  1203→                      Open client enclave view <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.75} />
+  1204→                    </a>
+  1205→                  </article>
+  1206→                  );
+  1207→                })}
+  1208→              </div>
+  1209→            </div>
+  1210→          )}
+  1211→
+  1212→          {/* ════ 04 · UNIFIED INBOX ════ */}
+  1213→          {activeTab === 'communications' && (
+  1214→            <div className="animate-in fade-in duration-300">
+  1215→              <ViewHeader
+  1216→                tag="Unified communications"
+  1217→                title="Client executive"
+  1218→                accent="messages"
+  1219→                rest=""
+  1220→                sub="One direct enclave line per tenant — portal messages, parsing updates, and executive replies in a single thread."
+  1221→              />
+  1222→
+  1223→              <section className={`overflow-hidden ${ARTIFACT}`}>
+  1224→                <div className="grid h-[560px] grid-cols-1 md:h-[600px] md:grid-cols-12">
+  1225→                  {/* Channel list */}
+  1226→                  <div className="flex min-h-0 flex-col border-b border-hairline p-4 md:col-span-4 md:border-b-0 md:border-r">
+  1227→                    <div className="px-2 pb-3 text-[13px] text-ash">Active enclave channels</div>
+  1228→                    <div className="scroll-slim max-h-32 space-y-1 overflow-y-auto md:max-h-none md:flex-1">
+  1229→                      {tenants.map((t) => {
+  1230→                        const active = activeChatTenant === t.name;
+  1231→                        const hasUnread = messages.some((m) => m.tenantName === t.name && m.unread);
+  1232→                        return (
+  1233→                          <button
+  1234→                            key={t.name}
+  1235→                            onClick={() => setActiveChatTenant(t.name)}
+  1236→                            aria-current={active ? 'true' : undefined}
+  1237→                            className={`w-full rounded-2xl px-3.5 py-3 text-left transition-colors ${active ? 'bg-mist' : 'hover:bg-fog'}`}
+  1238→                          >
+  1239→                            <div className="flex items-center justify-between gap-2">
+  1240→                              <span className="text-[14px] text-ink">{t.name}</span>
+  1241→                              {hasUnread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sienna" aria-label="Unread" />}
+  1242→                            </div>
+  1243→                            <div className="mt-0.5 text-[12px] text-smoke">Direct enclave line</div>
+  1244→                          </button>
+  1245→                        );
+  1246→                      })}
+  1247→                    </div>
+  1248→                  </div>
+  1249→
+  1250→                  {/* Thread */}
+  1251→                  <div className="flex min-h-0 flex-col bg-fog md:col-span-8">
+  1252→                    <div className="flex items-center justify-between border-b border-hairline bg-paper px-5 py-3.5">
+  1253→                      <div>
+  1254→                        <div className="text-[15px] font-medium text-ink">{activeChatTenant}</div>
+  1255→                        <div className="mt-0.5 flex items-center gap-2 text-[12px] text-steel">
+  1256→                          <LiveDot /> Direct line · Josias active
+  1257→                        </div>
+  1258→                      </div>
+  1259→                      {activeTenant && activeTenant.mailboxStatus !== 'ACTIVE' && (
+  1260→                        <QuietChip className="shrink-0 text-sienna">
+  1261→                          <AlertTriangle className="h-3 w-3" strokeWidth={1.75} />
+  1262→                          Mailbox {activeTenant.mailboxStatus === 'LOCKED' ? 'locked' : 'missing'}
+  1263→                        </QuietChip>
+  1264→                      )}
+  1265→                    </div>
+  1266→
+  1267→                    <div className="scroll-slim flex-1 space-y-3 overflow-y-auto p-4 sm:p-5">
+  1268→                      {visibleMessages.length === 0 ? (
+  1269→                        <div className="grid h-full place-items-center text-[13px] text-smoke">
+  1270→                          No messages yet — open the conversation with a hello.
+  1271→                        </div>
+  1272→                      ) : (
+  1273→                        visibleMessages.map((msg) => {
+  1274→                          const own = msg.sender.includes('Josias');
+  1275→                          return (
+  1276→                            <div
+  1277→                              key={msg.id}
+  1278→                              className={`max-w-[420px] rounded-[16px] px-4 py-3 ${
+  1279→                                own ? 'ml-auto bg-ink text-paper' : 'border border-hairline bg-paper text-ink'
+  1280→                              }`}
+  1281→                            >
+  1282→                              <div className={`mb-1 flex items-center justify-between gap-6 text-[11px] ${own ? 'text-paper/60' : 'text-smoke'}`}>
+  1283→                                <span>{msg.sender}</span>
+  1284→                                <span className="tabular-nums">{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+  1285→                              </div>
+  1286→                              <p className="text-[14px] leading-relaxed">{msg.text}</p>
+  1287→                            </div>
+  1288→                          );
+  1289→                        })
+  1290→                      )}
+  1291→                    </div>
+  1292→
+  1293→                    <form onSubmit={handleSendMessage} className="flex items-center gap-2 border-t border-hairline bg-paper p-4">
+  1294→                      <input
+  1295→                        type="text"
+  1296→                        value={newMessageText}
+  1297→                        onChange={(e) => setNewMessageText(e.target.value)}
+  1298→                        placeholder="Reply on the direct enclave line…"
+  1299→                        aria-label={`Message ${activeChatTenant}`}
+  1300→                        className="h-11 flex-1 rounded-2xl border border-hairline bg-paper px-4 text-[14px] text-ink transition-colors placeholder:text-smoke focus:border-ink/30 focus:outline-none"
+  1301→                      />
+  1302→                      <button
+  1303→                        type="submit"
+  1304→                        aria-label="Send message"
+  1305→                        className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-ink text-paper transition-colors hover:bg-[#33363b]"
+  1306→                      >
+  1307→                        <Send className="h-4 w-4" strokeWidth={1.75} />
+  1308→                      </button>
+  1309→                    </form>
+  1310→                  </div>
+  1311→                </div>
+  1312→              </section>
+  1313→            </div>
+  1314→          )}
+  1315→
+  1316→          {/* ════ 05 · CALENDAR & CALLS ════ */}
+  1317→          {activeTab === 'calendar_calls' && (
+  1318→            <div className="animate-in fade-in duration-300">
+  1319→              <ViewHeader
+  1320→                tag="Built-in WebRTC video rooms"
+  1321→                title="Executive call"
+  1322→                accent="operations"
+  1323→                rest=""
+  1324→                sub="Briefings and discovery sessions sync from the client portal — join in one click without leaving the enclave."
+  1325→              />
+  1326→
+  1327→              <div className="grid grid-cols-1 gap-4 md:grid-cols-12 md:gap-6">
+  1328→                {/* Scheduled sessions */}
+  1329→                <div className="space-y-3 rounded-[24px] bg-mist p-5 md:col-span-5">
+  1330→                  <div className="px-1 pb-1 text-[13px] font-medium text-steel">Scheduled calls · synced from portal</div>
+  1331→                  {calls.map((call) => (
+  1332→                    <div key={call.id} className="space-y-2 rounded-2xl bg-paper p-4">
+  1333→                      <div className="flex items-start justify-between gap-3">
+  1334→                        <div className="text-[14px] font-medium text-ink">{call.clientName}</div>
+  1335→                        <BlushChip className="shrink-0">{call.status}</BlushChip>
+  1336→                      </div>
+  1337→                      <div className="text-[13px] text-steel">{call.type}</div>
+  1338→                      <div className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
+  1339→                        <Clock className="h-3.5 w-3.5 text-steel" strokeWidth={1.75} />
+  1340→                        <span className="tabular-nums">{callWhen(call.scheduledAt)}</span>
+  1341→                      </div>
+  1342→                    </div>
+  1343→                  ))}
+  1344→                </div>
+  1345→
+  1346→                {/* Call room */}
+  1347→                <div className="flex flex-col rounded-[24px] bg-mist p-5 md:col-span-7">
+  1348→                  <div className="flex items-center justify-between px-1 pb-4">
+  1349→                    <div className="flex items-center gap-2 text-[14px] font-medium text-ink">
+  1350→                      <Video className="h-4 w-4 text-sienna" strokeWidth={1.75} />
+  1351→                      Syntropic built-in call room
+  1352→                    </div>
+  1353→                    <span className="text-[12px] text-steel">
+  1354→                      {callState === 'live'
+  1355→                        ? rtcMode === 'turn'
+  1356→                          ? `Relay room active · ${relayCount} TURN candidate${relayCount === 1 ? '' : 's'}`
+  1357→                          : 'Local room active'
+  1358→                        : rtcMode === 'turn'
+  1359→                          ? 'TURN relay · configured'
+  1360→                          : 'Encrypted P2P line'}
+  1361→                    </span>
+  1362→                  </div>
+  1363→
+  1364→                  <div className="grid flex-1 place-items-center rounded-2xl bg-paper p-6">
+  1365→                    {callState === 'live' ? (
+  1366→                      <div className="w-full">
+  1367→                        <video
+  1368→                          ref={videoRef}
+  1369→                          autoPlay
+  1370→                          muted
+  1371→                          playsInline
+  1372→                          className="aspect-video w-full rounded-2xl bg-ink object-cover"
+  1373→                        />
+  1374→                        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+  1375→                          <GhostPill onClick={toggleMic}>
+  1376→                            {micOn ? <Mic className="h-3.5 w-3.5" strokeWidth={1.75} /> : <MicOff className="h-3.5 w-3.5" strokeWidth={1.75} />}
+  1377→                            {micOn ? 'Mute' : 'Unmute'}
+  1378→                          </GhostPill>
+  1379→                          <GhostPill onClick={toggleCam}>
+  1380→                            {camOn ? <Video className="h-3.5 w-3.5" strokeWidth={1.75} /> : <VideoOff className="h-3.5 w-3.5" strokeWidth={1.75} />}
+  1381→                            {camOn ? 'Camera off' : 'Camera on'}
+  1382→                          </GhostPill>
+  1383→                          <FilledPill onClick={endCall}>
+  1384→                            <PhoneOff className="h-3.5 w-3.5" strokeWidth={1.75} />
+  1385→                            End call
+  1386→                          </FilledPill>
+  1387→                        </div>
+  1388→                      </div>
+  1389→                    ) : callState === 'connecting' ? (
+  1390→                      <div className="text-center">
+  1391→                        <Loader2 className="mx-auto h-10 w-10 animate-spin text-smoke" strokeWidth={1.25} />
+  1392→                        <div className="mt-3 text-[15px] font-medium text-ink">Requesting camera & microphone…</div>
+  1393→                        <div className="mx-auto mt-1.5 max-w-xs text-[13px] leading-relaxed text-steel">
+  1394→                          Grant browser permissions to initialize the encrypted room.
+  1395→                        </div>
+  1396→                      </div>
+  1397→                    ) : callState === 'error' ? (
+  1398→                      <div className="text-center">
+  1399→                        <VideoOff className="mx-auto h-10 w-10 text-smoke" strokeWidth={1.25} />
+  1400→                        <div className="mt-3 text-[15px] font-medium text-ink">Camera & microphone unavailable</div>
+  1401→                        <div className="mx-auto mt-1.5 max-w-xs text-[13px] leading-relaxed text-steel">
+  1402→                          Connect a device or grant permissions in your browser, then retry the room launch.
+  1403→                        </div>
+  1404→                        <FilledPill className="mt-4" onClick={launchRoom}>
+  1405→                          <Video className="h-4 w-4" strokeWidth={1.75} />
+  1406→                          Retry room launch
+  1407→                        </FilledPill>
+  1408→                      </div>
+  1409→                    ) : (
+  1410→                      <div className="text-center">
+  1411→                        <Video className="mx-auto h-10 w-10 animate-pulse text-smoke" strokeWidth={1.25} />
+  1412→                        <div className="mt-3 text-[15px] font-medium text-ink">No active call in session</div>
+  1413→                        <div className="mx-auto mt-1.5 max-w-xs text-[13px] leading-relaxed text-steel">
+  1414→                          When a client joins from their Executive Portal at the scheduled time, your camera preview initiates here automatically.
+  1415→                        </div>
+  1416→                      </div>
+  1417→                    )}
+  1418→                  </div>
+  1419→
+  1420→                  {callState !== 'live' && callState !== 'connecting' && (
+  1421→                    <FilledPill className="mt-4 w-full py-3" onClick={launchRoom}>
+  1422→                      <Video className="h-4 w-4" strokeWidth={1.75} />
+  1423→                      Launch test video room for Josias
+  1424→                    </FilledPill>
+  1425→                  )}
+  1426→                </div>
+  1427→              </div>
+  1428→            </div>
+  1429→          )}
+  1430→        </main>
+  1431→      </div>
+  1432→    </div>
+  1433→  );
+  1434→}
+  1435→

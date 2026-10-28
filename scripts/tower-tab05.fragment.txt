@@ -1,0 +1,810 @@
+          {/* ════ 05 · THE SCHEDULE — the operating day ════ */}
+          {activeTab === 'calendar_calls' && (
+            <div className="animate-in fade-in duration-300">
+              <ViewHeader
+                tag="The operating day · one grid, nothing hidden"
+                title="Client engagements &"
+                accent="internal blocks"
+                rest=""
+                sub="Founders on rows, hours on columns. Paste a Zoom link and join in one click; AT-RISK is earned from live tenant state, never typed by hand. The enclave room below stays the internal line."
+              />
+
+              {traveling || !schedDay ? (
+                <section className={`p-6 sm:p-8 ${ARTIFACT}`}>
+                  <div className="flex items-center gap-2 text-[15px] font-medium text-ink">
+                    <CalendarIcon className="h-4 w-4 text-smoke" strokeWidth={1.75} />
+                    The schedule
+                  </div>
+                  <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-steel">
+                    {traveling
+                      ? `The day only exists in the present — engagements are operational state, not ledger history. Return to live to run the day; the ship's log still shows everything as it stood on ${timeTravel}.`
+                      : 'Warming the board — the operating day loads with the ledger.'}
+                  </p>
+                </section>
+              ) : (
+                <>
+                  {/* Controls */}
+                  <div className="mb-4 flex flex-wrap items-center gap-2.5 rounded-2xl bg-mist px-4 py-3">
+                    <div className="mr-auto">
+                      <div className="flex items-center gap-2 font-display text-[19px] leading-tight text-ink">
+                        {dayTitle}
+                        {isTodayView && nowMs && (
+                          <span className="rounded-full bg-paper px-2 py-0.5 font-sans text-[11px] font-medium tabular-nums text-sienna">{hm(nowMs)}</span>
+                        )}
+                      </div>
+                      <div className="text-[12px] text-steel">
+                        {daySessions.length} engagement{daySessions.length === 1 ? '' : 's'} · {foundersOnShift} founder{foundersOnShift === 1 ? '' : 's'} on shift
+                        {dayAbsences.length > 0 ? ` · ${dayAbsences.length} out` : ''}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button type="button" aria-label="Previous day" onClick={() => shiftDay(-1)} className="grid h-8 w-8 place-items-center rounded-full border border-hairline bg-paper text-steel transition-colors hover:text-ink">
+                        <ChevronLeft className="h-3.5 w-3.5" strokeWidth={1.75} />
+                      </button>
+                      <button type="button" onClick={() => setSchedDay(todayKey())} disabled={isTodayView} className="h-8 rounded-full border border-hairline bg-paper px-3 text-[12px] font-medium text-ink transition-colors hover:text-ink disabled:opacity-40">
+                        Today
+                      </button>
+                      <button type="button" aria-label="Next day" onClick={() => shiftDay(1)} className="grid h-8 w-8 place-items-center rounded-full border border-hairline bg-paper text-steel transition-colors hover:text-ink">
+                        <ChevronRight className="h-3.5 w-3.5" strokeWidth={1.75} />
+                      </button>
+                    </div>
+                    <div className="flex overflow-hidden rounded-full border border-hairline bg-paper">
+                      {(['day', 'week'] as const).map((v) => (
+                        <button key={v} type="button" onClick={() => setSchedView(v)} className={`px-3.5 py-1.5 text-[12px] font-medium capitalize transition-colors ${schedView === v ? 'bg-ink text-paper' : 'text-steel hover:text-ink'}`}>
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                    <FilledPill
+                      onClick={() => {
+                        setDraft((d) => ({ ...d, date: schedDay, hostId: d.hostId || hosts[0]?.id || '' }));
+                        setCreating(true);
+                      }}
+                      className="h-8 py-0"
+                    >
+                      <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+                      New engagement
+                    </FilledPill>
+                  </div>
+
+                  {/* Status rail */}
+                  <div className="mb-4 flex flex-wrap items-center gap-1.5">
+                    <button type="button" onClick={() => setStatusFilter(null)} className={statusChipTone(statusFilter === null)}>All</button>
+                    {(['SCHEDULED', 'CONFIRMED', 'LIVE', 'COMPLETED', 'NO_SHOW'] as ScheduleStatus[]).map((st) => (
+                      <button key={st} type="button" onClick={() => setStatusFilter(statusFilter === st ? null : st)} className={statusChipTone(statusFilter === st)}>
+                        {STATUS_LABEL[st]} <span className="tabular-nums opacity-60">{statusCounts[st] ?? 0}</span>
+                      </button>
+                    ))}
+                    {atRiskCount > 0 && (
+                      <button type="button" onClick={() => setStatusFilter(statusFilter === 'AT_RISK' ? null : 'AT_RISK')} className={statusChipTone(statusFilter === 'AT_RISK', true)}>
+                        At risk <span className="tabular-nums opacity-60">{atRiskCount}</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Coverage banner */}
+                  <div className={`mb-4 space-y-1.5 rounded-2xl px-4 py-3 text-[13px] ${unowned.length > 0 ? 'bg-blush text-sienna' : 'bg-mist text-ink'}`}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {unowned.length > 0 ? (
+                        <AlertTriangle className="h-4 w-4" strokeWidth={1.75} />
+                      ) : (
+                        <CheckCircle2 className="h-4 w-4 text-sienna" strokeWidth={1.75} />
+                      )}
+                      <span className="font-medium">
+                        {unowned.length > 0
+                          ? `${unowned.length} engagement${unowned.length === 1 ? '' : 's'} need an owner — assign from the block dialog`
+                          : `All covered — ${daySessions.length} of ${daySessions.length} engagements owned`}
+                      </span>
+                    </div>
+                    {dayAbsences.map((a) => (
+                      <div key={a.id} className="flex flex-wrap items-center gap-2 text-[12.5px]">
+                        <UserX className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
+                        <span>
+                          {a.memberName} marked unavailable — {a.reason.toLowerCase()}, reported {hm(a.reportedAt)}. {a.reassignments}.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => markAvailable(a.id)}
+                          disabled={schedBusy}
+                          className="rounded-full border border-ink/25 px-2.5 py-0.5 text-[11.5px] font-medium text-ink transition-colors hover:bg-paper/70 disabled:opacity-40"
+                        >
+                          Mark available again
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {schedView === 'day' ? (
+                    /* ── Day grid — founders on rows, hours on columns ── */
+                    <section className={`overflow-hidden ${ARTIFACT}`}>
+                      <div className="overflow-x-auto scroll-slim">
+                        <div className="min-w-[880px]">
+                          <div className="flex border-b border-hairline">
+                            <div className="w-44 shrink-0 px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.06em] text-smoke">By founder</div>
+                            <div className="relative flex-1">
+                              {HOURS.slice(0, -1).map((h) => (
+                                <span key={h} className="absolute top-2.5 text-[10.5px] tabular-nums text-smoke" style={{ left: `${pctOf(h * 60)}%` }}>
+                                  {hourLabel(h)}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="flex">
+                            <div className="w-44 shrink-0">
+                              {rows.map((r) => (
+                                <div key={r.key} className="flex h-24 flex-col justify-center border-t border-hairline px-4">
+                                  {r.member ? (
+                                    <>
+                                      <div className="flex items-center gap-2">
+                                        <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-[12px] font-medium ${r.member.tone === 'blush' ? 'bg-blush text-sienna' : 'bg-ink text-paper'}`}>
+                                          {(r.member.fullName || r.member.name)[0]}
+                                        </span>
+                                        <span className="truncate text-[13.5px] font-medium text-ink">{r.member.fullName || r.member.name}</span>
+                                      </div>
+                                      <div className="mt-1.5 flex items-center gap-1.5">
+                                        <QuietChip className="text-[10.5px] tabular-nums">{hoursLabel(minutesFor(r.member.id))}</QuietChip>
+                                        {!r.absent && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setAbsenceFor(r.member.id);
+                                              setAbsenceReason('SICK');
+                                              setAbsenceNote('');
+                                            }}
+                                            title="Mark unavailable for the day"
+                                            className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10.5px] text-smoke transition-colors hover:bg-blush hover:text-sienna"
+                                          >
+                                            <UserX className="h-3 w-3" strokeWidth={1.75} />
+                                            Out
+                                          </button>
+                                        )}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div className="text-[13.5px] font-medium text-sienna">Needs an owner</div>
+                                      <div className="mt-1 text-[11px] text-steel">Assign from the block dialog</div>
+                                    </>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                            <div className="relative flex-1">
+                              {HOURS.map((h) => (
+                                <div key={h} className="absolute inset-y-0 w-px bg-hairline" style={{ left: `${pctOf(h * 60)}%` }} aria-hidden />
+                              ))}
+                              {nowPct !== null && (
+                                <div className="pointer-events-none absolute inset-y-0 z-20 w-px bg-sienna" style={{ left: `${nowPct}%` }} aria-hidden>
+                                  <span className="absolute left-1 top-0 rounded-full bg-sienna px-1.5 py-0.5 text-[9.5px] font-medium tabular-nums text-paper">
+                                    {nowMs ? hm(nowMs) : ''}
+                                  </span>
+                                </div>
+                              )}
+                              {rows.map((r) => (
+                                <div key={r.key} className={`relative h-24 border-t border-hairline ${r.absent ? 'bg-fog/60' : ''}`}>
+                                  {r.blocks.map((s) => (
+                                    <React.Fragment key={s.id}>
+                                      {prepBufferShown(s, r.blocks) && (
+                                        <div
+                                          aria-hidden
+                                          className="absolute bottom-2.5 top-2.5 rounded-l-lg border-l-2 border-dashed border-smoke/40"
+                                          style={{ left: `${pctOf(minutesOf(s.scheduledAt) - 15)}%`, width: `${(15 / DAY_SPAN) * 100}%` }}
+                                        />
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => openEngagement(s)}
+                                        title={`${s.clientName} — ${s.type} · ${hm(s.scheduledAt)}–${hm(s.endsAt ?? s.scheduledAt)}${s.joinUrl ? ' · line attached' : ''}`}
+                                        className={`absolute bottom-2.5 top-2.5 z-10 overflow-hidden rounded-xl border px-2 py-1.5 text-left transition-all hover:z-30 hover:shadow-md ${blockTone(s)}`}
+                                        style={{
+                                          left: `${pctOf(Math.max(DAY_START_MIN, minutesOf(s.scheduledAt)))}%`,
+                                          width: `${Math.max(2.4, ((endMinOf(s) - Math.max(DAY_START_MIN, minutesOf(s.scheduledAt))) / DAY_SPAN) * 100)}%`,
+                                        }}
+                                      >
+                                        <div className="flex items-center gap-1 text-[12px] font-medium leading-tight">
+                                          {s.atRiskReasons.length > 0 && <AlertTriangle className="h-3 w-3 shrink-0 text-sienna" strokeWidth={2} />}
+                                          {s.flagged && <Flag className="h-3 w-3 shrink-0 text-sienna" strokeWidth={2} fill="currentColor" />}
+                                          <span className="truncate">{s.isInternal ? s.type : s.clientName}</span>
+                                          {s.joinUrl && <Link2 className="ml-auto h-3 w-3 shrink-0 opacity-50" strokeWidth={1.75} />}
+                                        </div>
+                                        <div className="mt-0.5 truncate text-[10.5px] tabular-nums opacity-70">
+                                          {hm(s.scheduledAt)}–{hm(s.endsAt ?? s.scheduledAt)}
+                                        </div>
+                                      </button>
+                                    </React.Fragment>
+                                  ))}
+                                  {r.absent && (
+                                    <div className="absolute inset-0 z-20 flex items-center gap-2 bg-fog/80 px-3">
+                                      <UserX className="h-3.5 w-3.5 shrink-0 text-sienna" strokeWidth={1.75} />
+                                      <span className="truncate text-[11.5px] text-steel">
+                                        Unavailable — {r.absent.reason.toLowerCase()}, reported {hm(r.absent.reportedAt)}. {r.absent.reassignments}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-hairline px-4 py-2.5 text-[10.5px] uppercase tracking-[0.05em] text-smoke">
+                            <span>Showing {shownSessions.length} of {daySessions.length} engagements</span>
+                            <span>Dotted strips are prep buffers · internal blocks are shaded &amp; dashed</span>
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+                  ) : (
+                    /* ── Week strip — seven days, click to travel ── */
+                    <section className={`p-5 ${ARTIFACT}`}>
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+                        {weekDays.map((day) => {
+                          const ds = (schedule?.sessions ?? []).filter((s) => dayKey(s.scheduledAt) === day && s.status !== 'CANCELLED');
+                          const mins = ds.reduce((acc, s) => acc + Math.max(0, endMinOf(s) - minutesOf(s.scheduledAt)), 0);
+                          const d = new Date(`${day}T12:00:00`);
+                          const active = day === schedDay;
+                          return (
+                            <button
+                              key={day}
+                              type="button"
+                              onClick={() => {
+                                setSchedDay(day);
+                                setSchedView('day');
+                              }}
+                              className={`rounded-2xl border p-3 text-left transition-colors ${active ? 'border-ink bg-mist' : 'border-hairline hover:bg-fog'}`}
+                            >
+                              <div className="text-[10.5px] font-medium uppercase tracking-[0.06em] text-smoke">
+                                {d.toLocaleDateString('en-US', { weekday: 'short' })} {d.getDate()}
+                              </div>
+                              <div className="mt-0.5 text-[13px] font-medium text-ink">{ds.length} engagement{ds.length === 1 ? '' : 's'}</div>
+                              <div className="text-[11px] tabular-nums text-steel">{mins > 0 ? hoursLabel(mins) : '—'}</div>
+                              <div className="mt-2 space-y-1">
+                                {ds.slice(0, 3).map((s) => (
+                                  <div key={s.id} className="truncate text-[11px] text-steel">
+                                    {hm(s.scheduledAt)} · {s.isInternal ? s.type : s.clientName}
+                                  </div>
+                                ))}
+                                {ds.length > 3 && <div className="text-[10.5px] text-smoke">+{ds.length - 3} more</div>}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  )}
+                </>
+              )}
+
+              {/* Enclave room — the internal line, below the grid */}
+              <div className="mt-6 rounded-[24px] bg-mist p-5">
+                <div className="flex items-center justify-between px-1 pb-4">
+                  <div className="flex items-center gap-2 text-[14px] font-medium text-ink">
+                    <Video className="h-4 w-4 text-sienna" strokeWidth={1.75} />
+                    Syntropic enclave room
+                  </div>
+                  <span className="text-[12px] text-steel">
+                    {callState === 'live'
+                      ? rtcMode === 'turn'
+                        ? `Relay room active · ${relayCount} TURN candidate${relayCount === 1 ? '' : 's'}`
+                        : 'Local room active'
+                      : rtcMode === 'turn'
+                        ? 'TURN relay · configured'
+                        : 'Encrypted P2P line'}
+                  </span>
+                </div>
+
+                <div className="grid min-h-[300px] place-items-center rounded-2xl bg-paper p-6">
+                  {callState === 'live' ? (
+                    <div className="w-full">
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        muted
+                        playsInline
+                        className="aspect-video w-full rounded-2xl bg-ink object-cover"
+                      />
+                      <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                        <GhostPill onClick={toggleMic}>
+                          {micOn ? <Mic className="h-3.5 w-3.5" strokeWidth={1.75} /> : <MicOff className="h-3.5 w-3.5" strokeWidth={1.75} />}
+                          {micOn ? 'Mute' : 'Unmute'}
+                        </GhostPill>
+                        <GhostPill onClick={toggleCam}>
+                          {camOn ? <Video className="h-3.5 w-3.5" strokeWidth={1.75} /> : <VideoOff className="h-3.5 w-3.5" strokeWidth={1.75} />}
+                          {camOn ? 'Camera off' : 'Camera on'}
+                        </GhostPill>
+                        <FilledPill onClick={endCall}>
+                          <PhoneOff className="h-3.5 w-3.5" strokeWidth={1.75} />
+                          End call
+                        </FilledPill>
+                      </div>
+                    </div>
+                  ) : callState === 'connecting' ? (
+                    <div className="text-center">
+                      <Loader2 className="mx-auto h-10 w-10 animate-spin text-smoke" strokeWidth={1.25} />
+                      <div className="mt-3 text-[15px] font-medium text-ink">Requesting camera &amp; microphone…</div>
+                      <div className="mx-auto mt-1.5 max-w-xs text-[13px] leading-relaxed text-steel">
+                        Grant browser permissions to initialize the encrypted room.
+                      </div>
+                    </div>
+                  ) : callState === 'error' ? (
+                    <div className="text-center">
+                      <VideoOff className="mx-auto h-10 w-10 text-smoke" strokeWidth={1.25} />
+                      <div className="mt-3 text-[15px] font-medium text-ink">Camera &amp; microphone unavailable</div>
+                      <div className="mx-auto mt-1.5 max-w-xs text-[13px] leading-relaxed text-steel">
+                        Connect a device or grant permissions in your browser, then retry the room launch.
+                      </div>
+                      <FilledPill className="mt-4" onClick={launchRoom}>
+                        <Video className="h-4 w-4" strokeWidth={1.75} />
+                        Retry room launch
+                      </FilledPill>
+                    </div>
+                  ) : (
+                    <div className="text-center">
+                      <Video className="mx-auto h-10 w-10 animate-pulse text-smoke" strokeWidth={1.25} />
+                      <div className="mt-3 text-[15px] font-medium text-ink">No active call in session</div>
+                      <div className="mx-auto mt-1.5 max-w-xs text-[13px] leading-relaxed text-steel">
+                        The internal line — engine reviews and founder syncs run here when the grid marks a block internal. Client calls ride the pasted Zoom links above.
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {callState !== 'live' && callState !== 'connecting' && (
+                  <FilledPill className="mt-4 w-full py-3" onClick={launchRoom}>
+                    <Video className="h-4 w-4" strokeWidth={1.75} />
+                    Launch enclave room for {currentUser}
+                  </FilledPill>
+                )}
+              </div>
+
+              {/* ── Engagement detail dialog ── */}
+              {openBlock && (
+                <div
+                  className="fixed inset-0 z-[70] grid place-items-center overflow-y-auto bg-ink/25 p-4 backdrop-blur-[2px]"
+                  onClick={() => setOpenBlock(null)}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Engagement details"
+                >
+                  <div className="my-8 w-full max-w-md rounded-[24px] bg-paper p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[12px] text-ash">{openBlock.isInternal ? 'Internal block' : openBlock.type}</div>
+                        <h3 className="mt-1 font-display text-[24px] font-normal leading-tight text-ink">
+                          {openBlock.isInternal ? openBlock.type : openBlock.clientName}
+                        </h3>
+                        {!openBlock.isInternal && tenants.find((t) => t.name === openBlock.clientName) && (
+                          <div className="mt-1 text-[12.5px] text-steel">
+                            Contact · {tenants.find((t) => t.name === openBlock.clientName)?.contactName || '—'}
+                            {tenants.find((t) => t.name === openBlock.clientName)?.contactEmail
+                              ? ` · ${tenants.find((t) => t.name === openBlock.clientName)?.contactEmail}`
+                              : ''}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 items-start gap-1.5">
+                        {openBlock.atRiskReasons.length > 0 && (
+                          <BlushChip className="shrink-0">
+                            <AlertTriangle className="h-3 w-3" strokeWidth={2} />
+                            At risk
+                          </BlushChip>
+                        )}
+                        <button type="button" onClick={() => setOpenBlock(null)} aria-label="Close" className="grid h-8 w-8 place-items-center rounded-full text-steel transition-colors hover:bg-mist hover:text-ink">
+                          <X className="h-4 w-4" strokeWidth={1.75} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {openBlock.atRiskReasons.length > 0 && (
+                      <div className="mt-3 space-y-1 rounded-2xl bg-blush p-3 text-[12.5px] text-sienna">
+                        {openBlock.atRiskReasons.map((r) => (
+                          <div key={r} className="flex items-start gap-1.5">
+                            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" strokeWidth={2} />
+                            {r} — earned from live tenant state
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="mt-4 space-y-2.5 border-t border-black/5 pt-4 text-[13.5px]">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-steel">Time</span>
+                        {resched ? (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <input
+                              type="time"
+                              aria-label="Start time"
+                              value={resched.start}
+                              onChange={(e) => setResched({ ...resched, start: e.target.value })}
+                              className="h-8 rounded-full border border-hairline bg-fog px-2 text-[12.5px] tabular-nums outline-none"
+                            />
+                            <span className="text-smoke">–</span>
+                            <input
+                              type="time"
+                              aria-label="End time"
+                              value={resched.end}
+                              onChange={(e) => setResched({ ...resched, end: e.target.value })}
+                              className="h-8 rounded-full border border-hairline bg-fog px-2 text-[12.5px] tabular-nums outline-none"
+                            />
+                            <FilledPill className="h-8 px-3 py-0 text-[12px]" onClick={applyResched} disabled={schedBusy}>
+                              Apply
+                            </FilledPill>
+                          </div>
+                        ) : (
+                          <span className="flex items-center gap-1.5 font-medium tabular-nums text-ink">
+                            <Clock className="h-3.5 w-3.5 text-steel" strokeWidth={1.75} />
+                            {hm(openBlock.scheduledAt)} – {hm(openBlock.endsAt ?? openBlock.scheduledAt)}
+                            <button
+                              type="button"
+                              onClick={() => setResched({ start: toTimeInput(openBlock.scheduledAt), end: toTimeInput(openBlock.endsAt ?? openBlock.scheduledAt) })}
+                              className="ml-1 text-[11.5px] font-medium text-steel underline-offset-2 hover:underline"
+                            >
+                              Move
+                            </button>
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-steel">Host</span>
+                        <select
+                          value={openBlock.hostId ?? ''}
+                          onChange={(e) => patchEngagement(openBlock.id, { hostId: e.target.value || null })}
+                          disabled={schedBusy}
+                          aria-label="Engagement host"
+                          className="cursor-pointer appearance-none rounded-full bg-mist px-3 py-1 text-[12.5px] font-medium text-ink outline-none disabled:opacity-50"
+                        >
+                          <option value="">— needs an owner —</option>
+                          {hosts.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.fullName || m.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-steel">Status</span>
+                        <span className="font-medium text-ink">
+                          {STATUS_LABEL[openBlock.status] ?? openBlock.status}
+                          {openBlock.status === 'COMPLETED' && openBlock.attendanceVerified ? ' · attended ✓' : ''}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 border-t border-black/5 pt-4">
+                      <div className="text-[12px] font-medium uppercase tracking-[0.06em] text-smoke">
+                        Join line{openBlock.provider ? ` · ${openBlock.provider}` : ''}
+                      </div>
+                      {openBlock.joinUrl ? (
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <FilledPill className="h-9" onClick={() => openBlock.joinUrl && window.open(openBlock.joinUrl, '_blank', 'noopener')}>
+                            <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.75} />
+                            Join {openBlock.provider === 'ZOOM' ? 'Zoom' : openBlock.provider === 'MEET' ? 'Meet' : 'call'}
+                          </FilledPill>
+                          <GhostPill className="h-9" onClick={() => openBlock.joinUrl && copyJoin(openBlock.joinUrl)}>
+                            <Copy className="h-3.5 w-3.5" strokeWidth={1.75} />
+                            {copiedLink ? 'Copied' : 'Copy link'}
+                          </GhostPill>
+                          <span className="w-full truncate text-[11.5px] text-smoke sm:w-auto sm:max-w-[180px]">{openBlock.joinUrl}</span>
+                        </div>
+                      ) : (
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            if (linkDraft.trim()) {
+                              patchEngagement(openBlock.id, { joinUrl: linkDraft.trim() });
+                              setLinkDraft('');
+                            }
+                          }}
+                          className="mt-2 flex gap-2"
+                        >
+                          <input
+                            value={linkDraft}
+                            onChange={(e) => setLinkDraft(e.target.value)}
+                            placeholder="Paste a Zoom / Meet link…"
+                            aria-label="Join link URL"
+                            className="h-9 min-w-0 flex-1 rounded-full border border-hairline bg-fog px-3.5 text-[13px] outline-none focus:border-ink/30"
+                          />
+                          <FilledPill type="submit" className="h-9 shrink-0" disabled={!linkDraft.trim() || schedBusy}>
+                            <Link2 className="h-3.5 w-3.5" strokeWidth={1.75} />
+                            Attach
+                          </FilledPill>
+                        </form>
+                      )}
+                      <p className="mt-1.5 text-[11.5px] text-smoke">
+                        {openBlock.isInternal
+                          ? 'Internal blocks run on the enclave room below — no client line needed.'
+                          : 'Clients join the pasted line; the enclave room below is the internal backup.'}
+                      </p>
+                    </div>
+
+                    <div className="mt-4 border-t border-black/5 pt-4">
+                      <div className="text-[12px] font-medium uppercase tracking-[0.06em] text-smoke">Notes</div>
+                      <textarea
+                        value={notesDraft}
+                        onChange={(e) => setNotesDraft(e.target.value)}
+                        rows={2}
+                        placeholder="Prep notes, outcomes, follow-ups…"
+                        aria-label="Engagement notes"
+                        className="mt-2 w-full rounded-2xl border border-hairline bg-fog p-3 text-[13px] leading-relaxed outline-none focus:border-ink/30"
+                      />
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <GhostPill onClick={() => patchEngagement(openBlock.id, { notes: notesDraft })} disabled={schedBusy || notesDraft === openBlock.notes}>
+                          Save notes
+                        </GhostPill>
+                        <GhostPill
+                          onClick={() => patchEngagement(openBlock.id, { flagged: !openBlock.flagged })}
+                          disabled={schedBusy}
+                          className={openBlock.flagged ? 'border-sienna/50 bg-blush text-sienna hover:bg-blush/80' : ''}
+                        >
+                          <Flag className="h-3.5 w-3.5" strokeWidth={1.75} />
+                          {openBlock.flagged ? 'Flagged for follow-up' : 'Flag for follow-up'}
+                        </GhostPill>
+                        {openBlock.status === 'COMPLETED' && !openBlock.isInternal && (
+                          openBlock.attendanceVerified ? (
+                            <QuietChip className="text-sienna">
+                              <CheckCircle2 className="h-3 w-3" strokeWidth={2} />
+                              Attended · verified {openBlock.verifiedAt ? hm(openBlock.verifiedAt) : ''}
+                            </QuietChip>
+                          ) : (
+                            <FilledPill className="h-9" onClick={() => patchEngagement(openBlock.id, { attendanceVerified: true })} disabled={schedBusy}>
+                              <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={1.75} />
+                              Verify attendance
+                            </FilledPill>
+                          )
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-black/5 pt-4">
+                      {openBlock.status === 'SCHEDULED' && (
+                        <GhostPill onClick={() => patchEngagement(openBlock.id, { status: 'CONFIRMED' })} disabled={schedBusy}>Confirm</GhostPill>
+                      )}
+                      {(openBlock.status === 'SCHEDULED' || openBlock.status === 'CONFIRMED') && (
+                        <GhostPill onClick={() => patchEngagement(openBlock.id, { status: 'LIVE' })} disabled={schedBusy}>
+                          <LiveDot />
+                          Go live
+                        </GhostPill>
+                      )}
+                      {(openBlock.status === 'CONFIRMED' || openBlock.status === 'LIVE') && (
+                        <FilledPill onClick={() => patchEngagement(openBlock.id, { status: 'COMPLETED' })} disabled={schedBusy}>
+                          <Check className="h-3.5 w-3.5" strokeWidth={2} />
+                          Complete
+                        </FilledPill>
+                      )}
+                      {(openBlock.status === 'SCHEDULED' || openBlock.status === 'CONFIRMED') && (
+                        <GhostPill onClick={() => patchEngagement(openBlock.id, { status: 'NO_SHOW' })} disabled={schedBusy}>No-show</GhostPill>
+                      )}
+                      {openBlock.status !== 'CANCELLED' && openBlock.status !== 'COMPLETED' && (
+                        <button
+                          type="button"
+                          onClick={() => patchEngagement(openBlock.id, { status: 'CANCELLED' })}
+                          disabled={schedBusy}
+                          className="text-[12px] text-smoke underline-offset-2 hover:underline"
+                        >
+                          Cancel engagement
+                        </button>
+                      )}
+                    </div>
+
+                    {!openBlock.isInternal && (
+                      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-black/5 pt-3 text-[13px]">
+                        <a
+                          href={`/portal?tenant=${encodeURIComponent(openBlock.clientName)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-ink underline-offset-4 hover:underline"
+                        >
+                          Open tenant <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.75} />
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveChatTenant(openBlock.clientName);
+                            setActiveTab('communications');
+                            setOpenBlock(null);
+                          }}
+                          className="text-ink underline-offset-4 hover:underline"
+                        >
+                          Message client
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ── New engagement dialog ── */}
+              {creating && (
+                <div
+                  className="fixed inset-0 z-[70] grid place-items-center overflow-y-auto bg-ink/25 p-4 backdrop-blur-[2px]"
+                  onClick={() => setCreating(false)}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Schedule an engagement"
+                >
+                  <div className="my-8 w-full max-w-md rounded-[24px] bg-paper p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-start justify-between gap-3">
+                      <h3 className="font-display text-[24px] font-normal leading-tight text-ink">Schedule an engagement</h3>
+                      <button type="button" onClick={() => setCreating(false)} aria-label="Close" className="grid h-8 w-8 place-items-center rounded-full text-steel transition-colors hover:bg-mist hover:text-ink">
+                        <X className="h-4 w-4" strokeWidth={1.75} />
+                      </button>
+                    </div>
+
+                    <div className="mt-4 space-y-3 text-[13.5px]">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-steel">Type</span>
+                        <select
+                          value={draft.type}
+                          onChange={(e) => setDraft({ ...draft, type: e.target.value })}
+                          aria-label="Engagement type"
+                          className="max-w-[220px] cursor-pointer appearance-none rounded-full bg-mist px-3 py-1.5 text-[12.5px] font-medium text-ink outline-none"
+                        >
+                          {ENGAGEMENT_TYPES.map((t) => (
+                            <option key={t} value={t}>{t}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-steel">Client</span>
+                        <div className="flex items-center gap-2">
+                          <label className="flex items-center gap-1.5 text-[12px] text-steel">
+                            <input
+                              type="checkbox"
+                              checked={draft.internal}
+                              onChange={(e) => setDraft({ ...draft, internal: e.target.checked })}
+                              className="h-3.5 w-3.5 accent-[#17191c]"
+                            />
+                            Internal
+                          </label>
+                          <select
+                            value={draft.internal ? '' : draft.clientName}
+                            onChange={(e) => setDraft({ ...draft, clientName: e.target.value })}
+                            disabled={draft.internal}
+                            aria-label="Client"
+                            className="max-w-[180px] cursor-pointer appearance-none rounded-full bg-mist px-3 py-1.5 text-[12.5px] font-medium text-ink outline-none disabled:opacity-40"
+                          >
+                            <option value="">— internal block —</option>
+                            {tenants.map((t) => (
+                              <option key={t.name} value={t.name}>{t.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-steel">Host</span>
+                        <select
+                          value={draft.hostId}
+                          onChange={(e) => setDraft({ ...draft, hostId: e.target.value })}
+                          aria-label="Host"
+                          className="cursor-pointer appearance-none rounded-full bg-mist px-3 py-1.5 text-[12.5px] font-medium text-ink outline-none"
+                        >
+                          <option value="">— needs an owner —</option>
+                          {hosts.map((m) => (
+                            <option key={m.id} value={m.id}>{m.fullName || m.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-steel">When</span>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <input
+                            type="date"
+                            value={draft.date}
+                            onChange={(e) => setDraft({ ...draft, date: e.target.value })}
+                            aria-label="Date"
+                            className="h-8 rounded-full border border-hairline bg-fog px-2.5 text-[12.5px] tabular-nums outline-none"
+                          />
+                          <input
+                            type="time"
+                            value={draft.start}
+                            onChange={(e) => setDraft({ ...draft, start: e.target.value })}
+                            aria-label="Start time"
+                            className="h-8 rounded-full border border-hairline bg-fog px-2.5 text-[12.5px] tabular-nums outline-none"
+                          />
+                          <select
+                            value={draft.durMin}
+                            onChange={(e) => setDraft({ ...draft, durMin: Number(e.target.value) })}
+                            aria-label="Duration"
+                            className="h-8 cursor-pointer appearance-none rounded-full border border-hairline bg-fog px-2.5 text-[12.5px] font-medium tabular-nums text-ink outline-none"
+                          >
+                            {[15, 30, 45, 60, 90, 120].map((n) => (
+                              <option key={n} value={n}>{n < 60 ? `${n} min` : `${n / 60}h${n === 90 ? ' 30m' : ''}`}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-steel">Join line</span>
+                        <input
+                          value={draft.joinUrl}
+                          onChange={(e) => setDraft({ ...draft, joinUrl: e.target.value })}
+                          placeholder="Paste Zoom / Meet link (optional)"
+                          aria-label="Join link"
+                          className="h-9 w-[220px] rounded-full border border-hairline bg-fog px-3.5 text-[12.5px] outline-none focus:border-ink/30"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-steel">Notes</span>
+                        <textarea
+                          value={draft.notes}
+                          onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
+                          rows={2}
+                          placeholder="Prep notes, agenda, follow-ups…"
+                          aria-label="Engagement notes"
+                          className="mt-1.5 w-full rounded-2xl border border-hairline bg-fog p-3 text-[13px] leading-relaxed outline-none focus:border-ink/30"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-end gap-2 border-t border-black/5 pt-4">
+                      <GhostPill onClick={() => setCreating(false)}>Discard</GhostPill>
+                      <FilledPill onClick={submitCreate} disabled={schedBusy || (!draft.internal && !draft.clientName)}>
+                        {schedBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} /> : <Plus className="h-3.5 w-3.5" strokeWidth={2} />}
+                        Schedule
+                      </FilledPill>
+                    </div>
+                    <p className="mt-2 text-[11.5px] text-smoke">
+                      Landed on the ledger, signed into the ship's log with your name on it — nothing here is decorated.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Founder absence dialog ── */}
+              {absenceFor && hosts.some((m) => m.id === absenceFor) && (
+                <div
+                  className="fixed inset-0 z-[70] grid place-items-center overflow-y-auto bg-ink/25 p-4 backdrop-blur-[2px]"
+                  onClick={() => setAbsenceFor(null)}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Mark founder unavailable"
+                >
+                  <div className="my-8 w-full max-w-sm rounded-[24px] bg-paper p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[12px] text-ash">The day reshuffles — in the open</div>
+                        <h3 className="mt-1 font-display text-[22px] font-normal leading-tight text-ink">
+                          {hosts.find((m) => m.id === absenceFor)?.fullName || hosts.find((m) => m.id === absenceFor)?.name} going dark
+                        </h3>
+                      </div>
+                      <button type="button" onClick={() => setAbsenceFor(null)} aria-label="Close" className="grid h-8 w-8 place-items-center rounded-full text-steel transition-colors hover:bg-mist hover:text-ink">
+                        <X className="h-4 w-4" strokeWidth={1.75} />
+                      </button>
+                    </div>
+                    <p className="mt-2 text-[13px] leading-relaxed text-steel">
+                      Today's remaining engagements reassign to the least-loaded founder — with both timestamps printed on the banner and the ship's log.
+                    </p>
+                    <div className="mt-4 space-y-2.5 text-[13.5px]">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-steel">Reason</span>
+                        <select
+                          value={absenceReason}
+                          onChange={(e) => setAbsenceReason(e.target.value)}
+                          aria-label="Absence reason"
+                          className="cursor-pointer appearance-none rounded-full bg-mist px-3 py-1.5 text-[12.5px] font-medium text-ink outline-none"
+                        >
+                          <option value="SICK">Sick</option>
+                          <option value="TRAVEL">Travel</option>
+                          <option value="FOCUS">Focus block</option>
+                          <option value="OTHER">Other</option>
+                        </select>
+                      </div>
+                      <input
+                        value={absenceNote}
+                        onChange={(e) => setAbsenceNote(e.target.value)}
+                        placeholder="Note (optional)"
+                        aria-label="Absence note"
+                        className="h-9 w-full rounded-full border border-hairline bg-fog px-3.5 text-[13px] outline-none focus:border-ink/30"
+                      />
+                    </div>
+                    <div className="mt-4 flex items-center justify-end gap-2 border-t border-black/5 pt-4">
+                      <GhostPill onClick={() => setAbsenceFor(null)}>Never mind</GhostPill>
+                      <FilledPill onClick={() => markUnavailable(absenceFor)} disabled={schedBusy}>
+                        {schedBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} /> : <UserX className="h-3.5 w-3.5" strokeWidth={1.75} />}
+                        Mark unavailable
+                      </FilledPill>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </main>

@@ -1,0 +1,4 @@
+sku,qty,unit_cost_usd,vendor
+TEST-SKU-1,50,3.30,Acme
+TEST-SKU-2 [Qty: 25],25,7.10,Acme
+TEST-SKU-3,10,1.05,Acme

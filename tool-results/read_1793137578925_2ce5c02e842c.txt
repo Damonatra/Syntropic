@@ -1,0 +1,745 @@
+     1→     1→'use client';
+     2→     2→
+     3→     3→/**
+     4→     4→ * Layer 3 — Executive Enclave portal (client-facing twin of the Command Tower).
+     5→     5→ * Auth model: exactly one enclave per session. The tenant is fixed by the
+     6→     6→ * server (session cookie scoped to /portal); there is no switcher. The
+     7→     7→ * direct line streams over /portal/api/messages — session-scoped, so a
+     8→     8→ * client can only ever read/write its own thread — while the Backbone's
+     9→     9→ * unified inbox (R-06) sees client messages as unread within seconds.
+    10→    10→ * All financials arrive server-computed from /portal/api/enclave (R-01).
+    11→    11→ *
+    12→    12→ * Task 19 — trust as the product: the enclave now carries the reconciliation
+    13→    13→ * stamp (the same self-audit the tower runs), the client's money trail
+    14→    14→ * (recentLedger rendered, no longer a dead payload), expandable per-intercept
+    15→    15→ * receipts, genuinely-upcoming calls with one-click Join, a document shelf
+    16→    16→ * with upload + download, and Seen receipts on the direct line. Live updates
+    17→    17→ * ride the session-scoped SSE bus (/portal/api/bus) with an honest polling
+    18→    18→ * fallback; the feed itself reconciles every 30s.
+    19→    19→ */
+    20→    20→
+    21→    21→import React, { useCallback, useEffect, useRef, useState } from 'react';
+    22→    22→import Link from 'next/link';
+    23→    23→import { useRouter } from 'next/navigation';
+    24→    24→import {
+    25→    25→  AlertTriangle,
+    26→    26→  Check,
+    27→    27→  ChevronDown,
+    28→    28→  Clock,
+    29→    29→  Copy,
+    30→    30→  Download,
+    31→    31→  ExternalLink,
+    32→    32→  FileText,
+    33→    33→  Loader2,
+    34→    34→  LogOut,
+    35→    35→  MessageSquare,
+    36→    36→  Send,
+    37→    37→  ShieldCheck,
+    38→    38→  TrendingUp,
+    39→    39→  Upload,
+    40→    40→} from 'lucide-react';
+    41→    41→import { ARTIFACT, LiveDot, ViewHeader, fmtUsd } from '@/components/backbone/primitives';
+    42→    42→import type { MessageView } from '@/lib/types';
+    43→    43→import type { PortalEnclaveView, TenantDocumentView } from '@/app/portal/api/enclave/route';
+    44→    44→
+    45→    45→const when = (iso: string) =>
+    46→    46→  new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    47→    47→
+    48→    48→const dayLabel = (iso: string) =>
+    49→    49→  new Date(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    50→    50→
+    51→    51→const isToday = (iso: string) =>
+    52→    52→  new Date(iso).toDateString() === new Date().toDateString();
+    53→    53→
+    54→    54→const stampWhen = (iso: string) => (isToday(iso) ? when(iso) : `${dayLabel(iso)} · ${when(iso)}`);
+    55→    55→
+    56→    56→const KIND_LABEL: Record<string, string> = {
+    57→    57→  MARGIN_DEFENDED: 'Margin defended',
+    58→    58→  SETUP_FEE: 'Setup fee',
+    59→    59→  AUDIT_FEE: 'Audit fee',
+    60→    60→};
+    61→    61→
+    62→    62→const PROVIDER_LABEL: Record<string, string> = {
+    63→    63→  ZOOM: 'Zoom',
+    64→    64→  MEET: 'Google Meet',
+    65→    65→  MANUAL: 'Direct link',
+    66→    66→  ENCLAVE: 'Enclave room',
+    67→    67→};
+    68→    68→
+    69→    69→const sizeLabel = (bytes: number) =>
+    70→    70→  bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1048576).toFixed(1)} MB`;
+    71→    71→
+    72→    72→export default function EnclavePortal({
+    73→    73→  tenantName,
+    74→    74→  contactName,
+    75→    75→}: {
+    76→    76→  tenantName: string;
+    77→    77→  contactName: string;
+    78→    78→}) {
+    79→    79→  const router = useRouter();
+    80→    80→  const [enclave, setEnclave] = useState<PortalEnclaveView | null>(null);
+    81→    81→  const [messages, setMessages] = useState<MessageView[]>([]);
+    82→    82→  const [draft, setDraft] = useState('');
+    83→    83→  const [sending, setSending] = useState(false);
+    84→    84→  const [loadError, setLoadError] = useState(false);
+    85→    85→  const [streamLive, setStreamLive] = useState(false);
+    86→    86→  const [expandedId, setExpandedId] = useState<string | null>(null);
+    87→    87→  const [copiedCallId, setCopiedCallId] = useState<string | null>(null);
+    88→    88→  const [uploading, setUploading] = useState(false);
+    89→    89→  const [shelfNote, setShelfNote] = useState<{ ok: boolean; text: string } | null>(null);
+    90→    90→  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+    91→    91→  const fileRef = useRef<HTMLInputElement>(null);
+    92→    92→  const scrollRef = useRef<HTMLDivElement>(null);
+    93→    93→
+    94→    94→  const fetchJson = useCallback(async <T,>(url: string, init?: RequestInit): Promise<T> => {
+    95→    95→    const res = await fetch(url, { cache: 'no-store', ...init });
+    96→    96→    if (res.status === 401) {
+    97→    97→      // Session expired — hard redirect to sign-in.
+    98→    98→      window.location.href = '/portal/login';
+    99→    99→      throw new Error('unauthenticated');
+   100→   100→    }
+   101→   101→    if (!res.ok) throw new Error(`${url} → ${res.status}`);
+   102→   102→    return res.json() as Promise<T>;
+   103→   103→  }, []);
+   104→   104→
+   105→   105→  const refreshEnclave = useCallback(async () => {
+   106→   106→    try {
+   107→   107→      setEnclave(await fetchJson<PortalEnclaveView>('/portal/api/enclave'));
+   108→   108→      setLoadError(false);
+   109→   109→    } catch {
+   110→   110→      setLoadError(true);
+   111→   111→    }
+   112→   112→  }, [fetchJson]);
+   113→   113→
+   114→   114→  const refreshMessages = useCallback(async () => {
+   115→   115→    try {
+   116→   116→      setMessages(await fetchJson<MessageView[]>('/portal/api/messages'));
+   117→   117→    } catch {
+   118→   118→      /* transient — next tick retries (401 already redirects) */
+   119→   119→    }
+   120→   120→  }, [fetchJson]);
+   121→   121→
+   122→   122→  // Enclave data: on mount + 30s reconciliation poll (SSE covers the pushes).
+   123→   123→  useEffect(() => {
+   124→   124→    refreshEnclave().catch(() => undefined);
+   125→   125→    const slow = setInterval(() => refreshEnclave().catch(() => undefined), 30_000);
+   126→   126→    return () => clearInterval(slow);
+   127→   127→  }, [refreshEnclave]);
+   128→   128→
+   129→   129→  // Direct line: initial load, then the session-scoped SSE bus pushes.
+   130→   130→  useEffect(() => {
+   131→   131→    refreshMessages().catch(() => undefined);
+   132→   132→  }, [refreshMessages]);
+   133→   133→
+   134→   134→  useEffect(() => {
+   135→   135→    const es = new EventSource('/portal/api/bus');
+   136→   136→    es.onopen = () => setStreamLive(true);
+   137→   137→    es.onerror = () => setStreamLive(false); // EventSource retries; polling takes over below
+   138→   138→    es.addEventListener('message', () => void refreshMessages());
+   139→   139→    es.addEventListener('thread-read', () => void refreshMessages());
+   140→   140→    es.addEventListener('defense', () => void refreshEnclave());
+   141→   141→    es.addEventListener('hitl', () => void refreshEnclave());
+   142→   142→    return () => es.close();
+   143→   143→  }, [refreshMessages, refreshEnclave]);
+   144→   144→
+   145→   145→  // Honest fallback — while the stream is down, the thread polls every 5s.
+   146→   146→  useEffect(() => {
+   147→   147→    if (streamLive) return;
+   148→   148→    const t = setInterval(() => refreshMessages().catch(() => undefined), 5_000);
+   149→   149→    return () => clearInterval(t);
+   150→   150→  }, [streamLive, refreshMessages]);
+   151→   151→
+   152→   152→  // Keep the thread pinned to the latest message.
+   153→   153→  useEffect(() => {
+   154→   154→    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+   155→   155→  }, [messages.length]);
+   156→   156→
+   157→   157→  const send = async () => {
+   158→   158→    const text = draft.trim();
+   159→   159→    if (!text || sending) return;
+   160→   160→    setSending(true);
+   161→   161→    setDraft('');
+   162→   162→    try {
+   163→   163→      // Identity comes from the session server-side — only text travels.
+   164→   164→      await fetchJson('/portal/api/messages', {
+   165→   165→        method: 'POST',
+   166→   166→        headers: { 'Content-Type': 'application/json' },
+   167→   167→        body: JSON.stringify({ text }),
+   168→   168→      });
+   169→   169→      await refreshMessages();
+   170→   170→    } catch {
+   171→   171→      /* next poll reconciles */
+   172→   172→    } finally {
+   173→   173→      setSending(false);
+   174→   174→    }
+   175→   175→  };
+   176→   176→
+   177→   177→  const onUpload = async (files: FileList | null) => {
+   178→   178→    if (!files || files.length === 0) return;
+   179→   179→    setUploading(true);
+   180→   180→    setShelfNote(null);
+   181→   181→    try {
+   182→   182→      const form = new FormData();
+   183→   183→      Array.from(files).forEach((f) => form.append('files', f));
+   184→   184→      const res = await fetch('/portal/api/ingest', { method: 'POST', body: form });
+   185→   185→      const data = (await res.json().catch(() => null)) as
+   186→   186→        | { filesQueued?: number; hitlCount?: number; perFileSummary?: { lines: number }[]; detail?: string; error?: string }
+   187→   187→        | null;
+   188→   188→      if (res.status === 402) {
+   189→   189→        setShelfNote({ ok: false, text: data?.detail ?? 'File ingest requires an active deposit — ask your operator.' });
+   190→   190→      } else if (res.status === 429) {
+   191→   191→        setShelfNote({ ok: false, text: 'Too many uploads this hour — try again a little later.' });
+   192→   192→      } else if (!res.ok) {
+   193→   193→        setShelfNote({ ok: false, text: data?.detail ?? data?.error ?? 'Upload did not land — try again.' });
+   194→   194→      } else {
+   195→   195→        const lines = (data?.perFileSummary ?? []).reduce((a, x) => a + x.lines, 0);
+   196→   196→        const hitl = data?.hitlCount ?? 0;
+   197→   197→        setShelfNote({
+   198→   198→          ok: true,
+   199→   199→          text: `${data?.filesQueued ?? 0} file${data?.filesQueued === 1 ? '' : 's'} on the shelf — ${lines} lines parsed${hitl ? `, ${hitl} flagged for your team to review` : ''}.`,
+   200→   200→        });
+   201→   201→        await refreshEnclave();
+   202→   202→      }
+   203→   203→    } catch {
+   204→   204→      setShelfNote({ ok: false, text: 'Network error — the upload did not land.' });
+   205→   205→    } finally {
+   206→   206→      setUploading(false);
+   207→   207→      if (fileRef.current) fileRef.current.value = '';
+   208→   208→    }
+   209→   209→  };
+   210→   210→
+   211→   211→  const download = async (d: TenantDocumentView) => {
+   212→   212→    setDownloadingId(d.id);
+   213→   213→    setShelfNote(null);
+   214→   214→    try {
+   215→   215→      const res = await fetch(`/portal/api/documents/${d.id}`, { cache: 'no-store' });
+   216→   216→      if (!res.ok) {
+   217→   217→        const data = (await res.json().catch(() => null)) as { detail?: string } | null;
+   218→   218→        setShelfNote({ ok: false, text: data?.detail ?? `Could not retrieve ${d.fileName}.` });
+   219→   219→        return;
+   220→   220→      }
+   221→   221→      const blob = await res.blob();
+   222→   222→      const url = URL.createObjectURL(blob);
+   223→   223→      const a = document.createElement('a');
+   224→   224→      a.href = url;
+   225→   225→      a.download = d.fileName;
+   226→   226→      a.click();
+   227→   227→      URL.revokeObjectURL(url);
+   228→   228→    } catch {
+   229→   229→      setShelfNote({ ok: false, text: `Network error — ${d.fileName} did not download.` });
+   230→   230→    } finally {
+   231→   231→      setDownloadingId(null);
+   232→   232→    }
+   233→   233→  };
+   234→   234→
+   235→   235→  const copyJoin = async (callId: string, url: string) => {
+   236→   236→    try {
+   237→   237→      await navigator.clipboard.writeText(url);
+   238→   238→      setCopiedCallId(callId);
+   239→   239→      setTimeout(() => setCopiedCallId((c) => (c === callId ? null : c)), 2200);
+   240→   240→    } catch {
+   241→   241→      /* clipboard unavailable — the Join link remains visible */
+   242→   242→    }
+   243→   243→  };
+   244→   244→
+   245→   245→  const signOut = async () => {
+   246→   246→    await fetch('/portal/api/logout', { method: 'POST' }).catch(() => undefined);
+   247→   247→    router.push('/portal/login');
+   248→   248→    router.refresh();
+   249→   249→  };
+   250→   250→
+   251→   251→  const tenant = enclave?.tenant;
+   252→   252→  const thread = messages;
+   253→   253→  const documents = enclave?.documents ?? [];
+   254→   254→  const recon = enclave?.reconciliation ?? null;
+   255→   255→
+   256→   256→  return (
+   257→   257→    <div className="flex min-h-screen flex-col bg-paper text-ink selection:bg-blush selection:text-sienna">
+   258→   258→      {/* ── Masthead ───────────────────────────────────────────────── */}
+   259→   259→      <header className="sticky top-0 z-50 border-b border-hairline bg-paper/85 backdrop-blur-md">
+   260→   260→        <div className="mx-auto flex h-16 w-full max-w-[1120px] items-center justify-between px-5 sm:px-8 lg:px-10">
+   261→   261→          <div className="flex min-w-0 items-center gap-4">
+   262→   262→            <Link href="/portal" className="shrink-0 font-display text-[21px] leading-none tracking-[-0.01em] text-ink">
+   263→   263→              enclave
+   264→   264→            </Link>
+   265→   265→            <span className="hidden text-[13px] text-smoke sm:inline">Layer 03 · client boundary</span>
+   266→   266→            <span className="hidden items-center gap-2 rounded-full border border-hairline px-3 py-1.5 text-[12px] text-steel md:inline-flex">
+   267→   267→              <LiveDot />
+   268→   268→              {streamLive ? 'Enclave live · streamed' : 'Enclave live · polling'}
+   269→   269→            </span>
+   270→   270→          </div>
+   271→   271→          <div className="flex shrink-0 items-center gap-3">
+   272→   272→            <span className="hidden text-[13px] text-steel sm:inline">
+   273→   273→              Signed in as <span className="font-medium text-ink">{contactName}</span>
+   274→   274→              {tenant ? ` · ${tenant.name}` : ''}
+   275→   275→            </span>
+   276→   276→            <button
+   277→   277→              onClick={signOut}
+   278→   278→              className="inline-flex items-center gap-1.5 rounded-full border border-hairline px-3 py-1.5 text-[12.5px] font-medium text-steel transition-colors hover:bg-mist hover:text-ink"
+   279→   279→            >
+   280→   280→              <LogOut className="h-3.5 w-3.5" strokeWidth={1.75} />
+   281→   281→              Sign out
+   282→   282→            </button>
+   283→   283→          </div>
+   284→   284→        </div>
+   285→   285→      </header>
+   286→   286→
+   287→   287→      {/* ── Body ───────────────────────────────────────────────────── */}
+   288→   288→      <main className="mx-auto w-full max-w-[1120px] flex-1 px-5 py-10 sm:px-8 lg:px-10">
+   289→   289→        <ViewHeader
+   290→   290→          tag={`Executive enclave · ${tenant?.erp ?? '—'}`}
+   291→   291→          title="Your margin,"
+   292→   292→          accent="defended."
+   293→   293→          rest=""
+   294→   294→          sub={
+   295→   295→            tenant
+   296→   296→              ? `${tenant.name} — ${tenant.status.toLowerCase()}. Every intercepted dollar below is computed from the same ledger your Syntropic team reports against.`
+   297→   297→              : 'Loading your enclave…'
+   298→   298→          }
+   299→   299→        />
+   300→   300→
+   301→   301→        {loadError && (
+   302→   302→          <div className="mb-6 rounded-2xl border border-hairline bg-mist p-4 text-[14px] text-steel">
+   303→   303→            Enclave feed unreachable — retrying automatically. If this persists, contact your Syntropic owner ({tenant?.owner ?? 'team'}).
+   304→   304→          </div>
+   305→   305→        )}
+   306→   306→
+   307→   307→        {/* ── Reconciliation strip ───────────────────────────────────── */}
+   308→   308→        <section className={`${ARTIFACT} mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 px-6 py-4`} aria-label="Reconciliation stamp">
+   309→   309→          <div className="flex items-center gap-2.5">
+   310→   310→            {recon && !recon.ok ? (
+   311→   311→              <AlertTriangle className="h-4 w-4 shrink-0 text-sienna" strokeWidth={1.75} />
+   312→   312→            ) : (
+   313→   313→              <ShieldCheck className={`h-4 w-4 shrink-0 ${recon?.ok ? 'text-sienna' : 'text-smoke'}`} strokeWidth={1.75} />
+   314→   314→            )}
+   315→   315→            <div>
+   316→   316→              <div className="text-[14px] font-medium text-ink">Reconciled ledger</div>
+   317→   317→              <div className="text-[12px] text-steel">The same self-audit your team runs — printed on your numbers.</div>
+   318→   318→            </div>
+   319→   319→          </div>
+   320→   320→          <div className="ml-auto flex flex-wrap items-center gap-2">
+   321→   321→            {recon ? (
+   322→   322→              <>
+   323→   323→                {recon.checks != null && (
+   324→   324→                  <span className="inline-flex items-center rounded-full border border-hairline px-3 py-1 text-[12px] font-medium text-ink tabular-nums">
+   325→   325→                    {recon.checks} independent checks
+   326→   326→                  </span>
+   327→   327→                )}
+   328→   328→                {recon.drift != null && (
+   329→   329→                  <span
+   330→   330→                    className={`inline-flex items-center rounded-full px-3 py-1 text-[12px] font-medium tabular-nums ${
+   331→   331→                      recon.ok ? 'bg-blush text-sienna' : 'border border-hairline text-steel'
+   332→   332→                    }`}
+   333→   333→                  >
+   334→   334→                    {recon.drift} drift
+   335→   335→                  </span>
+   336→   336→                )}
+   337→   337→                <span className="inline-flex items-center gap-1.5 text-[12px] text-steel">
+   338→   338→                  <LiveDot />
+   339→   339→                  stamped {stampWhen(recon.stampedAt)}
+   340→   340→                </span>
+   341→   341→                {!recon.ok && <span className="w-full text-[12px] leading-relaxed text-sienna">{recon.detail}</span>}
+   342→   342→              </>
+   343→   343→            ) : (
+   344→   344→              <span className="text-[12.5px] text-smoke">
+   345→   345→                Self-audit has not stamped yet — every figure on this page still comes straight off the ledger.
+   346→   346→              </span>
+   347→   347→            )}
+   348→   348→          </div>
+   349→   349→        </section>
+   350→   350→
+   351→   351→        {/* ── Enclave stats ──────────────────────────────────────────── */}
+   352→   352→        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+   353→   353→          <div className={`${ARTIFACT} bg-blush p-5`}>
+   354→   354→            <div className="text-[13px] text-sienna/80">Margin recovered</div>
+   355→   355→            <div className="mt-2 font-display text-[30px] leading-none tracking-[-0.01em] text-sienna tabular-nums">
+   356→   356→              {enclave ? fmtUsd(enclave.marginDefendedCents) : '—'}
+   357→   357→            </div>
+   358→   358→            <div className="mt-2 text-[12px] text-sienna/70">
+   359→   359→              {enclave && enclave.last24hDeltaCents > 0 ? (
+   360→   360→                <span className="inline-flex items-center gap-1 font-medium tabular-nums">
+   361→   361→                  <TrendingUp className="h-3 w-3" strokeWidth={2} />+{fmtUsd(enclave.last24hDeltaCents, true)} in the last 24h
+   362→   362→                </span>
+   363→   363→              ) : (
+   364→   364→                'Lifetime, this enclave'
+   365→   365→              )}
+   366→   366→            </div>
+   367→   367→          </div>
+   368→   368→          <div className={`${ARTIFACT} p-5`}>
+   369→   369→            <div className="text-[13px] text-steel">Defenses logged</div>
+   370→   370→            <div className="mt-2 font-display text-[30px] leading-none tracking-[-0.01em] text-ink tabular-nums">
+   371→   371→              {enclave ? enclave.defensesLogged : '—'}
+   372→   372→            </div>
+   373→   373→            <div className="mt-2 text-[12px] text-smoke">Approved line-item defenses</div>
+   374→   374→          </div>
+   375→   375→          <div className={`${ARTIFACT} p-5`}>
+   376→   376→            <div className="text-[13px] text-steel">Guarantee status</div>
+   377→   377→            <div className="mt-2 text-[15px] font-medium leading-snug text-ink">{tenant?.guaranteeLabel ?? '—'}</div>
+   378→   378→            <div className="mt-2 inline-flex items-center gap-1.5 text-[12px] text-steel">
+   379→   379→              <ShieldCheck className={`h-3.5 w-3.5 ${tenant?.guaranteePassed ? 'text-sienna' : 'text-smoke'}`} strokeWidth={1.75} />
+   380→   380→              {tenant?.guaranteePassed ? 'Baseline passed' : 'Diagnostic pending'}
+   381→   381→            </div>
+   382→   382→          </div>
+   383→   383→          <div className={`${ARTIFACT} p-5`}>
+   384→   384→            <div className="text-[13px] text-steel">Deposit / fee</div>
+   385→   385→            <div className="mt-2 text-[15px] font-medium leading-snug text-ink">{tenant?.depositLabel ?? '—'}</div>
+   386→   386→            <div className="mt-2 text-[12px] text-smoke">{tenant?.stage ?? ''}</div>
+   387→   387→          </div>
+   388→   388→        </div>
+   389→   389→
+   390→   390→        {/* ── Feed + direct line ─────────────────────────────────────── */}
+   391→   391→        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-12">
+   392→   392→          {/* Live intercept feed + money trail */}
+   393→   393→          <div className="space-y-6 lg:col-span-7">
+   394→   394→            <section className={`${ARTIFACT} p-6`} aria-label="Live enclave feed">
+   395→   395→              <div className="flex items-center justify-between">
+   396→   396→                <h2 className="font-display text-[22px] leading-tight text-ink">Live intercept feed</h2>
+   397→   397→                <span className="inline-flex items-center gap-2 text-[12px] text-steel">
+   398→   398→                  <LiveDot />
+   399→   399→                  {streamLive ? 'Pushed as they land' : 'Auto-sync · fallback poll'}
+   400→   400→                </span>
+   401→   401→              </div>
+   402→   402→              <p className="mt-1 text-[13px] text-steel">
+   403→   403→                RFQs defended on your behalf — tap a row for its receipt.
+   404→   404→              </p>
+   405→   405→
+   406→   406→              <div className="mt-4 divide-y divide-hairline">
+   407→   407→                {enclave && enclave.intercepts.length > 0 ? (
+   408→   408→                  enclave.intercepts.map((e) => {
+   409→   409→                    const open = expandedId === e.id;
+   410→   410→                    return (
+   411→   411→                      <div key={e.id}>
+   412→   412→                        <button
+   413→   413→                          onClick={() => setExpandedId(open ? null : e.id)}
+   414→   414→                          aria-expanded={open}
+   415→   415→                          className="flex w-full items-center justify-between gap-4 py-3.5 text-left"
+   416→   416→                        >
+   417→   417→                          <div className="min-w-0">
+   418→   418→                            <div className="truncate text-[14px] font-medium text-ink">{e.item}</div>
+   419→   419→                            <div className="mt-0.5 text-[12px] text-smoke tabular-nums">
+   420→   420→                              {when(e.createdAt)} · {e.channel} · quoted {fmtUsd(e.origCents, true)}
+   421→   421→                            </div>
+   422→   422→                          </div>
+   423→   423→                          <div className="flex shrink-0 items-center gap-2">
+   424→   424→                            <div className="text-right">
+   425→   425→                              <div className="text-[14px] font-medium text-ink tabular-nums">{fmtUsd(e.defendedCents, true)}</div>
+   426→   426→                              <div className="mt-0.5 inline-flex items-center rounded-full bg-blush px-2 py-0.5 text-[11.5px] font-medium text-sienna tabular-nums">
+   427→   427→                                +{fmtUsd(e.diffCents, true)} recovered
+   428→   428→                              </div>
+   429→   429→                            </div>
+   430→   430→                            <ChevronDown
+   431→   431→                              className={`h-4 w-4 shrink-0 text-smoke transition-transform ${open ? 'rotate-180' : ''}`}
+   432→   432→                              strokeWidth={1.75}
+   433→   433→                            />
+   434→   434→                          </div>
+   435→   435→                        </button>
+   436→   436→                        {open && (
+   437→   437→                          <div className="pb-4">
+   438→   438→                            <div className="space-y-1.5 rounded-2xl bg-fog p-4 text-[12.5px] leading-relaxed text-steel">
+   439→   439→                              <div className="flex justify-between gap-4">
+   440→   440→                                <span>Quoted position</span>
+   441→   441→                                <span className="font-medium text-ink tabular-nums">{fmtUsd(e.origCents, true)}</span>
+   442→   442→                              </div>
+   443→   443→                              <div className="flex justify-between gap-4">
+   444→   444→                                <span>Defended position</span>
+   445→   445→                                <span className="font-medium text-ink tabular-nums">{fmtUsd(e.defendedCents, true)}</span>
+   446→   446→                              </div>
+   447→   447→                              <div className="flex justify-between gap-4 border-t border-hairline pt-1.5">
+   448→   448→                                <span>Recovered</span>
+   449→   449→                                <span className="font-medium text-sienna tabular-nums">+{fmtUsd(e.diffCents, true)}</span>
+   450→   450→                              </div>
+   451→   451→                              <div className="flex justify-between gap-4">
+   452→   452→                                <span>Channel</span>
+   453→   453→                                <span className="font-medium text-ink">{e.channel}</span>
+   454→   454→                              </div>
+   455→   455→                              <div className="flex justify-between gap-4">
+   456→   456→                                <span>Logged</span>
+   457→   457→                                <span className="font-medium text-ink tabular-nums">
+   458→   458→                                  {dayLabel(e.createdAt)} · {when(e.createdAt)}
+   459→   459→                                </span>
+   460→   460→                              </div>
+   461→   461→                            </div>
+   462→   462→                          </div>
+   463→   463→                        )}
+   464→   464→                      </div>
+   465→   465→                    );
+   466→   466→                  })
+   467→   467→                ) : (
+   468→   468→                  <div className="py-8 text-center text-[14px] text-steel">
+   469→   469→                    No defenses logged yet — your first intercepted RFQs will land here.
+   470→   470→                  </div>
+   471→   471→                )}
+   472→   472→              </div>
+   473→   473→            </section>
+   474→   474→
+   475→   475→            {/* Money trail — recentLedger finally rendered (was a dead payload) */}
+   476→   476→            <section className={`${ARTIFACT} p-6`} aria-label="Your money trail">
+   477→   477→              <div className="flex items-center justify-between">
+   478→   478→                <h2 className="font-display text-[22px] leading-tight text-ink">Your money trail</h2>
+   479→   479→                <span className="text-[12px] text-steel">Newest first</span>
+   480→   480→              </div>
+   481→   481→              <p className="mt-1 text-[13px] text-steel">
+   482→   482→                The exact ledger rows behind every figure on this page — receipts, not claims.
+   483→   483→              </p>
+   484→   484→              <div className="mt-4 divide-y divide-hairline">
+   485→   485→                {enclave && enclave.recentLedger.length > 0 ? (
+   486→   486→                  enclave.recentLedger.map((l) => (
+   487→   487→                    <div key={l.id} className="flex items-center justify-between gap-4 py-3">
+   488→   488→                      <div className="min-w-0">
+   489→   489→                        <div className="flex items-center gap-2">
+   490→   490→                          <span
+   491→   491→                            className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+   492→   492→                              l.kind === 'MARGIN_DEFENDED' ? 'bg-blush text-sienna' : 'border border-hairline text-steel'
+   493→   493→                            }`}
+   494→   494→                          >
+   495→   495→                            {KIND_LABEL[l.kind] ?? l.kind}
+   496→   496→                          </span>
+   497→   497→                          <span className="truncate text-[13.5px] text-ink">{l.note ?? '—'}</span>
+   498→   498→                        </div>
+   499→   499→                        <div className="mt-0.5 text-[12px] text-smoke tabular-nums">
+   500→   500→                          {dayLabel(l.createdAt)} · {when(l.createdAt)}
+   501→   501→                        </div>
+   502→   502→                      </div>
+   503→   503→                      <div
+   504→   504→                        className={`shrink-0 text-[14px] font-medium tabular-nums ${
+   505→   505→                          l.kind === 'MARGIN_DEFENDED' ? 'text-sienna' : 'text-ink'
+   506→   506→                        }`}
+   507→   507→                      >
+   508→   508→                        {l.kind === 'MARGIN_DEFENDED' ? '+' : ''}
+   509→   509→                        {fmtUsd(l.amountCents, true)}
+   510→   510→                      </div>
+   511→   511→                    </div>
+   512→   512→                  ))
+   513→   513→                ) : (
+   514→   514→                  <div className="py-6 text-center text-[13.5px] text-steel">
+   515→   515→                    No ledger rows yet — your first settled entries will print here.
+   516→   516→                  </div>
+   517→   517→                )}
+   518→   518→              </div>
+   519→   519→            </section>
+   520→   520→          </div>
+   521→   521→
+   522→   522→          {/* Direct line + calls + documents */}
+   523→   523→          <div className="space-y-6 lg:col-span-5">
+   524→   524→            {/* Direct line */}
+   525→   525→            <section className={`${ARTIFACT} flex flex-col p-6`} aria-label="Direct line">
+   526→   526→              <div className="flex items-center justify-between">
+   527→   527→                <h2 className="inline-flex items-center gap-2 font-display text-[22px] leading-tight text-ink">
+   528→   528→                  <MessageSquare className="h-4 w-4 text-sienna" strokeWidth={1.75} />
+   529→   529→                  Direct line
+   530→   530→                </h2>
+   531→   531→                <span className="inline-flex items-center gap-2 text-[12px] text-steel">
+   532→   532→                  <LiveDot />
+   533→   533→                  {streamLive ? 'Streams to your team' : 'Reconnecting…'}
+   534→   534→                </span>
+   535→   535→              </div>
+   536→   536→              <p className="mt-1 text-[13px] text-steel">
+   537→   537→                Owner: {tenant?.owner ?? '—'} · replies within the 90-second response SLA.
+   538→   538→              </p>
+   539→   539→
+   540→   540→              <div
+   541→   541→                ref={scrollRef}
+   542→   542→                className="scroll-slim mt-4 h-64 space-y-2.5 overflow-y-auto rounded-2xl bg-fog p-4"
+   543→   543→              >
+   544→   544→                {thread.length === 0 && (
+   545→   545→                  <div className="grid h-full place-items-center text-center text-[13px] text-smoke">
+   546→   546→                    Say hello — your team sees this instantly.
+   547→   547→                  </div>
+   548→   548→                )}
+   549→   549→                {thread.map((m) => {
+   550→   550→                  const own = m.sender.startsWith('Client');
+   551→   551→                  return (
+   552→   552→                    <div key={m.id} className={own ? 'flex justify-end' : 'flex justify-start'}>
+   553→   553→                      <div
+   554→   554→                        className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-[13.5px] leading-relaxed ${
+   555→   555→                          own ? 'bg-ink text-paper' : 'border border-hairline bg-paper text-ink'
+   556→   556→                        }`}
+   557→   557→                      >
+   558→   558→                        {!own && <div className="mb-0.5 text-[11.5px] font-medium text-steel">{m.sender}</div>}
+   559→   559→                        {m.text}
+   560→   560→                        <div className={`mt-1 text-[10.5px] tabular-nums ${own ? 'text-paper/60' : 'text-smoke'}`}>
+   561→   561→                          {own ? (m.readAt ? `Seen ${when(m.readAt)}` : `Sent ${when(m.createdAt)}`) : when(m.createdAt)}
+   562→   562→                        </div>
+   563→   563→                      </div>
+   564→   564→                    </div>
+   565→   565→                  );
+   566→   566→                })}
+   567→   567→              </div>
+   568→   568→
+   569→   569→              <form
+   570→   570→                className="mt-3 flex items-center gap-2"
+   571→   571→                onSubmit={(ev) => {
+   572→   572→                  ev.preventDefault();
+   573→   573→                  send();
+   574→   574→                }}
+   575→   575→              >
+   576→   576→                <input
+   577→   577→                  value={draft}
+   578→   578→                  onChange={(e) => setDraft(e.target.value)}
+   579→   579→                  placeholder={`Message ${tenant?.name ?? 'your team'}…`}
+   580→   580→                  aria-label="Message your Syntropic team"
+   581→   581→                  className="h-10 flex-1 rounded-full border border-hairline bg-paper px-4 text-[14px] text-ink outline-none transition-shadow placeholder:text-smoke focus-visible:shadow-[0_0_0_2px_rgba(93,42,26,0.25)]"
+   582→   582→                />
+   583→   583→                <button
+   584→   584→                  type="submit"
+   585→   585→                  disabled={sending || !draft.trim()}
+   586→   586→                  aria-label="Send message"
+   587→   587→                  className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-ink text-paper transition-colors hover:bg-[#33363b] disabled:opacity-50"
+   588→   588→                >
+   589→   589→                  {sending ? (
+   590→   590→                    <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.75} />
+   591→   591→                  ) : (
+   592→   592→                    <Send className="h-4 w-4" strokeWidth={1.75} />
+   593→   593→                  )}
+   594→   594→                </button>
+   595→   595→              </form>
+   596→   596→            </section>
+   597→   597→
+   598→   598→            {/* Upcoming calls — genuinely upcoming, with the join line */}
+   599→   599→            <section className="space-y-3 rounded-[24px] bg-mist p-5" aria-label="Upcoming calls">
+   600→   600→              <div className="px-1 pb-1 text-[13px] font-medium text-steel">Upcoming executive calls</div>
+   601→   601→              {enclave && enclave.calls.length > 0 ? (
+   602→   602→                enclave.calls.map((c) => (
+   603→   603→                  <div key={c.id} className="space-y-2.5 rounded-2xl bg-paper p-4">
+   604→   604→                    <div className="flex items-start justify-between gap-3">
+   605→   605→                      <div className="text-[14px] font-medium text-ink">{c.type}</div>
+   606→   606→                      <span className="shrink-0 rounded-full bg-blush px-2.5 py-1 text-[11.5px] font-medium text-sienna">
+   607→   607→                        {c.status === 'LIVE' ? 'Live now' : c.status.toLowerCase()}
+   608→   608→                      </span>
+   609→   609→                    </div>
+   610→   610→                    <div className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
+   611→   611→                      <Clock className="h-3.5 w-3.5 text-steel" strokeWidth={1.75} />
+   612→   612→                      <span className="tabular-nums">
+   613→   613→                        {dayLabel(c.scheduledAt)} ·{' '}
+   614→   614→                        {when(c.scheduledAt)}
+   615→   615→                        {c.endsAt ? `–${when(c.endsAt)}` : ''}
+   616→   616→                      </span>
+   617→   617→                    </div>
+   618→   618→                    {c.hostName && <div className="text-[12px] text-steel">Hosted by {c.hostName}</div>}
+   619→   619→                    {c.joinUrl ? (
+   620→   620→                      <div className="flex flex-wrap items-center gap-2 pt-0.5">
+   621→   621→                        <a
+   622→   622→                          href={c.joinUrl}
+   623→   623→                          target="_blank"
+   624→   624→                          rel="noreferrer"
+   625→   625→                          className="inline-flex items-center gap-1.5 rounded-full bg-ink px-3.5 py-2 text-[12.5px] font-medium text-paper transition-colors hover:bg-[#33363b]"
+   626→   626→                        >
+   627→   627→                          Join {PROVIDER_LABEL[c.provider ?? ''] ?? 'call'}
+   628→   628→                          <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.75} />
+   629→   629→                        </a>
+   630→   630→                        <button
+   631→   631→                          onClick={() => copyJoin(c.id, c.joinUrl!)}
+   632→   632→                          className="inline-flex items-center gap-1.5 rounded-full border border-hairline px-3 py-2 text-[12.5px] font-medium text-steel transition-colors hover:bg-mist hover:text-ink"
+   633→   633→                        >
+   634→   634→                          {copiedCallId === c.id ? (
+   635→   635→                            <Check className="h-3.5 w-3.5" strokeWidth={1.75} />
+   636→   636→                          ) : (
+   637→   637→                            <Copy className="h-3.5 w-3.5" strokeWidth={1.75} />
+   638→   638→                          )}
+   639→   639→                          {copiedCallId === c.id ? 'Copied' : 'Copy link'}
+   640→   640→                        </button>
+   641→   641→                      </div>
+   642→   642→                    ) : (
+   643→   643→                      <div className="text-[12px] text-smoke">Your owner attaches the line before the call.</div>
+   644→   644→                    )}
+   645→   645→                  </div>
+   646→   646→                ))
+   647→   647→              ) : (
+   648→   648→                <div className="rounded-2xl bg-paper p-4 text-[13px] text-steel">
+   649→   649→                  No calls scheduled — your owner will book the next briefing here.
+   650→   650→                </div>
+   651→   651→              )}
+   652→   652→            </section>
+   653→   653→
+   654→   654→            {/* Document shelf — what landed, what parsed, download the original */}
+   655→   655→            <section className="space-y-3 rounded-[24px] bg-mist p-5" aria-label="Your documents">
+   656→   656→              <div className="flex items-center justify-between px-1 pb-1">
+   657→   657→                <div className="text-[13px] font-medium text-steel">Your documents</div>
+   658→   658→                <span className="text-[12px] text-steel tabular-nums">{documents.length} on file</span>
+   659→   659→              </div>
+   660→   660→
+   661→   661→              {documents.length > 0 ? (
+   662→   662→                <div className="space-y-2.5">
+   663→   663→                  {documents.map((d) => (
+   664→   664→                    <div key={d.id} className="space-y-1.5 rounded-2xl bg-paper p-4">
+   665→   665→                      <div className="flex items-center justify-between gap-3">
+   666→   666→                        <div className="flex min-w-0 items-center gap-2">
+   667→   667→                          <FileText className="h-4 w-4 shrink-0 text-steel" strokeWidth={1.75} />
+   668→   668→                          <span className="truncate text-[13.5px] font-medium text-ink">{d.fileName}</span>
+   669→   669→                        </div>
+   670→   670→                        <button
+   671→   671→                          onClick={() => download(d)}
+   672→   672→                          disabled={downloadingId === d.id}
+   673→   673→                          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-hairline px-3 py-1.5 text-[12px] font-medium text-steel transition-colors hover:bg-mist hover:text-ink disabled:opacity-50"
+   674→   674→                        >
+   675→   675→                          {downloadingId === d.id ? (
+   676→   676→                            <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.75} />
+   677→   677→                          ) : (
+   678→   678→                            <Download className="h-3.5 w-3.5" strokeWidth={1.75} />
+   679→   679→                          )}
+   680→   680→                          Download
+   681→   681→                        </button>
+   682→   682→                      </div>
+   683→   683→                      <div className="text-[12px] text-steel tabular-nums">
+   684→   684→                        {dayLabel(d.createdAt)} · {sizeLabel(d.sizeBytes)}
+   685→   685→                        {d.linesParsed != null ? ` · ${d.linesParsed} lines parsed` : ''}
+   686→   686→                        {d.hitlCount > 0 ? ` · ${d.hitlCount} flagged` : ''}
+   687→   687→                      </div>
+   688→   688→                      {d.hitlCount > 0 && (
+   689→   689→                        <div className="text-[11.5px] leading-relaxed text-sienna">
+   690→   690→                          {d.hitlRefs.join(' · ')} — low-confidence lines under verification by your team
+   691→   691→                        </div>
+   692→   692→                      )}
+   693→   693→                    </div>
+   694→   694→                  ))}
+   695→   695→                </div>
+   696→   696→              ) : (
+   697→   697→                <div className="rounded-2xl bg-paper p-4 text-[13px] text-steel">
+   698→   698→                  Nothing on file yet — upload a quote and it lands here with its parse summary.
+   699→   699→                </div>
+   700→   700→              )}
+   701→   701→
+   702→   702→              <label
+   703→   703→                className={`flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed px-4 py-4 text-[13px] font-medium transition-colors ${
+   704→   704→                  uploading ? 'border-hairline text-smoke' : 'border-steel/40 text-steel hover:border-sienna/50 hover:text-ink'
+   705→   705→                }`}
+   706→   706→              >
+   707→   707→                <input
+   708→   708→                  ref={fileRef}
+   709→   709→                  type="file"
+   710→   710→                  multiple
+   711→   711→                  accept=".pdf,.xlsx,.csv"
+   712→   712→                  className="hidden"
+   713→   713→                  disabled={uploading}
+   714→   714→                  onChange={(e) => void onUpload(e.target.files)}
+   715→   715→                />
+   716→   716→                {uploading ? (
+   717→   717→                  <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.75} />
+   718→   718→                ) : (
+   719→   719→                  <Upload className="h-4 w-4" strokeWidth={1.75} />
+   720→   720→                )}
+   721→   721→                {uploading ? 'Parsing…' : 'Upload a quote file'}
+   722→   722→                <span className="text-[11.5px] font-normal text-smoke">PDF · XLSX · CSV, under 50 MB</span>
+   723→   723→              </label>
+   724→   724→
+   725→   725→              {shelfNote && (
+   726→   726→                <p className={`px-1 text-[12.5px] leading-relaxed ${shelfNote.ok ? 'text-sienna' : 'text-steel'}`}>
+   727→   727→                  {shelfNote.text}
+   728→   728→                </p>
+   729→   729→              )}
+   730→   730→            </section>
+   731→   731→          </div>
+   732→   732→        </div>
+   733→   733→
+   734→   734→        {/* ── Footer meta ────────────────────────────────────────────── */}
+   735→   735→        <footer className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-hairline pt-6 text-[12px] text-smoke">
+   736→   736→          <span>
+   737→   737→            Enclave boundary isolated · session bound to {tenantName} · ledger synced {enclave ? when(enclave.computedAt) : '—'}
+   738→   738→          </span>
+   739→   739→          <span>Syntropic Backbone · Layer 03 portal</span>
+   740→   740→        </footer>
+   741→   741→      </main>
+   742→   742→    </div>
+   743→   743→  );
+   744→   744→}
+   745→   745→

@@ -1,0 +1,306 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ────────────────────────────────────────────────────────────────
+// Syntropic Backbone — Layer 4 domain models (R-02)
+// Single source of truth for telemetry, HITL, ledger, comms, calls.
+// ────────────────────────────────────────────────────────────────
+
+model Tenant {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  erp             String
+  status          String // e.g. "48-hr audit active" | "Live rev-share"
+  stage           String // pipeline stage label (Founder Arena)
+  depositLabel    String // human-readable deposit / setup-fee state
+  guaranteeLabel  String
+  guaranteePassed Boolean  @default(false)
+  auditCompleted  Boolean  @default(false)
+  owner           String // "Damon" | "Josias" | "Damon / Josias"
+  mailboxStatus   String   @default("ACTIVE") // ACTIVE | LOCKED | MISSING
+  mailboxNote     String?
+  accessCodeHash  String   @default("") // sha256(salt + access code) — portal login
+  contactName     String   @default("") // client-side contact, e.g. "Chris"
+  contactEmail    String   @default("") // invite delivery target, e.g. chris@apexpiping.com
+  sessionEpoch    Int      @default(0) // bumped on invite rotate/revoke → kills live sessions
+  leakageVector   String   @default("") // primary margin leakage vector (client directory)
+  paymentStatus   String   @default("PENDING") // PAID | PENDING | OVERDUE
+  billingStage    String   @default("DISCOVERY") // Task 20 — DISCOVERY | SETUP | AUDIT | LIVE: the founder-set lifecycle fact the client money panel renders; the fee-ledger shape cross-checks it
+  attribution     String?  // JSON capture of landing-page attribution (UTM/slider state)
+  rfqMonthlyVolume Int     @default(0) // self-reported monthly RFQ volume from intake
+  assignedToId    String?  // owning founder — set by least-loaded intake assignment
+  assignedTo      TeamMember? @relation("AssignedTenants", fields: [assignedToId], references: [id])
+  audits          AuditRecord[] @relation("AuditSales")
+  intercepts      InterceptEvent[]
+  ledgerRows      LedgerEntry[]
+  calls           CallSession[]
+  documents       TenantDocument[]
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([assignedToId])
+}
+
+// Per-tenant portal invite ledger — every access code ever issued, with its
+// delivery target and lifecycle. The tenant's *active* login code is the hash
+// of the latest non-revoked invite; issuing a new invite supersedes the old
+// one and bumps Tenant.sessionEpoch so live sessions are forced to re-login.
+model TenantInvite {
+  id         String    @id @default(cuid())
+  tenantName String
+  email      String    // delivery target for this invite
+  codeHash   String    // sha256(salt + code) — the plaintext code is never stored
+  codeHint   String    // masked form for the Tower UI, e.g. "apex-K•••-••K4"
+  issuedBy   String    // operator name, e.g. "Damon"
+  status     String    @default("PENDING") // PENDING | ACCEPTED | REVOKED
+  createdAt  DateTime  @default(now())
+  acceptedAt DateTime?
+
+  @@index([tenantName, status])
+}
+
+model TeamMember {
+  id                 String   @id @default(cuid())
+  name               String   @unique // Damon | Josias (founders-only arena)
+  fullName           String   @default("") // display name, e.g. "Damon Matara"
+  role               String
+  isOnline           Boolean  @default(false)
+  qOutboundTarget    Int      @default(100) // quarterly outbound looms / Apollo runs
+  qOutboundCompleted Int      @default(0)
+  discoveryCalls     Int      @default(0)
+  auditsClosed       Int      @default(0)
+  contractsConverted Int      @default(0)
+  telegramChatId     String?  // per-founder Telegram alert routing (env-seeded)
+  email              String?  // operator identity for magic-link auth
+  sortOrder          Int      @default(0)
+  assignedTenants    Tenant[] @relation("AssignedTenants")
+}
+
+model AuditRecord {
+  id                     String   @id @default(cuid())
+  tenantId               String?  // owning tenant — name-matched backfill; null = not yet a tenant
+  tenant                 Tenant?  @relation("AuditSales", fields: [tenantId], references: [id])
+  callSessionId          String?  // briefing call that sold/delivered this audit (Schedule linkage)
+  callSession            CallSession? @relation("AuditBriefing", fields: [callSessionId], references: [id])
+  companyName            String
+  dateSold               String // ISO date
+  auditFeeCents          Int
+  attendedCall           Boolean
+  callHost               String
+  convertedToClient      Boolean
+  identifiedLeakageCents Int
+  callNotes              String
+  sortOrder              Int     @default(0)
+
+  @@index([tenantId])
+}
+
+model HitlItem {
+  id                       String   @id @default(cuid())
+  ref                      String   @unique // HITL-8092
+  kind                     String   @default("OCR_LOW_CONFIDENCE") // OCR_LOW_CONFIDENCE | DISPATCH_FAILURE
+  tenantName               String
+  pdfName                  String?
+  skuParsed                String?
+  confidenceScore          Float?
+  extractedMarginLossCents Int      @default(0)
+  failureReason            String? // MAILBOX_NOT_FOUND | MAILBOX_LOCKED
+  owner                    String?
+  status                   String   @default("PENDING") // PENDING | APPROVED | OVERRIDDEN | RESOLVED
+  scenario                 Int? // simulate-engine cycle pointer (HITL scenarios)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+}
+
+model InterceptEvent {
+  id            String   @id @default(cuid())
+  tenantName    String
+  tenantId      String? // Task 19 — FK to the tenant; backfilled by name, legacy short trade names stay honestly unlinked
+  tenant        Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  item          String
+  origCents     Int
+  defendedCents Int
+  diffCents     Int
+  channel       String   @default("Outlook")
+  source        String   @default("RFQ") // RFQ | SIMULATED | HITL_APPROVAL
+  scenario      Int?
+  createdAt     DateTime @default(now())
+
+  @@index([tenantId])
+}
+
+model LedgerEntry {
+  id          String   @id @default(cuid())
+  tenantName  String
+  tenantId    String? // Task 19 — FK to the tenant (engine + seed writes link directly)
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  kind        String // MARGIN_DEFENDED | SETUP_FEE | AUDIT_FEE
+  amountCents Int
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId])
+}
+
+// Task 19 — the document shelf. Every file a client uploads through the
+// enclave ingest lands here (with its parse summary) so the shelf can show
+// what is on file — and serve the original back — without ever crossing
+// tenant boundaries. Files themselves live in DATA_DIR/tenants/<tenant>/.
+model TenantDocument {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fileName    String   // original upload name
+  storedPath  String   // path relative to DATA_DIR, written by the ingest route
+  sizeBytes   Int
+  linesParsed Int?     // Docling parse result — null for rows written before tracking
+  hitlCount   Int      @default(0) // lines under the confidence floor
+  hitlRefs    String   @default("[]") // JSON array of HITL refs raised by this file
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId])
+}
+
+model Message {
+  id         String    @id @default(cuid())
+  tenantName String
+  sender     String
+  text       String
+  // Task 23 — the server knows the side of the table at write time (portal
+  // session = client, operator tower = team). The UIs no longer guess it
+  // from sender strings ("Damon (Syntropic)" is the team, not the client).
+  direction  String    @default("team")
+  unread     Boolean   @default(false)
+  readAt     DateTime? // Task 19 — when the team cleared the flag; powers the client's "Seen" receipt
+  createdAt  DateTime  @default(now())
+}
+
+// The operating day. Client-facing engagements (discovery calls, audit
+// briefings, margin reviews) and internal blocks (engine reviews, HITL
+// war-rooms) live on one grid — rows are founders, columns are hours.
+// Join links are Tier-1 paste-a-link (Zoom / Meet / anything); the
+// enclave WebRTC room remains the internal line. Every mutation is
+// signed into the Ship's Log.
+model CallSession {
+  id          String    @id @default(cuid())
+  clientName  String // tenant name — or "Internal" when isInternal is true
+  soldAudits  AuditRecord[] @relation("AuditBriefing")
+  type        String
+  scheduledAt DateTime
+  endsAt      DateTime? // block end — drives grid width + hours-today math
+  status      String    @default("SCHEDULED") // SCHEDULED | CONFIRMED | LIVE | COMPLETED | NO_SHOW | CANCELLED
+  hostId      String? // owning founder (TeamMember.id) — the grid row
+  joinUrl     String? // pasted Zoom / Meet / any join link (Tier 1)
+  provider    String? // ZOOM | MEET | MANUAL | ENCLAVE
+  notes       String    @default("")
+  flagged     Boolean   @default(false) // "Follow-up to review"
+  isInternal  Boolean   @default(false) // internal block — shaded on the grid
+  attendanceVerified Boolean @default(false) // the proof-of-presence analog (EVV)
+  verifiedAt  DateTime?
+  tenantId    String? // Task 19 — FK to the tenant (null for internal blocks)
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([scheduledAt])
+  @@index([hostId])
+  @@index([tenantId])
+}
+
+// A founder going dark (sick / travel / focus) for a day. Creating the
+// absence immediately reassigns that founder's remaining engagements for
+// the day through the least-loaded available founder — with both
+// timestamps printed on the banner, in the open, like the reference spec.
+model FounderAbsence {
+  id            String    @id @default(cuid())
+  memberId      String
+  reason        String // SICK | TRAVEL | FOCUS | OTHER
+  note          String    @default("")
+  day           String // YYYY-MM-DD (client-local day the absence applies to)
+  reportedAt    DateTime  @default(now())
+  resolvedAt    DateTime?
+  reassignments String    @default("") // the honest sentence, e.g. "3 engagements → Josias at 2:15 PM"
+
+  @@index([day])
+}
+
+model Notification {
+  id             String   @id @default(cuid())
+  channel        String   @default("TELEGRAM")
+  target         String
+  text           String
+  payload        String?
+  deliveryStatus String   @default("SIMULATED") // SENT | SIMULATED | FAILED
+  createdAt      DateTime @default(now())
+}
+
+// Single-use, expiring tokens. Two scopes: operator magic-link sign-in and
+// one-time Telegram HITL action buttons (the callback carries a random token,
+// never the actionable ref, and dies after 15 minutes or first use).
+model MagicLinkToken {
+  id        String    @id @default(cuid())
+  email     String
+  tokenHash String    @unique // sha256 of the raw token — raw value never stored
+  scope     String    @default("operator") // operator | telegram
+  targetId  String?   // telegram scope: HitlItem.id the token resolves
+  action    String?   // telegram scope: APPROVE | OVERRIDE
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
+}
+
+model TrafficEvent {
+  id        String   @id @default(cuid())
+  sessionId String
+  tenantId  String? // tenant name when the event is enclave-scoped
+  layer     String // LANDING | PORTAL | ENGINE
+  eventType String
+  metadata  String?
+  ipHash    String? // sha256(ip | rotating day salt) — never the raw IP
+  ipAddress String? // sanitized IP (port stripped, IPv4 last octet zeroed / IPv6 → /64) per IP_PRIVACY_MODE
+  city      String? // edge-injected or provider-resolved geo (Phase 11.8)
+  country   String? // ISO-3166 alpha-2
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([sessionId])
+  @@index([eventType, createdAt])
+  @@index([layer, createdAt])
+  @@index([city, country])
+}
+
+model LiveTelemetrySummary {
+  id              String @id @default(cuid())
+  date            String @unique // UTC day, e.g. 2026-10-26
+  totalVisitors   Int    @default(0)
+  uniqueSessions  Int    @default(0)
+  auditsInitiated Int    @default(0)
+  portalLogins    Int    @default(0)
+  quotesIngested  Int    @default(0)
+
+  @@index([date])
+}
+
+// Append-only command journal — the Ship's Log. Every consequential action
+// taken through the station (target edits, HITL resolutions, invite lifecycle,
+// engine simulations) is attributed to an operator and never edited or deleted.
+// The tower renders it as an editorial chronology: two founders, one memory.
+model CommandLog {
+  id        String   @id @default(cuid())
+  actor     String // "Damon" | "Josias" | "Telegram operator" | "Engine"
+  action    String // TARGET_ADJUSTED | HITL_ACTION | INVITE_ISSUED | ACCESS_REVOKED | MESSAGE_SENT | RFQ_SIMULATED
+  target    String   @default("") // ref / tenant / member the command landed on
+  detail    String   @default("") // human-readable one-liner of what changed
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}

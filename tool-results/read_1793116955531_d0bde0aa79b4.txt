@@ -1,0 +1,656 @@
+     1→     1→'use client';
+     2→     2→
+     3→     3→/**
+     4→     4→ * Steep design-system primitives + intel panels for the Command Tower.
+     5→     5→ * All panels are data-driven: figures arrive via LedgerView (R-01) —
+     6→     6→ * nothing financial is hardcoded in the presentation layer.
+     7→     7→ */
+     8→     8→
+     9→     9→import React, { useState } from 'react';
+    10→    10→import { ArrowUpRight, ChevronDown, Flame, Globe2, X } from 'lucide-react';
+    11→    11→import type { GeoIntelView, LedgerView } from '@/lib/types';
+    12→    12→
+    13→    13→export const ARTIFACT =
+    14→    14→  'bg-paper rounded-[20px] shadow-[0_0_0_1px_rgba(4,23,43,0.05),0_16px_24px_-8px_rgba(0,0,0,0.10),0_6px_10px_-6px_rgba(0,0,0,0.08)]';
+    15→    15→
+    16→    16→export function fmtUsd(cents: number, showCents = false): string {
+    17→    17→  const opts = showCents
+    18→    18→    ? { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+    19→    19→    : { maximumFractionDigits: 0 };
+    20→    20→  return `$${(cents / 100).toLocaleString('en-US', opts)}`;
+    21→    21→}
+    22→    22→
+    23→    23→export function LiveDot({ className = 'bg-sienna' }: { className?: string }) {
+    24→    24→  return (
+    25→    25→    <span className="relative flex h-1.5 w-1.5 shrink-0">
+    26→    26→      <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-50 ${className}`} />
+    27→    27→      <span className={`relative inline-flex h-1.5 w-1.5 rounded-full ${className}`} />
+    28→    28→    </span>
+    29→    29→  );
+    30→    30→}
+    31→    31→
+    32→    32→export function Sparkline({ id, path, className = 'h-7 w-24' }: { id: string; path: string; className?: string }) {
+    33→    33→  return (
+    34→    34→    <svg viewBox="0 0 100 30" className={className} fill="none" aria-hidden="true">
+    35→    35→      <defs>
+    36→    36→        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+    37→    37→          <stop offset="0%" stopColor="#fbe1d1" stopOpacity="0.85" />
+    38→    38→          <stop offset="100%" stopColor="#fbe1d1" stopOpacity="0" />
+    39→    39→        </linearGradient>
+    40→    40→      </defs>
+    41→    41→      <path d={`${path} L100 30 L0 30 Z`} fill={`url(#${id})`} stroke="none" />
+    42→    42→      <path d={path} stroke="#5d2a1a" strokeWidth="1.75" strokeLinecap="round" />
+    43→    43→    </svg>
+    44→    44→  );
+    45→    45→}
+    46→    46→
+    47→    47→export function ViewHeader({
+    48→    48→  tag, title, accent, rest, sub,
+    49→    49→}: { tag: string; title: string; accent: string; rest: string; sub: string }) {
+    50→    50→  return (
+    51→    51→    <div className="mb-8 md:mb-10">
+    52→    52→      <div className="text-[14px] text-ash">{tag}</div>
+    53→    53→      <h1 className="mt-2 font-display text-[34px] font-normal leading-[1.18] tracking-[-0.015em] text-ink md:text-[44px] md:tracking-[-0.02em]">
+    54→    54→        {title} <em className="italic">{accent}</em> {rest}
+    55→    55→      </h1>
+    56→    56→      <p className="mt-3 max-w-xl text-[16px] leading-relaxed text-steel">{sub}</p>
+    57→    57→    </div>
+    58→    58→  );
+    59→    59→}
+    60→    60→
+    61→    61→export function FilledPill({
+    62→    62→  children, onClick, type = 'button', className = '', disabled = false,
+    63→    63→}: { children: React.ReactNode; onClick?: () => void; type?: 'button' | 'submit'; className?: string; disabled?: boolean }) {
+    64→    64→  return (
+    65→    65→    <button
+    66→    66→      type={type}
+    67→    67→      onClick={onClick}
+    68→    68→      disabled={disabled}
+    69→    69→      className={`inline-flex items-center justify-center gap-2 rounded-full bg-ink px-4 py-2 text-[13px] font-medium text-paper transition-colors hover:bg-[#33363b] disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+    70→    70→    >
+    71→    71→      {children}
+    72→    72→    </button>
+    73→    73→  );
+    74→    74→}
+    75→    75→
+    76→    76→export function GhostPill({
+    77→    77→  children, onClick, className = '', disabled = false,
+    78→    78→}: { children: React.ReactNode; onClick?: () => void; className?: string; disabled?: boolean }) {
+    79→    79→  return (
+    80→    80→    <button
+    81→    81→      type="button"
+    82→    82→      onClick={onClick}
+    83→    83→      disabled={disabled}
+    84→    84→      className={`inline-flex items-center justify-center gap-2 rounded-full border border-ink px-4 py-2 text-[13px] font-medium text-ink transition-colors hover:bg-mist disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+    85→    85→    >
+    86→    86→      {children}
+    87→    87→    </button>
+    88→    88→  );
+    89→    89→}
+    90→    90→
+    91→    91→export function BlushChip({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+    92→    92→  return (
+    93→    93→    <span className={`inline-flex items-center gap-1.5 rounded-full bg-blush px-3 py-1 text-[12px] font-medium text-sienna ${className}`}>
+    94→    94→      {children}
+    95→    95→    </span>
+    96→    96→  );
+    97→    97→}
+    98→    98→
+    99→    99→export function QuietChip({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+   100→   100→  return (
+   101→   101→    <span className={`inline-flex w-fit items-center gap-1.5 rounded-full bg-mist px-2.5 py-0.5 text-[12px] font-medium text-ink ${className}`}>
+   102→   102→      {children}
+   103→   103→    </span>
+   104→   104→  );
+   105→   105→}
+   106→   106→
+   107→   107→/* ────────────── Clickable intel cards & drill-down panels ────────────── */
+   108→   108→
+   109→   109→export function IntelCard({
+   110→   110→  id, active, onToggle, icon: Icon, label, value, hint, spark, peach = false,
+   111→   111→}: {
+   112→   112→  id: string; active: boolean; onToggle: (id: string) => void; icon: React.ElementType;
+   113→   113→  label: string; value: React.ReactNode; hint: string; spark?: { id: string; path: string }; peach?: boolean;
+   114→   114→}) {
+   115→   115→  const surface = peach ? 'rounded-[24px] bg-blush text-sienna' : ARTIFACT;
+   116→   116→  return (
+   117→   117→    <button
+   118→   118→      type="button"
+   119→   119→      onClick={() => onToggle(id)}
+   120→   120→      aria-expanded={active}
+   121→   121→      className={`group p-5 text-left transition-all duration-200 ${surface} ${
+   122→   122→        active
+   123→   123→          ? peach ? 'ring-1 ring-sienna/50' : 'ring-1 ring-ink'
+   124→   124→          : 'hover:shadow-[0_0_0_1px_rgba(4,23,43,0.06),0_22px_32px_-10px_rgba(0,0,0,0.14),0_8px_12px_-8px_rgba(0,0,0,0.08)]'
+   125→   125→      }`}
+   126→   126→    >
+   127→   127→      <div className="flex items-center justify-between gap-2">
+   128→   128→        <span className={`text-[13px] ${peach ? 'text-sienna/70' : 'text-steel'}`}>{label}</span>
+   129→   129→        <Icon className={`h-4 w-4 transition-colors ${peach ? 'text-sienna/70' : 'text-smoke group-hover:text-steel'}`} strokeWidth={1.75} />
+   130→   130→      </div>
+   131→   131→      <div className={`mt-1.5 text-[26px] font-medium tracking-[-0.01em] ${peach ? 'text-sienna' : 'text-ink'}`}>
+   132→   132→        {value}
+   133→   133→      </div>
+   134→   134→      {spark && <Sparkline id={spark.id} path={spark.path} />}
+   135→   135→      <div className={`mt-1 inline-flex items-center gap-1 text-[12px] transition-colors ${peach ? 'text-sienna/70' : 'text-smoke group-hover:text-steel'}`}>
+   136→   136→        {hint}
+   137→   137→        <ChevronDown className={`h-3 w-3 transition-transform duration-200 ${active ? 'rotate-180' : ''}`} strokeWidth={2} />
+   138→   138→      </div>
+   139→   139→    </button>
+   140→   140→  );
+   141→   141→}
+   142→   142→
+   143→   143→export function PanelShell({
+   144→   144→  tag, title, onClose, children,
+   145→   145→}: { tag: React.ReactNode; title: React.ReactNode; onClose: () => void; children: React.ReactNode }) {
+   146→   146→  return (
+   147→   147→    <section className={`mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300 p-6 sm:p-8 ${ARTIFACT}`}>
+   148→   148→      <div className="flex items-start justify-between gap-4 border-b border-hairline pb-5">
+   149→   149→        <div>
+   150→   150→          {tag}
+   151→   151→          <h3 className="mt-1.5 font-display text-[26px] font-normal leading-[1.18] tracking-[-0.01em] text-ink">{title}</h3>
+   152→   152→        </div>
+   153→   153→        <button
+   154→   154→          onClick={onClose}
+   155→   155→          className="mt-1 inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] text-steel transition-colors hover:bg-mist hover:text-ink"
+   156→   156→        >
+   157→   157→          Close <X className="h-3.5 w-3.5" strokeWidth={1.75} />
+   158→   158→        </button>
+   159→   159→      </div>
+   160→   160→      <div className="pt-6">{children}</div>
+   161→   161→    </section>
+   162→   162→  );
+   163→   163→}
+   164→   164→
+   165→   165→export function TeamCard({
+   166→   166→  initial, tone, name, role, isOnline, target, completed, discovery, auditsClosed, contracts,
+   167→   167→  isCurrentUser, onTargetChange,
+   168→   168→}: {
+   169→   169→  initial: string; tone: 'ink' | 'blush' | 'steel'; name: string; role: string; isOnline: boolean;
+   170→   170→  target: number; completed: number; discovery: number; auditsClosed: number; contracts: number;
+   171→   171→  isCurrentUser: boolean; onTargetChange?: (next: number) => void;
+   172→   172→}) {
+   173→   173→  const avatar = tone === 'ink' ? 'bg-ink text-paper' : tone === 'blush' ? 'bg-blush text-sienna' : 'bg-ink/85 text-paper';
+   174→   174→  const pct = target > 0 ? Math.min(100, Math.round((completed / target) * 100)) : 0;
+   175→   175→  return (
+   176→   176→    <div className="rounded-2xl bg-fog p-5">
+   177→   177→      <div className="flex items-start justify-between gap-3">
+   178→   178→        <div className="flex items-center gap-3">
+   179→   179→          <div className={`relative grid h-10 w-10 place-items-center rounded-full text-[15px] font-medium ${avatar}`}>
+   180→   180→            {initial}
+   181→   181→            <span
+   182→   182→              title={isOnline ? 'Online now' : 'Offline'}
+   183→   183→              className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-fog ${isOnline ? 'bg-sienna' : 'bg-smoke/50'}`}
+   184→   184→            />
+   185→   185→          </div>
+   186→   186→          <div>
+   187→   187→            <div className="text-[15px] font-medium text-ink">{name}</div>
+   188→   188→            <div className="text-[12px] text-smoke">{role}</div>
+   189→   189→          </div>
+   190→   190→        </div>
+   191→   191→        {isOnline ? <LiveDot /> : <span className="text-[11px] text-smoke">offline</span>}
+   192→   192→      </div>
+   193→   193→
+   194→   194→      {/* Quarterly outbound target */}
+   195→   195→      <div className="mt-4 rounded-xl bg-paper px-3.5 py-3">
+   196→   196→        <div className="flex items-center justify-between text-[12.5px]">
+   197→   197→          <span className="text-steel">Quarterly outbound</span>
+   198→   198→          <span className="font-medium tabular-nums text-ink">
+   199→   199→            {completed.toLocaleString()} / {target.toLocaleString()}
+   200→   200→          </span>
+   201→   201→        </div>
+   202→   202→        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-mist">
+   203→   203→          <div className="h-full rounded-full bg-sienna transition-all duration-500" style={{ width: `${pct}%` }} />
+   204→   204→        </div>
+   205→   205→        <div className="mt-1.5 flex items-center justify-between text-[11px] text-smoke">
+   206→   206→          <span>Q4 progress</span>
+   207→   207→          <span className="tabular-nums">{pct}% completed</span>
+   208→   208→        </div>
+   209→   209→        {isCurrentUser && onTargetChange && (
+   210→   210→          <div className="mt-2.5 flex items-center gap-2 border-t border-hairline pt-2.5">
+   211→   211→            <label htmlFor={`target-${name}`} className="text-[11.5px] text-steel">Adjust my target:</label>
+   212→   212→            <input
+   213→   213→              id={`target-${name}`}
+   214→   214→              type="number"
+   215→   215→              min={1}
+   216→   216→              defaultValue={target}
+   217→   217→              onBlur={(e) => {
+   218→   218→                const next = Number(e.target.value);
+   219→   219→                if (Number.isFinite(next) && next >= 1 && next !== target) onTargetChange(next);
+   220→   220→                else e.target.value = String(target);
+   221→   221→              }}
+   222→   222→              onKeyDown={(e) => {
+   223→   223→                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+   224→   224→              }}
+   225→   225→              className="h-7 w-20 rounded-lg border border-hairline bg-paper px-2 text-[12px] tabular-nums text-ink outline-none transition-shadow focus-visible:shadow-[0_0_0_2px_rgba(93,42,26,0.25)]"
+   226→   226→            />
+   227→   227→          </div>
+   228→   228→        )}
+   229→   229→      </div>
+   230→   230→
+   231→   231→      <div className="mt-3 space-y-2">
+   232→   232→        {([
+   233→   233→          ['Discovery calls booked', discovery.toLocaleString()],
+   234→   234→          ['$3,500 audits sold', auditsClosed.toLocaleString()],
+   235→   235→          ['$50k contracts converted', contracts.toLocaleString()],
+   236→   236→        ] as [string, string][]).map(([k, v]) => (
+   237→   237→          <div key={k} className="flex items-center justify-between gap-3 rounded-xl bg-paper px-3.5 py-2.5 text-[13px]">
+   238→   238→            <span className="text-steel">{k}</span>
+   239→   239→            <span className="font-medium tabular-nums text-ink">{v}</span>
+   240→   240→          </div>
+   241→   241→        ))}
+   242→   242→      </div>
+   243→   243→    </div>
+   244→   244→  );
+   245→   245→}
+   246→   246→
+   247→   247→export function StatTrio({ rows }: { rows: [string, string][] }) {
+   248→   248→  return (
+   249→   249→    <div className="mt-4 grid max-w-2xl grid-cols-1 gap-2 sm:grid-cols-3">
+   250→   250→      {rows.map(([k, v]) => (
+   251→   251→        <div key={k} className="rounded-2xl bg-fog px-4 py-3">
+   252→   252→          <div className="text-[12px] text-smoke">{k}</div>
+   253→   253→          <div className="mt-0.5 text-[18px] font-medium tabular-nums text-ink">{v}</div>
+   254→   254→        </div>
+   255→   255→      ))}
+   256→   256→    </div>
+   257→   257→  );
+   258→   258→}
+   259→   259→
+   260→   260→/** Today's funnel — LiveTelemetrySummary rendered as five stat tiles. */
+   261→   261→export function TrafficPanel({
+   262→   262→  traffic, onClose,
+   263→   263→}: {
+   264→   264→  traffic: { date: string; totalVisitors: number; uniqueSessions: number; auditsInitiated: number; portalLogins: number; quotesIngested: number };
+   265→   265→  onClose: () => void;
+   266→   266→}) {
+   267→   267→  return (
+   268→   268→    <PanelShell
+   269→   269→      onClose={onClose}
+   270→   270→      tag={<div className="text-[14px] text-ash">Today's funnel · {traffic.date} · UTC day</div>}
+   271→   271→      title={<>Live landing & enclave <em className="italic">telemetry</em></>}
+   272→   272→    >
+   273→   273→      <p className="max-w-xl text-[15px] leading-relaxed text-steel">
+   274→   274→        Captured server-side across the LANDING → PORTAL → ENGINE layers. Visitor IPs are hashed with a
+   275→   275→        rotating day-salt before they ever touch the ledger — the funnel is measurable without being trackable.
+   276→   276→      </p>
+   277→   277→      <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-5">
+   278→   278→        {([
+   279→   279→          ['Total events', traffic.totalVisitors],
+   280→   280→          ['Unique sessions', traffic.uniqueSessions],
+   281→   281→          ['Audits initiated', traffic.auditsInitiated],
+   282→   282→          ['Portal logins', traffic.portalLogins],
+   283→   283→          ['Quotes ingested', traffic.quotesIngested],
+   284→   284→        ] as [string, number][]).map(([k, v]) => (
+   285→   285→          <div key={k} className="rounded-2xl bg-fog px-4 py-3.5">
+   286→   286→            <div className="text-[11.5px] uppercase tracking-wide text-smoke">{k}</div>
+   287→   287→            <div className="mt-1 text-[24px] font-medium tabular-nums text-ink">{v.toLocaleString('en-US')}</div>
+   288→   288→          </div>
+   289→   289→        ))}
+   290→   290→      </div>
+   291→   291→    </PanelShell>
+   292→   292→  );
+   293→   293→}
+   294→   294→
+   295→   295→const humanEvent = (s: string) => s.toLowerCase().replace(/_/g, ' ');
+   296→   296→
+   297→   297→/** Phase 11.9 — Inbound Industrial Hubs: the GEO-IP intelligence slice,
+   298→   298→ *  always-on in the telemetry deck and refreshed by the SSE traffic stream. */
+   299→   299→export function GeoHubPanel({ geo }: { geo: GeoIntelView }) {
+   300→   300→  const tiles: { label: string; strong: boolean; body: React.ReactNode }[] = [
+   301→   301→    {
+   302→   302→      label: 'Primary hub',
+   303→   303→      strong: true,
+   304→   304→      body: geo.primary ? (
+   305→   305→        <>
+   306→   306→          <div className="mt-1 font-display text-[22px] leading-tight text-ink">
+   307→   307→            {geo.primary.city}, {geo.primary.country}
+   308→   308→          </div>
+   309→   309→          <div className="mt-1 text-[12.5px] text-steel">
+   310→   310→            {geo.primary.share}% of today's landing traffic · {geo.primary.events} event{geo.primary.events === 1 ? '' : 's'}
+   311→   311→          </div>
+   312→   312→        </>
+   313→   313→      ) : (
+   314→   314→        <>
+   315→   315→          <div className="mt-1 font-display text-[22px] text-smoke">—</div>
+   316→   316→          <div className="mt-1 text-[12.5px] text-smoke">No geo-resolved landing traffic today</div>
+   317→   317→        </>
+   318→   318→      ),
+   319→   319→    },
+   320→   320→    {
+   321→   321→      label: 'Active enclave hub',
+   322→   322→      strong: false,
+   323→   323→      body: geo.enclaveHub ? (
+   324→   324→        <>
+   325→   325→          <div className="mt-1 font-display text-[22px] leading-tight text-ink">
+   326→   326→            {geo.enclaveHub.city}, {geo.enclaveHub.country}
+   327→   327→          </div>
+   328→   328→          <div className="mt-1 text-[12.5px] text-steel">
+   329→   329→            {geo.enclaveHub.tenants} active enclave{geo.enclaveHub.tenants === 1 ? '' : 's'} · {geo.enclaveHub.reviews} HITL pending
+   330→   330→          </div>
+   331→   331→        </>
+   332→   332→      ) : (
+   333→   333→        <>
+   334→   334→          <div className="mt-1 font-display text-[22px] text-smoke">—</div>
+   335→   335→          <div className="mt-1 text-[12.5px] text-smoke">No active enclaves with geo on record</div>
+   336→   336→        </>
+   337→   337→      ),
+   338→   338→    },
+   339→   339→    {
+   340→   340→      label: 'Emerging corridor',
+   341→   341→      strong: false,
+   342→   342→      body: geo.emerging ? (
+   343→   343→        <>
+   344→   344→          <div className="mt-1 font-display text-[22px] leading-tight text-ink">
+   345→   345→            {geo.emerging.city}, {geo.emerging.country}
+   346→   346→          </div>
+   347→   347→          <div className="mt-1 text-[12.5px] text-steel">Latest high-intent signal · {humanEvent(geo.emerging.lastEventType)}</div>
+   348→   348→        </>
+   349→   349→      ) : (
+   350→   350→        <>
+   351→   351→          <div className="mt-1 font-display text-[22px] text-smoke">—</div>
+   352→   352→          <div className="mt-1 text-[12.5px] text-smoke">No high-intent signals outside the primary hub</div>
+   353→   353→        </>
+   354→   354→      ),
+   355→   355→    },
+   356→   356→  ];
+   357→   357→
+   358→   358→  return (
+   359→   359→    <section className={`mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300 p-6 sm:p-8 ${ARTIFACT}`}>
+   360→   360→      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-hairline pb-5">
+   361→   361→        <div>
+   362→   362→          <div className="text-[14px] text-ash">Geo-IP intelligence · derived from the traffic ledger</div>
+   363→   363→          <h3 className="mt-1.5 flex items-center gap-2.5 font-display text-[26px] font-normal leading-[1.18] tracking-[-0.01em] text-ink">
+   364→   364→            <Globe2 className="h-5 w-5 text-sienna" strokeWidth={1.75} />
+   365→   365→            Inbound industrial <em className="italic">hubs</em>
+   366→   366→          </h3>
+   367→   367→        </div>
+   368→   368→        <span className="inline-flex items-center gap-2 rounded-full bg-blush px-3 py-1 text-[12px] font-medium text-sienna">
+   369→   369→          <LiveDot />
+   370→   370→          Live geo stream
+   371→   371→        </span>
+   372→   372→      </div>
+   373→   373→
+   374→   374→      <div className="grid grid-cols-1 gap-3 pt-6 sm:grid-cols-3">
+   375→   375→        {tiles.map((t) => (
+   376→   376→          <div key={t.label} className="rounded-2xl bg-fog p-5">
+   377→   377→            <div className={`text-[11.5px] uppercase tracking-wide ${t.strong ? 'text-sienna/80' : 'text-smoke'}`}>{t.label}</div>
+   378→   378→            {t.body}
+   379→   379→          </div>
+   380→   380→        ))}
+   381→   381→      </div>
+   382→   382→
+   383→   383→      {geo.topLocations.length > 1 && (
+   384→   384→        <div className="mt-4 grid grid-cols-2 gap-2 border-t border-hairline pt-4 sm:grid-cols-5">
+   385→   385→          {geo.topLocations.map((l) => (
+   386→   386→            <div key={`${l.city}${l.country}`} className="flex items-center justify-between gap-2 rounded-xl bg-fog px-3 py-2 text-[12.5px]">
+   387→   387→              <span className="truncate text-ink">
+   388→   388→                {l.city}, {l.country}
+   389→   389→              </span>
+   390→   390→              <span className="shrink-0 font-medium tabular-nums text-sienna">{l.events}</span>
+   391→   391→            </div>
+   392→   392→          ))}
+   393→   393→        </div>
+   394→   394→      )}
+   395→   395→
+   396→   396→      <p className="mt-4 text-[12px] text-smoke">
+   397→   397→        Recomputed server-side for the current UTC day · last generated{' '}
+   398→   398→        {new Date(geo.generatedAt).toLocaleTimeString('en-US', { hour12: false })} — the panel re-pulls the moment the SSE stream
+   399→   399→        carries a landing or enclave event.
+   400→   400→      </p>
+   401→   401→    </section>
+   402→   402→  );
+   403→   403→}
+   404→   404→
+   405→   405→/* ────────────────────────── Intel panels (data-driven) ────────────────────────── */
+   406→   406→
+   407→   407→export function ArenaPanel({
+   408→   408→  ledger, currentUser, onUpdateTarget, onClose,
+   409→   409→}: {
+   410→   410→  ledger: LedgerView; currentUser: string; onUpdateTarget: (id: string, next: number) => void; onClose: () => void;
+   411→   411→}) {
+   412→   412→  return (
+   413→   413→    <PanelShell
+   414→   414→      onClose={onClose}
+   415→   415→      tag={
+   416→   416→        <BlushChip className="mb-2">
+   417→   417→          <Flame className="h-3.5 w-3.5" strokeWidth={1.75} />
+   418→   418→          The arena · Damon vs. Josias founder leaderboard
+   419→   419→        </BlushChip>
+   420→   420→      }
+   421→   421→      title={<>Outbound & conversion <em className="italic">targets</em></>}
+   422→   422→    >
+   423→   423→      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+   424→   424→        {ledger.team.map((m) => (
+   425→   425→          <TeamCard
+   426→   426→            key={m.id}
+   427→   427→            initial={m.fullName.charAt(0)}
+   428→   428→            tone={m.tone}
+   429→   429→            name={m.fullName}
+   430→   430→            role={m.role}
+   431→   431→            isOnline={m.isOnline}
+   432→   432→            target={m.qOutboundTarget}
+   433→   433→            completed={m.qOutboundCompleted}
+   434→   434→            discovery={m.discoveryCalls}
+   435→   435→            auditsClosed={m.auditsClosed}
+   436→   436→            contracts={m.contractsConverted}
+   437→   437→            isCurrentUser={m.name === currentUser}
+   438→   438→            onTargetChange={(next) => onUpdateTarget(m.id, next)}
+   439→   439→          />
+   440→   440→        ))}
+   441→   441→      </div>
+   442→   442→
+   443→   443→      <div className="mt-6 border-t border-hairline pt-5">
+   444→   444→        <h4 className="text-[14px] font-medium text-steel">Live client progression pipeline</h4>
+   445→   445→        <div className="mt-3 space-y-2">
+   446→   446→          {ledger.pipeline.map((row) => (
+   447→   447→            <div
+   448→   448→              key={row.client}
+   449→   449→              className="flex flex-col gap-1.5 rounded-2xl bg-fog px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+   450→   450→            >
+   451→   451→              <span className="text-[14px] font-medium text-ink">{row.client}</span>
+   452→   452→              <span className="text-[13px] text-steel">{row.stage}</span>
+   453→   453→              <span className="text-[13px] text-smoke">Owner · {row.owner}</span>
+   454→   454→              <QuietChip>{row.value}</QuietChip>
+   455→   455→            </div>
+   456→   456→          ))}
+   457→   457→        </div>
+   458→   458→      </div>
+   459→   459→    </PanelShell>
+   460→   460→  );
+   461→   461→}
+   462→   462→
+   463→   463→export function MarginPanel({ ledger, onClose }: { ledger: LedgerView; onClose: () => void }) {
+   464→   464→  return (
+   465→   465→    <PanelShell
+   466→   466→      onClose={onClose}
+   467→   467→      tag={<div className="text-[14px] text-ash">Live client stream</div>}
+   468→   468→      title={<>Real-time margins defended <em className="italic">directory</em></>}
+   469→   469→    >
+   470→   470→      <div className="space-y-3">
+   471→   471→        {ledger.clients.map((c) => (
+   472→   472→          <div
+   473→   473→            key={c.name}
+   474→   474→            className="flex flex-col gap-3 rounded-2xl bg-fog p-4 md:flex-row md:items-center md:justify-between"
+   475→   475→          >
+   476→   476→            <div className="min-w-0">
+   477→   477→              <div className="flex flex-wrap items-center gap-2">
+   478→   478→                <span className="text-[14.5px] font-medium text-ink">{c.name}</span>
+   479→   479→                <QuietChip>{c.erp}</QuietChip>
+   480→   480→                <span
+   481→   481→                  className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11.5px] font-medium ${
+   482→   482→                    c.paymentStatus === 'PAID'
+   483→   483→                      ? 'bg-blush text-sienna'
+   484→   484→                      : c.paymentStatus === 'PENDING'
+   485→   485→                        ? 'bg-mist text-steel'
+   486→   486→                        : 'bg-ink text-paper'
+   487→   487→                  }`}
+   488→   488→                >
+   489→   489→                  {c.paymentStatus}
+   490→   490→                </span>
+   491→   491→              </div>
+   492→   492→              <div className="mt-1 text-[12.5px] text-steel">
+   493→   493→                Primary vector: <span className="text-ink">{c.leakageVector || 'Baseline mapped'}</span>
+   494→   494→              </div>
+   495→   495→            </div>
+   496→   496→
+   497→   497→            <div className="flex flex-wrap items-center gap-5">
+   498→   498→              <div>
+   499→   499→                <div className="text-[11px] text-smoke">24-hour delta</div>
+   500→   500→                <div className="text-[13.5px] font-medium tabular-nums text-sienna">
+   501→   501→                  +{fmtUsd(c.last24hDeltaCents)}
+   502→   502→                </div>
+   503→   503→              </div>
+   504→   504→              <div>
+   505→   505→                <div className="text-[11px] text-smoke">Total defended</div>
+   506→   506→                <div className="text-[17px] font-medium tabular-nums text-ink">{fmtUsd(c.totalDefendedCents)}</div>
+   507→   507→              </div>
+   508→   508→              <a
+   509→   509→                href={`/portal?tenant=${encodeURIComponent(c.name)}`}
+   510→   510→                target="_blank"
+   511→   511→                rel="noreferrer"
+   512→   512→                className="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-[12.5px] font-medium text-paper transition-colors hover:bg-[#33363b]"
+   513→   513→              >
+   514→   514→                Open enclave
+   515→   515→                <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.75} />
+   516→   516→              </a>
+   517→   517→            </div>
+   518→   518→          </div>
+   519→   519→        ))}
+   520→   520→      </div>
+   521→   521→    </PanelShell>
+   522→   522→  );
+   523→   523→}
+   524→   524→
+   525→   525→const HORIZONS = ['monthly', 'annual', 'lifetime'] as const;
+   526→   526→
+   527→   527→export function RevsharePanel({ ledger, onClose }: { ledger: LedgerView; onClose: () => void }) {
+   528→   528→  const [horizon, setHorizon] = useState<(typeof HORIZONS)[number]>('monthly');
+   529→   529→  return (
+   530→   530→    <PanelShell
+   531→   531→      onClose={onClose}
+   532→   532→      tag={<div className="text-[14px] text-ash">Financial horizons & 20% rev-share</div>}
+   533→   533→      title={<>Syntropic revenue <em className="italic">velocity</em></>}
+   534→   534→    >
+   535→   535→      <div className="flex flex-wrap items-center justify-between gap-3">
+   536→   536→        <p className="max-w-xl text-[15px] leading-relaxed text-steel">
+   537→   537→          20% of every defended margin, computed server-side from the ledger. Horizons are derived from entry
+   538→   538→          timestamps — the monthly window counts the trailing 30 days, so it diverges from lifetime as the ledger ages.
+   539→   539→        </p>
+   540→   540→        <div className="inline-flex rounded-full border border-hairline bg-fog p-1">
+   541→   541→          {HORIZONS.map((h) => (
+   542→   542→            <button
+   543→   543→              key={h}
+   544→   544→              onClick={() => setHorizon(h)}
+   545→   545→              aria-pressed={horizon === h}
+   546→   546→              className={`rounded-full px-3.5 py-1.5 text-[12.5px] font-medium capitalize transition-colors ${
+   547→   547→                horizon === h ? 'bg-ink text-paper' : 'text-steel hover:text-ink'
+   548→   548→              }`}
+   549→   549→            >
+   550→   550→              {h}
+   551→   551→            </button>
+   552→   552→          ))}
+   553→   553→        </div>
+   554→   554→      </div>
+   555→   555→
+   556→   556→      <div className="mt-4 space-y-2">
+   557→   557→        {ledger.clients.map((c) => {
+   558→   558→          const value =
+   559→   559→            horizon === 'monthly' ? c.monthlyRevShareCents : horizon === 'annual' ? c.annualRevShareCents : c.lifetimeRevShareCents;
+   560→   560→          return (
+   561→   561→            <div
+   562→   562→              key={c.name}
+   563→   563→              className="flex flex-col gap-2 rounded-2xl bg-fog px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between"
+   564→   564→            >
+   565→   565→              <div>
+   566→   566→                <div className="text-[14px] font-medium text-ink">{c.name}</div>
+   567→   567→                <div className="mt-0.5 text-[12.5px] text-steel">
+   568→   568→                  Payment status:{' '}
+   569→   569→                  <span className={`font-medium ${c.paymentStatus === 'PAID' ? 'text-sienna' : 'text-steel'}`}>
+   570→   570→                    {c.paymentStatus}
+   571→   571→                  </span>
+   572→   572→                </div>
+   573→   573→              </div>
+   574→   574→              <div className="text-left sm:text-right">
+   575→   575→                <div className="text-[11px] uppercase tracking-wide text-smoke">{horizon} 20% cut</div>
+   576→   576→                <div className="text-[18px] font-medium tabular-nums text-ink">{fmtUsd(value)}</div>
+   577→   577→              </div>
+   578→   578→            </div>
+   579→   579→          );
+   580→   580→        })}
+   581→   581→      </div>
+   582→   582→
+   583→   583→      <StatTrio
+   584→   584→        rows={[
+   585→   585→          ['Setup fee', fmtUsd(ledger.setupFeeCents)],
+   586→   586→          ['Rev-share', `${Math.round(ledger.revShareRate * 100)}% net margin`],
+   587→   587→          ['Projected MRR pipeline', fmtUsd(ledger.projectedMrrCents)],
+   588→   588→        ]}
+   589→   589→      />
+   590→   590→    </PanelShell>
+   591→   591→  );
+   592→   592→}
+   593→   593→
+   594→   594→export function GuaranteePanel({ ledger, onClose }: { ledger: LedgerView; onClose: () => void }) {
+   595→   595→  return (
+   596→   596→    <PanelShell
+   597→   597→      onClose={onClose}
+   598→   598→      tag={<div className="text-[14px] text-ash">Audit guarantee vault</div>}
+   599→   599→      title={<>Audit sales & conversion <em className="italic">history</em></>}
+   600→   600→    >
+   601→   601→      <div className="space-y-3">
+   602→   602→        {ledger.audits.map((a) => (
+   603→   603→          <div key={a.id} className="space-y-3 rounded-2xl bg-fog p-4">
+   604→   604→            <div className="flex flex-wrap items-start justify-between gap-2">
+   605→   605→              <div>
+   606→   606→                <div className="text-[14.5px] font-medium text-ink">{a.companyName}</div>
+   607→   607→                <div className="mt-0.5 text-[12.5px] text-steel">
+   608→   608→                  Date sold: {a.dateSold} · Fee: {fmtUsd(a.auditFeeCents)}
+   609→   609→                </div>
+   610→   610→              </div>
+   611→   611→              <span
+   612→   612→                className={`inline-flex items-center rounded-full px-3 py-1 text-[11.5px] font-medium ${
+   613→   613→                  a.convertedToClient ? 'bg-blush text-sienna' : 'bg-mist text-steel'
+   614→   614→                }`}
+   615→   615→              >
+   616→   616→                {a.convertedToClient ? 'Converted ($50k executed)' : 'Pending conversion'}
+   617→   617→              </span>
+   618→   618→            </div>
+   619→   619→
+   620→   620→            <div className="space-y-1.5 rounded-xl bg-paper p-3.5 text-[12.5px]">
+   621→   621→              <div className="flex justify-between">
+   622→   622→                <span className="text-smoke">Briefing call host</span>
+   623→   623→                <span className="font-medium text-ink">{a.callHost}</span>
+   624→   624→              </div>
+   625→   625→              <div className="flex justify-between">
+   626→   626→                <span className="text-smoke">Attended call</span>
+   627→   627→                <span className={`font-medium ${a.attendedCall ? 'text-sienna' : 'text-steel'}`}>
+   628→   628→                  {a.attendedCall ? 'Yes (attended)' : 'No (missed session)'}
+   629→   629→                </span>
+   630→   630→              </div>
+   631→   631→              <div className="flex justify-between">
+   632→   632→                <span className="text-smoke">Identified profit leakage</span>
+   633→   633→                <span className="font-medium tabular-nums text-ink">{fmtUsd(a.identifiedLeakageCents)}</span>
+   634→   634→              </div>
+   635→   635→            </div>
+   636→   636→
+   637→   637→            <p className="border-t border-hairline pt-2.5 text-[13px] italic leading-relaxed text-steel">
+   638→   638→              “{a.callNotes}”
+   639→   639→            </p>
+   640→   640→          </div>
+   641→   641→        ))}
+   642→   642→      </div>
+   643→   643→
+   644→   644→      <div className="mt-5 border-t border-hairline pt-4">
+   645→   645→        <StatTrio
+   646→   646→          rows={[
+   647→   647→            ['Diagnostic audit', fmtUsd(ledger.audits[0]?.auditFeeCents ?? 350_000)],
+   648→   648→            ['Guaranteed recovery floor', '$10,000'],
+   649→   649→            ['Guarantee pass rate', `${Math.round(ledger.guaranteePassRate * 100)}%`],
+   650→   650→          ]}
+   651→   651→        />
+   652→   652→      </div>
+   653→   653→    </PanelShell>
+   654→   654→  );
+   655→   655→}
+   656→   656→

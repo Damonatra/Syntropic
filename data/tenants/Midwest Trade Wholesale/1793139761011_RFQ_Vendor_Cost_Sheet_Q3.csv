@@ -1,0 +1,11 @@
+sku,qty,unit_cost_usd,vendor,notes
+COPPER-PIPE-L-1/2IN,1200,4.85,Northline,vendor cost sheet Q3
+COPPER-PIPE-L-3/4IN,860,6.20,Northline,
+COPPER-PIPE-L-1IN,540,7.95,Northline,
+STEEL-CONDUIT-1IN,980,3.40,Triangle Works,EMT
+STEEL-CONDUIT-2IN,410,5.85,Triangle Works,EMT
+STRUT-CHANNEL-1-5/8IN,300,11.25,Triangle Works,12ga pre-galv
+J-BOLT-3/8IN,720,0.62,SealCo,zinc
+BEAM-CLAMP-1/2IN,650,1.15,SealCo,
+WIRE-SPLICER-CU-8AWG,480,2.20,Northline,
+GROUND-ROD-5/8IN,150,8.90,SealCo,copper bonded

@@ -1,0 +1,768 @@
+'use client';
+
+import React, { useState } from 'react';
+import Link from 'next/link';
+import { 
+  ShieldCheck, 
+  CheckCircle2, 
+  AlertTriangle, 
+  UploadCloud, 
+  Lock, 
+  ArrowLeft,
+  Calculator,
+  Mail,
+  CreditCard,
+  PhoneCall,
+  FileText,
+  Clock,
+  Zap,
+  Check,
+  X,
+  MessageSquare,
+  Video,
+  Send,
+  Calendar as CalendarIcon,
+  Database,
+  Bell,
+  Sliders,
+  DollarSign,
+  TrendingUp,
+  Activity,
+  UserCheck,
+  Eye,
+  Trophy,
+  Flame,
+  Target,
+  BarChart3,
+  ShieldAlert
+} from 'lucide-react';
+
+export type BackboneTab = 'telemetry' | 'ingestion_hitl' | 'tenants_audits' | 'communications' | 'calendar_calls';
+
+export interface HITLItem {
+  id: string;
+  tenantName: string;
+  pdfName: string;
+  skuParsed: string;
+  confidenceScore: number;
+  extractedMarginLoss: number;
+  status: 'PENDING' | 'APPROVED' | 'OVERRIDDEN';
+  timestamp: string;
+}
+
+export interface ClientMessage {
+  id: string;
+  tenantName: string;
+  sender: string;
+  text: string;
+  time: string;
+  unread: boolean;
+}
+
+export default function SyntropicBackboneCommandTower() {
+  const [activeTab, setActiveTab] = useState<BackboneTab>('telemetry');
+  
+  // Interactive Telemetry Widget Modal State ('accounts' | 'margin' | 'revshare' | 'guarantee' | null)
+  const [activeWidgetModal, setActiveWidgetModal] = useState<string | null>('accounts');
+
+  // HITL Queue State
+  const [hitlQueue, setHitlQueue] = useState<HITLItem[]>([
+    {
+      id: 'HITL-8092',
+      tenantName: 'Apex Piping & Supply',
+      pdfName: 'Customer_RFQ_Spec_882.pdf',
+      skuParsed: 'PVC-SCH80-2IN-COUPLING [Qty: 450]',
+      confidenceScore: 88.4,
+      extractedMarginLoss: 1420.50,
+      status: 'PENDING',
+      timestamp: '12 mins ago'
+    },
+    {
+      id: 'HITL-8093',
+      tenantName: 'Midwest Trade Wholesale',
+      pdfName: 'RFQ_Vendor_Cost_Sheet_Q3.pdf',
+      skuParsed: 'COPPER-PIPE-L-1/2IN [Qty: 1200]',
+      confidenceScore: 91.2,
+      extractedMarginLoss: 3850.00,
+      status: 'PENDING',
+      timestamp: '28 mins ago'
+    }
+  ]);
+
+  // Unified Messaging State
+  const [activeChatTenant, setActiveChatTenant] = useState('Apex Piping & Supply');
+  const [chatMessages, setChatMessages] = useState<ClientMessage[]>([
+    {
+      id: 'MSG-1',
+      tenantName: 'Apex Piping & Supply',
+      sender: 'Client (Chris)',
+      text: 'Just uploaded our 20 Q3 historical RFQs. Let us know if the SPA sheets parsed correctly.',
+      time: '10:14 AM',
+      unread: false
+    },
+    {
+      id: 'MSG-2',
+      tenantName: 'Apex Piping & Supply',
+      sender: 'Josias (Syntropic)',
+      text: 'Received! Docling OCR spatial parsing is active. Reviewing line items now.',
+      time: '10:16 AM',
+      unread: false
+    }
+  ]);
+  const [newMessageText, setNewMessageText] = useState('');
+
+  // Telegram Alert Simulator
+  const [telegramNotificationSent, setTelegramNotificationSent] = useState(false);
+
+  const handleApproveHITL = (id: string) => {
+    setHitlQueue(prev => prev.map(item => item.id === id ? { ...item, status: 'APPROVED' } : item));
+  };
+
+  const handleSendMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMessageText.trim()) return;
+    const msg: ClientMessage = {
+      id: `MSG-${Date.now()}`,
+      tenantName: activeChatTenant,
+      sender: 'Josias (Syntropic)',
+      text: newMessageText,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      unread: false
+    };
+    setChatMessages([...chatMessages, msg]);
+    setNewMessageText('');
+  };
+
+  const triggerTelegramAlert = () => {
+    setTelegramNotificationSent(true);
+    setTimeout(() => setTelegramNotificationSent(false), 4000);
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-mono selection:bg-emerald-500 selection:text-slate-950 flex flex-col">
+      
+      {/* COMMAND TOWER HEADER */}
+      <header className="border-b border-slate-800 bg-slate-950 sticky top-0 z-50 px-8 py-4 flex justify-between items-center text-xs">
+        <div className="flex items-center space-x-4">
+          <Link href="/" className="font-bold tracking-widest text-emerald-400 flex items-center space-x-2 text-sm">
+            <span>backbone</span>
+            <span className="text-[10px] text-slate-500 font-normal">v1.0.4-local</span>
+          </Link>
+          <span className="text-slate-800">|</span>
+          <span className="bg-emerald-950/80 border border-emerald-500/30 text-emerald-400 px-2.5 py-1 rounded-full flex items-center space-x-1.5 text-[10px]">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>SYSTEM OPERATIONAL · TELEMETRY LIVE</span>
+          </span>
+        </div>
+
+        {/* Top Right Controls & Telegram Simulator */}
+        <div className="flex items-center space-x-4 text-slate-400 text-[11px]">
+          <button 
+            onClick={triggerTelegramAlert}
+            className="bg-slate-900 hover:bg-slate-800 border border-slate-700 text-sky-400 px-3 py-1.5 rounded-lg flex items-center space-x-1.5 transition"
+          >
+            <Bell className="w-3.5 h-3.5"/>
+            <span>TEST TELEGRAM BOT ALERT</span>
+          </button>
+          
+          <div className="flex items-center space-x-1.5 text-slate-300 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg">
+            <Database className="w-3.5 h-3.5 text-emerald-400"/>
+            <span>SQLite WAL · Local Engine</span>
+          </div>
+        </div>
+      </header>
+
+      {/* TELEGRAM NOTIFICATION TOAST */}
+      {telegramNotificationSent && (
+        <div className="fixed top-20 right-8 z-50 bg-sky-950 border border-sky-400 text-sky-200 px-5 py-3 rounded-xl shadow-2xl flex items-center space-x-3 text-xs animate-bounce">
+          <Bell className="w-5 h-5 text-sky-400 animate-pulse"/>
+          <div>
+            <div className="font-bold">[TELEGRAM BOT DISPATCHED]</div>
+            <div className="text-[11px] text-sky-300">Alert sent to Josias: HITL-8092 confidence &lt;95% on Apex Piping RFQ.</div>
+          </div>
+        </div>
+      )}
+
+      {/* MAIN LAYOUT */}
+      <div className="flex-1 flex flex-col md:flex-row">
+        
+        {/* SIDEBAR NAVIGATION */}
+        <aside className="w-full md:w-64 border-r border-slate-800/80 bg-slate-950 p-6 space-y-2 shrink-0">
+          <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-4">Command Modules</div>
+
+          <button 
+            onClick={() => setActiveTab('telemetry')}
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-xs font-bold transition text-left ${activeTab === 'telemetry' ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/10' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
+          >
+            <Activity className="w-4 h-4"/>
+            <span>01. Live Telemetry</span>
+          </button>
+
+          <button 
+            onClick={() => setActiveTab('ingestion_hitl')}
+            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-xs font-bold transition text-left ${activeTab === 'ingestion_hitl' ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/10' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
+          >
+            <div className="flex items-center space-x-3">
+              <UploadCloud className="w-4 h-4"/>
+              <span>02. Ingestion & HITL</span>
+            </div>
+            {hitlQueue.filter(i => i.status === 'PENDING').length > 0 && (
+              <span className="bg-amber-500 text-slate-950 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                {hitlQueue.filter(i => i.status === 'PENDING').length}
+              </span>
+            )}
+          </button>
+
+          <button 
+            onClick={() => setActiveTab('tenants_audits')}
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-xs font-bold transition text-left ${activeTab === 'tenants_audits' ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/10' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
+          >
+            <UserCheck className="w-4 h-4"/>
+            <span>03. Tenants & Audits</span>
+          </button>
+
+          <button 
+            onClick={() => setActiveTab('communications')}
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-xs font-bold transition text-left ${activeTab === 'communications' ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/10' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
+          >
+            <MessageSquare className="w-4 h-4"/>
+            <span>04. Unified Inbox</span>
+          </button>
+
+          <button 
+            onClick={() => setActiveTab('calendar_calls')}
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-xs font-bold transition text-left ${activeTab === 'calendar_calls' ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/10' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
+          >
+            <CalendarIcon className="w-4 h-4"/>
+            <span>05. Built-In Calls</span>
+          </button>
+
+          <div className="pt-8 border-t border-slate-800/80 mt-8 space-y-3 font-sans text-xs text-slate-400">
+            <div className="font-mono text-[10px] text-slate-500 uppercase font-bold">Local Storage Status:</div>
+            <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl font-mono text-[11px] space-y-1">
+              <div className="flex justify-between">
+                <span>Database:</span>
+                <span className="text-emerald-400">SQLite Active</span>
+              </div>
+              <div className="flex justify-between">
+                <span>WAL Mode:</span>
+                <span className="text-slate-200">Enabled</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Rev-Share Ledger:</span>
+                <span className="text-emerald-400">$14,280 Defended</span>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        {/* MAIN WORKSPACE VIEW */}
+        <main className="flex-1 p-8 overflow-y-auto">
+
+          {/* TAB 01: LIVE TELEMETRY DECK (WITH CLICKABLE WIDGET INTEL) */}
+          {activeTab === 'telemetry' && (
+            <div className="space-y-8">
+              <div>
+                <span className="text-xs text-emerald-400 uppercase tracking-widest">[ SYSTEM TELEMETRY & FOUNDER INTEL ]</span>
+                <h1 className="text-3xl font-light text-slate-100 mt-1">Agency Command Deck</h1>
+                <p className="text-xs text-slate-400 font-sans mt-1">Click any widget card below to inspect live conversion pipelines, founder performance, and financial velocity.</p>
+              </div>
+
+              {/* INTERACTIVE METRICS CARDS */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                
+                {/* WIDGET 1: ACTIVE ACCOUNTS */}
+                <div 
+                  onClick={() => setActiveWidgetModal(activeWidgetModal === 'accounts' ? null : 'accounts')}
+                  className={`bg-slate-900 border p-5 rounded-2xl cursor-pointer transition ${activeWidgetModal === 'accounts' ? 'border-emerald-400 shadow-lg shadow-emerald-500/10 bg-slate-900/90' : 'border-slate-800 hover:border-slate-700'}`}
+                >
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs text-slate-400 uppercase">Active Accounts</span>
+                    <Trophy className="w-4 h-4 text-emerald-400"/>
+                  </div>
+                  <div className="text-3xl font-bold text-slate-100">4 <span className="text-xs text-emerald-400 font-normal">/ 10 Goal</span></div>
+                  <div className="text-[10px] text-emerald-400 mt-2 font-mono flex items-center space-x-1">
+                    <span>Click for Damon vs. Josias Arena ↴</span>
+                  </div>
+                </div>
+
+                {/* WIDGET 2: MARGIN DEFENDED */}
+                <div 
+                  onClick={() => setActiveWidgetModal(activeWidgetModal === 'margin' ? null : 'margin')}
+                  className={`bg-slate-900 border p-5 rounded-2xl cursor-pointer transition ${activeWidgetModal === 'margin' ? 'border-emerald-400 shadow-lg shadow-emerald-500/10 bg-slate-900/90' : 'border-slate-800 hover:border-slate-700'}`}
+                >
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs text-slate-400 uppercase">Margin Defended</span>
+                    <TrendingUp className="w-4 h-4 text-emerald-400"/>
+                  </div>
+                  <div className="text-3xl font-bold text-emerald-400">$71,400</div>
+                  <div className="text-[10px] text-emerald-400 mt-2 font-mono flex items-center space-x-1">
+                    <span>Click for Ledger Breakdown ↴</span>
+                  </div>
+                </div>
+
+                {/* WIDGET 3: 20% REV-SHARE */}
+                <div 
+                  onClick={() => setActiveWidgetModal(activeWidgetModal === 'revshare' ? null : 'revshare')}
+                  className={`bg-slate-900 border p-5 rounded-2xl cursor-pointer transition ${activeWidgetModal === 'revshare' ? 'border-emerald-400 shadow-lg shadow-emerald-500/10 bg-slate-900/90' : 'border-slate-800 hover:border-slate-700'}`}
+                >
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs text-slate-400 uppercase">Syntropic 20% Rev</span>
+                    <DollarSign className="w-4 h-4 text-sky-400"/>
+                  </div>
+                  <div className="text-3xl font-bold text-sky-400">$14,280</div>
+                  <div className="text-[10px] text-sky-400 mt-2 font-mono flex items-center space-x-1">
+                    <span>Click for Revenue Forecast ↴</span>
+                  </div>
+                </div>
+
+                {/* WIDGET 4: GUARANTEE STATUS */}
+                <div 
+                  onClick={() => setActiveWidgetModal(activeWidgetModal === 'guarantee' ? null : 'guarantee')}
+                  className={`bg-slate-900 border p-5 rounded-2xl cursor-pointer transition ${activeWidgetModal === 'guarantee' ? 'border-emerald-400 shadow-lg shadow-emerald-500/10 bg-slate-900/90' : 'border-slate-800 hover:border-slate-700'}`}
+                >
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs text-slate-400 uppercase">Audit Guarantee</span>
+                    <ShieldCheck className="w-4 h-4 text-emerald-400"/>
+                  </div>
+                  <div className="text-3xl font-bold text-emerald-400">100% Passed</div>
+                  <div className="text-[10px] text-emerald-400 mt-2 font-mono flex items-center space-x-1">
+                    <span>Click for Risk & Compliance ↴</span>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* DYNAMIC EXPANDED INTEL DRILL-DOWN MODAL / PANEL */}
+              {activeWidgetModal === 'accounts' && (
+                <div className="bg-slate-900 border border-emerald-500/40 rounded-3xl p-8 space-y-6 animate-fadeIn">
+                  <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+                    <div>
+                      <span className="text-xs font-mono text-emerald-400 uppercase tracking-widest flex items-center space-x-2">
+                        <Flame className="w-4 h-4 text-amber-400 animate-bounce"/>
+                        <span>FOUNDER COMPETITION ARENA · DAMON VS. JOSIAS</span>
+                      </span>
+                      <h3 className="text-2xl font-light text-slate-100 mt-1">Client Conversion Leaderboard</h3>
+                    </div>
+                    <button onClick={() => setActiveWidgetModal(null)} className="text-slate-500 hover:text-white font-mono text-xs">
+                      [Close Panel]
+                    </button>
+                  </div>
+
+                  {/* Damon vs Josias Head-to-Head */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    {/* DAMON'S CARD */}
+                    <div className="bg-slate-950 border border-slate-800 p-6 rounded-2xl space-y-4">
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-10 h-10 rounded-full bg-emerald-500 text-slate-950 font-bold flex items-center justify-center">D</div>
+                          <div>
+                            <div className="font-bold text-slate-100">Damon (Damonatra)</div>
+                            <div className="text-[10px] text-slate-400">Lead Architect & Outbound Strategy</div>
+                          </div>
+                        </div>
+                        <span className="bg-emerald-950 text-emerald-400 text-xs px-3 py-1 rounded-full border border-emerald-500/30">
+                          2 Enterprise Wins
+                        </span>
+                      </div>
+
+                      <div className="space-y-2 text-xs font-mono text-slate-300">
+                        <div className="flex justify-between bg-slate-900 p-2.5 rounded-lg">
+                          <span className="text-slate-400">Outbound Looms / Apollo Runs:</span>
+                          <span className="font-bold text-slate-100">142</span>
+                        </div>
+                        <div className="flex justify-between bg-slate-900 p-2.5 rounded-lg">
+                          <span className="text-slate-400">Discovery Calls Booked:</span>
+                          <span className="font-bold text-emerald-400">12</span>
+                        </div>
+                        <div className="flex justify-between bg-slate-900 p-2.5 rounded-lg">
+                          <span className="text-slate-400">$3,500 Audits Closed:</span>
+                          <span className="font-bold text-emerald-400">2</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* JOSIAS'S CARD */}
+                    <div className="bg-slate-950 border border-slate-800 p-6 rounded-2xl space-y-4">
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-10 h-10 rounded-full bg-sky-500 text-slate-950 font-bold flex items-center justify-center">J</div>
+                          <div>
+                            <div className="font-bold text-slate-100">Josias (Execution Lead)</div>
+                            <div className="text-[10px] text-slate-400">Technical Integration & Demos</div>
+                          </div>
+                        </div>
+                        <span className="bg-sky-950 text-sky-400 text-xs px-3 py-1 rounded-full border border-sky-500/30">
+                          2 Enterprise Wins
+                        </span>
+                      </div>
+
+                      <div className="space-y-2 text-xs font-mono text-slate-300">
+                        <div className="flex justify-between bg-slate-900 p-2.5 rounded-lg">
+                          <span className="text-slate-400">Technical Briefing Calls:</span>
+                          <span className="font-bold text-slate-100">14</span>
+                        </div>
+                        <div className="flex justify-between bg-slate-900 p-2.5 rounded-lg">
+                          <span className="text-slate-400">Audit Enclaves Deployed:</span>
+                          <span className="font-bold text-sky-400">2</span>
+                        </div>
+                        <div className="flex justify-between bg-slate-900 p-2.5 rounded-lg">
+                          <span className="text-slate-400">$50k Contracts Converted:</span>
+                          <span className="font-bold text-sky-400">1</span>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Client Progression Table */}
+                  <div className="pt-4 border-t border-slate-800">
+                    <h4 className="text-xs font-bold text-slate-300 uppercase mb-3">Live Client Progression Pipeline</h4>
+                    <div className="space-y-2 text-xs">
+                      {[
+                        { client: 'Apex Piping & Supply', stage: '48-Hr Audit Briefing Ready', owner: 'Damon / Josias', value: '$3,500 Audit Paid' },
+                        { client: 'Midwest Trade Wholesale', stage: 'Active Rev-Share Enclave', owner: 'Josias', value: '$50,000 Setup Executed' }
+                      ].map((row, idx) => (
+                        <div key={idx} className="bg-slate-950 border border-slate-800 p-3 rounded-xl flex justify-between items-center">
+                          <span className="font-bold text-slate-100">{row.client}</span>
+                          <span className="text-sky-400">{row.stage}</span>
+                          <span className="text-slate-400">Owner: {row.owner}</span>
+                          <span className="bg-emerald-950 text-emerald-400 px-2 py-0.5 rounded">{row.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeWidgetModal === 'margin' && (
+                <div className="bg-slate-900 border border-emerald-500/40 rounded-3xl p-8 space-y-6 animate-fadeIn">
+                  <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+                    <div>
+                      <span className="text-xs font-mono text-emerald-400 uppercase tracking-widest">[ SPATIAL TELEMETRY ]</span>
+                      <h3 className="text-2xl font-light text-slate-100 mt-1">Margin Intelligence Ledger</h3>
+                    </div>
+                    <button onClick={() => setActiveWidgetModal(null)} className="text-slate-500 hover:text-white font-mono text-xs">[Close Panel]</button>
+                  </div>
+                  <p className="text-xs text-slate-300 font-sans leading-relaxed">
+                    Total protected margin across all active accounts currently stands at <strong className="text-emerald-400 font-mono">$71,400</strong>. The highest leakage vector detected by Docling OCR is unapplied Special Pricing Agreement (SPA) rebates on structural steel and copper piping.
+                  </p>
+                </div>
+              )}
+
+              {activeWidgetModal === 'revshare' && (
+                <div className="bg-slate-900 border border-emerald-500/40 rounded-3xl p-8 space-y-6 animate-fadeIn">
+                  <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+                    <div>
+                      <span className="text-xs font-mono text-sky-400 uppercase tracking-widest">[ FINANCIAL VELOCITY ]</span>
+                      <h3 className="text-2xl font-light text-slate-100 mt-1">Revenue Forecast & Rev-Share Ledger</h3>
+                    </div>
+                    <button onClick={() => setActiveWidgetModal(null)} className="text-slate-500 hover:text-white font-mono text-xs">[Close Panel]</button>
+                  </div>
+                  <p className="text-xs text-slate-300 font-sans leading-relaxed">
+                    Syntropic operates on a <strong className="text-white font-mono">$50,000 Setup Fee + 20% Net Margin Rev-Share</strong> model. With 4 active accounts pushing toward the year-end goal of 10 clients, your projected monthly recurring revenue (MRR) pipeline exceeds <strong className="text-sky-400 font-mono">$120,000</strong>.
+                  </p>
+                </div>
+              )}
+
+              {activeWidgetModal === 'guarantee' && (
+                <div className="bg-slate-900 border border-emerald-500/40 rounded-3xl p-8 space-y-6 animate-fadeIn">
+                  <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+                    <div>
+                      <span className="text-xs font-mono text-emerald-400 uppercase tracking-widest">[ RISK & COMPLIANCE ]</span>
+                      <h3 className="text-2xl font-light text-slate-100 mt-1">$10k Profit Recovery Guarantee Status</h3>
+                    </div>
+                    <button onClick={() => setActiveWidgetModal(null)} className="text-slate-500 hover:text-white font-mono text-xs">[Close Panel]</button>
+                  </div>
+                  <p className="text-xs text-slate-300 font-sans leading-relaxed">
+                    Every client passing through the $3,500 Diagnostic Audit is guaranteed to uncover at least $10,000 in recoverable profit loss. All 4 active accounts have successfully cleared this baseline, resulting in a <strong className="text-emerald-400 font-mono">0% refund liability rate</strong>.
+                  </p>
+                </div>
+              )}
+
+              {/* LIVE RFQ PROCESSING FEED */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+                <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+                  <h3 className="text-sm font-bold text-slate-100 uppercase flex items-center space-x-2">
+                    <Activity className="w-4 h-4 text-emerald-400"/>
+                    <span>Live Intercept Stream (&lt;90s Response SLA)</span>
+                  </h3>
+                  <span className="text-[10px] text-slate-500">Auto-refreshing every 2s</span>
+                </div>
+
+                <div className="space-y-3 text-xs font-mono">
+                  {[
+                    { time: '10:42:10 AM', tenant: 'Apex Piping', item: '2" Steel Flange', orig: '$142.00', defended: '$158.50', diff: '+$16.50', status: 'Injected into Outlook' },
+                    { time: '10:40:02 AM', tenant: 'Midwest Trade', item: 'Copper Elbow 3/4"', orig: '$12.10', defended: '$14.00', diff: '+$1.90', status: 'Injected into Outlook' },
+                    { time: '10:38:45 AM', tenant: 'Apex Piping', item: 'PVC SCH40 Pipe 10ft', orig: '$45.00', defended: '$52.00', diff: '+$7.00', status: 'Injected into Outlook' }
+                  ].map((log, idx) => (
+                    <div key={idx} className="bg-slate-950 border border-slate-800/80 p-3.5 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                      <div className="flex items-center space-x-3">
+                        <span className="text-slate-500 text-[10px]">{log.time}</span>
+                        <span className="bg-slate-900 text-sky-400 px-2 py-0.5 rounded border border-slate-800 text-[10px]">{log.tenant}</span>
+                        <span className="text-slate-200">{log.item}</span>
+                      </div>
+                      <div className="flex items-center space-x-4">
+                        <span className="text-slate-500 line-through">{log.orig}</span>
+                        <span className="text-emerald-400 font-bold">{log.defended}</span>
+                        <span className="bg-emerald-950 text-emerald-400 text-[10px] px-2 py-0.5 rounded border border-emerald-500/30">{log.diff}</span>
+                        <span className="text-[10px] text-slate-400">{log.status}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* TAB 02: INGESTION & HITL QUEUE */}
+          {activeTab === 'ingestion_hitl' && (
+            <div className="space-y-8">
+              <div>
+                <span className="text-xs text-amber-400 uppercase tracking-widest">[ SPATIAL OCR & HUMAN-IN-THE-LOOP ]</span>
+                <h1 className="text-3xl font-light text-slate-100 mt-1">Ingestion & Quality Control</h1>
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+                <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-100 uppercase">Low-Confidence OCR Line Items (&lt;95%)</h3>
+                    <p className="text-xs text-slate-400 font-sans mt-0.5">Automated Telegram alerts are dispatched when items land here.</p>
+                  </div>
+                  <span className="bg-amber-950 text-amber-400 border border-amber-500/30 text-xs px-3 py-1 rounded-full">
+                    {hitlQueue.filter(i => i.status === 'PENDING').length} Action Required
+                  </span>
+                </div>
+
+                <div className="space-y-4">
+                  {hitlQueue.map((item) => (
+                    <div key={item.id} className="bg-slate-950 border border-slate-800 p-5 rounded-xl space-y-4">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs font-bold text-amber-400">{item.id}</span>
+                            <span className="text-xs text-slate-400">· {item.tenantName}</span>
+                            <span className="text-[10px] text-slate-500">({item.timestamp})</span>
+                          </div>
+                          <div className="text-sm font-bold text-slate-100 mt-1">{item.skuParsed}</div>
+                          <div className="text-xs text-slate-400 mt-0.5">Source File: <span className="text-slate-300">{item.pdfName}</span></div>
+                        </div>
+
+                        <div className="text-right">
+                          <div className="text-xs text-slate-400">Docling Confidence</div>
+                          <div className="text-lg font-bold text-amber-400">{item.confidenceScore}%</div>
+                          <div className="text-xs text-emerald-400 font-bold mt-0.5">+${item.extractedMarginLoss.toFixed(2)} Loss Identified</div>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end space-x-3 pt-2 border-t border-slate-900">
+                        {item.status === 'PENDING' ? (
+                          <>
+                            <button 
+                              onClick={() => handleApproveHITL(item.id)}
+                              className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 py-2 rounded-lg text-xs transition flex items-center space-x-1"
+                            >
+                              <Check className="w-3.5 h-3.5"/>
+                              <span>APPROVE & DISPATCH TO PORTAL</span>
+                            </button>
+                            <button className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-4 py-2 rounded-lg text-xs transition">
+                              MANUAL OVERRIDE SKU
+                            </button>
+                          </>
+                        ) : (
+                          <span className="text-xs text-emerald-400 font-bold flex items-center space-x-1">
+                            <CheckCircle2 className="w-4 h-4"/>
+                            <span>VERIFIED & ATTACHED TO CLIENT PORTAL</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* TAB 03: TENANTS & AUDITS */}
+          {activeTab === 'tenants_audits' && (
+            <div className="space-y-8">
+              <div>
+                <span className="text-xs text-sky-400 uppercase tracking-widest">[ TENANT ENCLAVE MANAGEMENT ]</span>
+                <h1 className="text-3xl font-light text-slate-100 mt-1">Enterprise Clients & Audits</h1>
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {[
+                    { name: 'Apex Piping & Supply', erp: 'Epicor P21', status: '48-Hr Audit Active', deposit: '$3,500 Paid', guarantee: 'Exceeded ($14,200 Identified)' },
+                    { name: 'Midwest Trade Wholesale', erp: 'Infor SX.e', status: 'Live Rev-Share', deposit: '$50,000 Contract Executed', guarantee: 'Active Defended' }
+                  ].map((tenant, i) => (
+                    <div key={i} className="bg-slate-950 border border-slate-800 p-5 rounded-xl space-y-3">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <div className="text-base font-bold text-slate-100">{tenant.name}</div>
+                          <div className="text-xs text-slate-400">{tenant.erp} · AST Isolated Boundary</div>
+                        </div>
+                        <span className="bg-emerald-950 text-emerald-400 text-[10px] px-2.5 py-1 rounded-full border border-emerald-500/30">
+                          {tenant.status}
+                        </span>
+                      </div>
+
+                      <div className="text-xs font-mono space-y-1 text-slate-300 border-t border-slate-900 pt-3">
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Deposit / Fee:</span>
+                          <span className="font-bold text-slate-100">{tenant.deposit}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Margin Recovery Baseline:</span>
+                          <span className="text-emerald-400">{tenant.guarantee}</span>
+                        </div>
+                      </div>
+
+                      <div className="pt-2">
+                        <button className="w-full bg-slate-900 hover:bg-slate-800 text-slate-300 py-2 rounded-lg text-xs border border-slate-800 transition flex items-center justify-center space-x-1">
+                          <Eye className="w-3.5 h-3.5 text-sky-400"/>
+                          <span>OPEN CLIENT ENCLAVE VIEW</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* TAB 04: UNIFIED CLIENT MESSAGING INBOX */}
+          {activeTab === 'communications' && (
+            <div className="space-y-6">
+              <div>
+                <span className="text-xs text-emerald-400 uppercase tracking-widest">[ UNIFIED COMMUNICATIONS ]</span>
+                <h1 className="text-3xl font-light text-slate-100 mt-1">Client Executive Messages</h1>
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden grid grid-cols-1 md:grid-cols-12 h-[500px]">
+                
+                <div className="md:col-span-4 border-r border-slate-800 bg-slate-950 p-4 space-y-2">
+                  <div className="text-[10px] text-slate-500 uppercase font-bold mb-2">Active Enclave Channels</div>
+                  {['Apex Piping & Supply', 'Midwest Trade Wholesale'].map((client, idx) => (
+                    <button 
+                      key={idx}
+                      onClick={() => setActiveChatTenant(client)}
+                      className={`w-full p-3 rounded-xl text-left text-xs transition font-mono ${activeChatTenant === client ? 'bg-slate-900 text-emerald-400 font-bold border border-slate-800' : 'text-slate-400 hover:bg-slate-900/50'}`}
+                    >
+                      <div>{client}</div>
+                      <div className="text-[10px] text-slate-500 font-normal mt-0.5">Direct Enclave Line</div>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="md:col-span-8 flex flex-col justify-between bg-slate-900 p-6">
+                  <div className="border-b border-slate-800 pb-3 flex justify-between items-center">
+                    <div>
+                      <div className="text-sm font-bold text-slate-100">{activeChatTenant}</div>
+                      <div className="text-[10px] text-emerald-400">Direct Line · Josias Active</div>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto my-4 space-y-3 font-sans text-xs">
+                    {chatMessages.map((msg) => (
+                      <div 
+                        key={msg.id} 
+                        className={`p-3.5 rounded-xl max-w-md ${msg.sender.includes('Josias') ? 'bg-emerald-950/60 border border-emerald-500/30 text-slate-200 ml-auto' : 'bg-slate-950 border border-slate-800 text-slate-300'}`}
+                      >
+                        <div className="font-mono text-[10px] text-slate-400 mb-1 flex justify-between">
+                          <span>{msg.sender}</span>
+                          <span>{msg.time}</span>
+                        </div>
+                        <p>{msg.text}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <form onSubmit={handleSendMessage} className="flex space-x-2">
+                    <input 
+                      type="text" 
+                      value={newMessageText} 
+                      onChange={(e) => setNewMessageText(e.target.value)}
+                      placeholder="Type direct response to client portal..." 
+                      className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-xs text-slate-100 focus:outline-none focus:border-emerald-500 font-mono"
+                    />
+                    <button type="submit" className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-5 py-3 rounded-xl text-xs font-bold transition flex items-center space-x-1">
+                      <Send className="w-3.5 h-3.5"/>
+                      <span>SEND</span>
+                    </button>
+                  </form>
+                </div>
+
+              </div>
+            </div>
+          )}
+
+          {/* TAB 05: BUILT-IN VIDEO CALLS & CALENDAR */}
+          {activeTab === 'calendar_calls' && (
+            <div className="space-y-8">
+              <div>
+                <span className="text-xs text-sky-400 uppercase tracking-widest">[ BUILT-IN WEBRTC VIDEO ROOMS ]</span>
+                <h1 className="text-3xl font-light text-slate-100 mt-1">Executive Call Operations</h1>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                
+                <div className="md:col-span-5 bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+                  <div className="text-xs font-bold text-slate-300 uppercase border-b border-slate-800 pb-3">Scheduled Calls (Synced from Portal)</div>
+                  
+                  {[
+                    { client: 'Apex Piping & Supply', type: '48-Hr Executive Audit Briefing', time: 'Mon 27 Oct, 10:00 AM', status: 'Briefing Ready' },
+                    { client: 'Midwest Trade Wholesale', type: '15-Min Technical Discovery', time: 'Tue 28 Oct, 2:00 PM', status: 'Discovery Session' }
+                  ].map((call, idx) => (
+                    <div key={idx} className="bg-slate-950 border border-slate-800 p-4 rounded-xl space-y-2">
+                      <div className="flex justify-between items-start">
+                        <div className="text-xs font-bold text-slate-100">{call.client}</div>
+                        <span className="text-[10px] bg-sky-950 text-sky-400 border border-sky-500/30 px-2 py-0.5 rounded">{call.status}</span>
+                      </div>
+                      <div className="text-xs text-slate-400">{call.type}</div>
+                      <div className="text-xs font-bold text-emerald-400 flex items-center space-x-1">
+                        <Clock className="w-3.5 h-3.5"/>
+                        <span>{call.time}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="md:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between h-[420px]">
+                  <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+                    <div className="flex items-center space-x-2">
+                      <Video className="w-4 h-4 text-emerald-400"/>
+                      <span className="text-xs font-bold text-slate-100">Syntropic Built-In Call Room (Daily.co / WebRTC)</span>
+                    </div>
+                    <span className="text-[10px] text-emerald-400">Encrypted P2P Line</span>
+                  </div>
+
+                  <div className="bg-slate-950 border border-slate-800 rounded-xl flex-1 my-4 flex flex-col justify-center items-center text-center p-6">
+                    <Video className="w-12 h-12 text-slate-700 mb-3 animate-pulse"/>
+                    <div className="text-sm font-bold text-slate-200">No Active Call in Session</div>
+                    <div className="text-xs text-slate-500 max-w-xs mt-1 font-sans">
+                      When a client joins from their Executive Portal at their scheduled time, your camera preview will initiate automatically here.
+                    </div>
+                  </div>
+
+                  <button className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3 rounded-xl text-xs transition flex items-center justify-center space-x-2">
+                    <Video className="w-4 h-4"/>
+                    <span>LAUNCH TEST VIDEO ROOM FOR JOSIAS</span>
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          )}
+
+        </main>
+      </div>
+
+    </div>
+  );
+}

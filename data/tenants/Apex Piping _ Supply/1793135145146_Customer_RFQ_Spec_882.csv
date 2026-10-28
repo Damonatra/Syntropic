@@ -1,0 +1,15 @@
+sku,qty,unit_cost_usd,vendor,notes
+PVC-SCH80-2IN-COUPLING,450,8.42,Harbor Fittings,Q3 spec sheet scan
+PVC-SCH80-4IN-COUPLING,120,14.10,Harbor Fittings,
+STEEL-FLANGE-2IN-150,80,22.75,Triangle Works,rated 150#
+STEEL-FLANGE-3IN-150,44,35.20,Triangle Works,rated 150#
+COPPER-ELBOW-3/4IN,210,6.90,Northline,C-array tolerance x0.2mm
+COPPER-TEE-1/2IN,180,5.75,Northline,
+GASKET-EPDM-2IN,600,1.12,SealCo,EPDM 70A
+GASKET-EPDM-3IN,320,1.68,SealCo,EPDM 70A
+BALL-VALVE-BRASS-1IN,95,9.85,Harbor Fittings,full port
+BALL-VALVE-BRASS-2IN,60,17.40,Harbor Fittings,full port
+PIPE-HANGER-3/4IN,400,0.85,Triangle Works,galvanized
+PIPE-HANGER-2IN,260,1.05,Triangle Works,galvanized
+UNION-BRASS-1IN,140,4.30,Northline,
+CAP-PVC-2IN,220,1.95,Harbor Fittings,sch80

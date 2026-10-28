@@ -1,0 +1,914 @@
+     1→'use client';
+     2→
+     3→/**
+     4→ * Steep design-system primitives + intel panels for the Command Tower.
+     5→ * All panels are data-driven: figures arrive via LedgerView (R-01) —
+     6→ * nothing financial is hardcoded in the presentation layer.
+     7→ */
+     8→
+     9→import React, { useState } from 'react';
+    10→import { ArrowUpRight, ChevronDown, Flame, Globe2, History, ReceiptText, Trophy, X } from 'lucide-react';
+    11→import type { CommandLogView, GeoIntelView, LedgerView, ReceiptsView, SeasonsView } from '@/lib/types';
+    12→
+    13→export const ARTIFACT =
+    14→  'bg-paper rounded-[20px] shadow-[0_0_0_1px_rgba(4,23,43,0.05),0_16px_24px_-8px_rgba(0,0,0,0.10),0_6px_10px_-6px_rgba(0,0,0,0.08)]';
+    15→
+    16→export function fmtUsd(cents: number, showCents = false): string {
+    17→  const opts = showCents
+    18→    ? { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+    19→    : { maximumFractionDigits: 0 };
+    20→  return `$${(cents / 100).toLocaleString('en-US', opts)}`;
+    21→}
+    22→
+    23→export function LiveDot({ className = 'bg-sienna' }: { className?: string }) {
+    24→  return (
+    25→    <span className="relative flex h-1.5 w-1.5 shrink-0">
+    26→      <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-50 ${className}`} />
+    27→      <span className={`relative inline-flex h-1.5 w-1.5 rounded-full ${className}`} />
+    28→    </span>
+    29→  );
+    30→}
+    31→
+    32→export function Sparkline({ id, path, className = 'h-7 w-24' }: { id: string; path: string; className?: string }) {
+    33→  return (
+    34→    <svg viewBox="0 0 100 30" className={className} fill="none" aria-hidden="true">
+    35→      <defs>
+    36→        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+    37→          <stop offset="0%" stopColor="#fbe1d1" stopOpacity="0.85" />
+    38→          <stop offset="100%" stopColor="#fbe1d1" stopOpacity="0" />
+    39→        </linearGradient>
+    40→      </defs>
+    41→      <path d={`${path} L100 30 L0 30 Z`} fill={`url(#${id})`} stroke="none" />
+    42→      <path d={path} stroke="#5d2a1a" strokeWidth="1.75" strokeLinecap="round" />
+    43→    </svg>
+    44→  );
+    45→}
+    46→
+    47→export function ViewHeader({
+    48→  tag, title, accent, rest, sub,
+    49→}: { tag: string; title: string; accent: string; rest: string; sub: string }) {
+    50→  return (
+    51→    <div className="mb-8 md:mb-10">
+    52→      <div className="text-[14px] text-ash">{tag}</div>
+    53→      <h1 className="mt-2 font-display text-[34px] font-normal leading-[1.18] tracking-[-0.015em] text-ink md:text-[44px] md:tracking-[-0.02em]">
+    54→        {title} <em className="italic">{accent}</em> {rest}
+    55→      </h1>
+    56→      <p className="mt-3 max-w-xl text-[16px] leading-relaxed text-steel">{sub}</p>
+    57→    </div>
+    58→  );
+    59→}
+    60→
+    61→export function FilledPill({
+    62→  children, onClick, type = 'button', className = '', disabled = false,
+    63→}: { children: React.ReactNode; onClick?: () => void; type?: 'button' | 'submit'; className?: string; disabled?: boolean }) {
+    64→  return (
+    65→    <button
+    66→      type={type}
+    67→      onClick={onClick}
+    68→      disabled={disabled}
+    69→      className={`inline-flex items-center justify-center gap-2 rounded-full bg-ink px-4 py-2 text-[13px] font-medium text-paper transition-colors hover:bg-[#33363b] disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+    70→    >
+    71→      {children}
+    72→    </button>
+    73→  );
+    74→}
+    75→
+    76→export function GhostPill({
+    77→  children, onClick, className = '', disabled = false,
+    78→}: { children: React.ReactNode; onClick?: () => void; className?: string; disabled?: boolean }) {
+    79→  return (
+    80→    <button
+    81→      type="button"
+    82→      onClick={onClick}
+    83→      disabled={disabled}
+    84→      className={`inline-flex items-center justify-center gap-2 rounded-full border border-ink px-4 py-2 text-[13px] font-medium text-ink transition-colors hover:bg-mist disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+    85→    >
+    86→      {children}
+    87→    </button>
+    88→  );
+    89→}
+    90→
+    91→export function BlushChip({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+    92→  return (
+    93→    <span className={`inline-flex items-center gap-1.5 rounded-full bg-blush px-3 py-1 text-[12px] font-medium text-sienna ${className}`}>
+    94→      {children}
+    95→    </span>
+    96→  );
+    97→}
+    98→
+    99→export function QuietChip({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+   100→  return (
+   101→    <span className={`inline-flex w-fit items-center gap-1.5 rounded-full bg-mist px-2.5 py-0.5 text-[12px] font-medium text-ink ${className}`}>
+   102→      {children}
+   103→    </span>
+   104→  );
+   105→}
+   106→
+   107→/* ────────────── Clickable intel cards & drill-down panels ────────────── */
+   108→
+   109→export function IntelCard({
+   110→  id, active, onToggle, icon: Icon, label, value, hint, spark, peach = false,
+   111→}: {
+   112→  id: string; active: boolean; onToggle: (id: string) => void; icon: React.ElementType;
+   113→  label: string; value: React.ReactNode; hint: string; spark?: { id: string; path: string }; peach?: boolean;
+   114→}) {
+   115→  const surface = peach ? 'rounded-[24px] bg-blush text-sienna' : ARTIFACT;
+   116→  return (
+   117→    <button
+   118→      type="button"
+   119→      onClick={() => onToggle(id)}
+   120→      aria-expanded={active}
+   121→      className={`group p-5 text-left transition-all duration-200 ${surface} ${
+   122→        active
+   123→          ? peach ? 'ring-1 ring-sienna/50' : 'ring-1 ring-ink'
+   124→          : 'hover:shadow-[0_0_0_1px_rgba(4,23,43,0.06),0_22px_32px_-10px_rgba(0,0,0,0.14),0_8px_12px_-8px_rgba(0,0,0,0.08)]'
+   125→      }`}
+   126→    >
+   127→      <div className="flex items-center justify-between gap-2">
+   128→        <span className={`text-[13px] ${peach ? 'text-sienna/70' : 'text-steel'}`}>{label}</span>
+   129→        <Icon className={`h-4 w-4 transition-colors ${peach ? 'text-sienna/70' : 'text-smoke group-hover:text-steel'}`} strokeWidth={1.75} />
+   130→      </div>
+   131→      <div className={`mt-1.5 text-[26px] font-medium tracking-[-0.01em] ${peach ? 'text-sienna' : 'text-ink'}`}>
+   132→        {value}
+   133→      </div>
+   134→      {spark && <Sparkline id={spark.id} path={spark.path} />}
+   135→      <div className={`mt-1 inline-flex items-center gap-1 text-[12px] transition-colors ${peach ? 'text-sienna/70' : 'text-smoke group-hover:text-steel'}`}>
+   136→        {hint}
+   137→        <ChevronDown className={`h-3 w-3 transition-transform duration-200 ${active ? 'rotate-180' : ''}`} strokeWidth={2} />
+   138→      </div>
+   139→    </button>
+   140→  );
+   141→}
+   142→
+   143→export function PanelShell({
+   144→  tag, title, onClose, children,
+   145→}: { tag: React.ReactNode; title: React.ReactNode; onClose: () => void; children: React.ReactNode }) {
+   146→  return (
+   147→    <section className={`mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300 p-6 sm:p-8 ${ARTIFACT}`}>
+   148→      <div className="flex items-start justify-between gap-4 border-b border-hairline pb-5">
+   149→        <div>
+   150→          {tag}
+   151→          <h3 className="mt-1.5 font-display text-[26px] font-normal leading-[1.18] tracking-[-0.01em] text-ink">{title}</h3>
+   152→        </div>
+   153→        <button
+   154→          onClick={onClose}
+   155→          className="mt-1 inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] text-steel transition-colors hover:bg-mist hover:text-ink"
+   156→        >
+   157→          Close <X className="h-3.5 w-3.5" strokeWidth={1.75} />
+   158→        </button>
+   159→      </div>
+   160→      <div className="pt-6">{children}</div>
+   161→    </section>
+   162→  );
+   163→}
+   164→
+   165→export function TeamCard({
+   166→  initial, tone, name, role, isOnline, target, completed, discovery, auditsClosed, contracts,
+   167→  isCurrentUser, onTargetChange,
+   168→}: {
+   169→  initial: string; tone: 'ink' | 'blush' | 'steel'; name: string; role: string; isOnline: boolean;
+   170→  target: number; completed: number; discovery: number; auditsClosed: number; contracts: number;
+   171→  isCurrentUser: boolean; onTargetChange?: (next: number) => void;
+   172→}) {
+   173→  const avatar = tone === 'ink' ? 'bg-ink text-paper' : tone === 'blush' ? 'bg-blush text-sienna' : 'bg-ink/85 text-paper';
+   174→  const pct = target > 0 ? Math.min(100, Math.round((completed / target) * 100)) : 0;
+   175→  return (
+   176→    <div className="rounded-2xl bg-fog p-5">
+   177→      <div className="flex items-start justify-between gap-3">
+   178→        <div className="flex items-center gap-3">
+   179→          <div className={`relative grid h-10 w-10 place-items-center rounded-full text-[15px] font-medium ${avatar}`}>
+   180→            {initial}
+   181→            <span
+   182→              title={isOnline ? 'Online now' : 'Offline'}
+   183→              className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-fog ${isOnline ? 'bg-sienna' : 'bg-smoke/50'}`}
+   184→            />
+   185→          </div>
+   186→          <div>
+   187→            <div className="text-[15px] font-medium text-ink">{name}</div>
+   188→            <div className="text-[12px] text-smoke">{role}</div>
+   189→          </div>
+   190→        </div>
+   191→        {isOnline ? <LiveDot /> : <span className="text-[11px] text-smoke">offline</span>}
+   192→      </div>
+   193→
+   194→      {/* Quarterly outbound target */}
+   195→      <div className="mt-4 rounded-xl bg-paper px-3.5 py-3">
+   196→        <div className="flex items-center justify-between text-[12.5px]">
+   197→          <span className="text-steel">Quarterly outbound</span>
+   198→          <span className="font-medium tabular-nums text-ink">
+   199→            {completed.toLocaleString()} / {target.toLocaleString()}
+   200→          </span>
+   201→        </div>
+   202→        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-mist">
+   203→          <div className="h-full rounded-full bg-sienna transition-all duration-500" style={{ width: `${pct}%` }} />
+   204→        </div>
+   205→        <div className="mt-1.5 flex items-center justify-between text-[11px] text-smoke">
+   206→          <span>Q4 progress</span>
+   207→          <span className="tabular-nums">{pct}% completed</span>
+   208→        </div>
+   209→        {isCurrentUser && onTargetChange && (
+   210→          <div className="mt-2.5 flex items-center gap-2 border-t border-hairline pt-2.5">
+   211→            <label htmlFor={`target-${name}`} className="text-[11.5px] text-steel">Adjust my target:</label>
+   212→            <input
+   213→              id={`target-${name}`}
+   214→              type="number"
+   215→              min={1}
+   216→              defaultValue={target}
+   217→              onBlur={(e) => {
+   218→                const next = Number(e.target.value);
+   219→                if (Number.isFinite(next) && next >= 1 && next !== target) onTargetChange(next);
+   220→                else e.target.value = String(target);
+   221→              }}
+   222→              onKeyDown={(e) => {
+   223→                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+   224→              }}
+   225→              className="h-7 w-20 rounded-lg border border-hairline bg-paper px-2 text-[12px] tabular-nums text-ink outline-none transition-shadow focus-visible:shadow-[0_0_0_2px_rgba(93,42,26,0.25)]"
+   226→            />
+   227→          </div>
+   228→        )}
+   229→      </div>
+   230→
+   231→      <div className="mt-3 space-y-2">
+   232→        {([
+   233→          ['Discovery calls booked', discovery.toLocaleString()],
+   234→          ['$3,500 audits sold', auditsClosed.toLocaleString()],
+   235→          ['$50k contracts converted', contracts.toLocaleString()],
+   236→        ] as [string, string][]).map(([k, v]) => (
+   237→          <div key={k} className="flex items-center justify-between gap-3 rounded-xl bg-paper px-3.5 py-2.5 text-[13px]">
+   238→            <span className="text-steel">{k}</span>
+   239→            <span className="font-medium tabular-nums text-ink">{v}</span>
+   240→          </div>
+   241→        ))}
+   242→      </div>
+   243→    </div>
+   244→  );
+   245→}
+   246→
+   247→export function StatTrio({ rows }: { rows: [string, string][] }) {
+   248→  return (
+   249→    <div className="mt-4 grid max-w-2xl grid-cols-1 gap-2 sm:grid-cols-3">
+   250→      {rows.map(([k, v]) => (
+   251→        <div key={k} className="rounded-2xl bg-fog px-4 py-3">
+   252→          <div className="text-[12px] text-smoke">{k}</div>
+   253→          <div className="mt-0.5 text-[18px] font-medium tabular-nums text-ink">{v}</div>
+   254→        </div>
+   255→      ))}
+   256→    </div>
+   257→  );
+   258→}
+   259→
+   260→/** Today's funnel — LiveTelemetrySummary rendered as five stat tiles. */
+   261→export function TrafficPanel({
+   262→  traffic, onClose,
+   263→}: {
+   264→  traffic: { date: string; totalVisitors: number; uniqueSessions: number; auditsInitiated: number; portalLogins: number; quotesIngested: number };
+   265→  onClose: () => void;
+   266→}) {
+   267→  return (
+   268→    <PanelShell
+   269→      onClose={onClose}
+   270→      tag={<div className="text-[14px] text-ash">Today's funnel · {traffic.date} · UTC day</div>}
+   271→      title={<>Live landing & enclave <em className="italic">telemetry</em></>}
+   272→    >
+   273→      <p className="max-w-xl text-[15px] leading-relaxed text-steel">
+   274→        Captured server-side across the LANDING → PORTAL → ENGINE layers. Visitor IPs are hashed with a
+   275→        rotating day-salt before they ever touch the ledger — the funnel is measurable without being trackable.
+   276→      </p>
+   277→      <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-5">
+   278→        {([
+   279→          ['Total events', traffic.totalVisitors],
+   280→          ['Unique sessions', traffic.uniqueSessions],
+   281→          ['Audits initiated', traffic.auditsInitiated],
+   282→          ['Portal logins', traffic.portalLogins],
+   283→          ['Quotes ingested', traffic.quotesIngested],
+   284→        ] as [string, number][]).map(([k, v]) => (
+   285→          <div key={k} className="rounded-2xl bg-fog px-4 py-3.5">
+   286→            <div className="text-[11.5px] uppercase tracking-wide text-smoke">{k}</div>
+   287→            <div className="mt-1 text-[24px] font-medium tabular-nums text-ink">{v.toLocaleString('en-US')}</div>
+   288→          </div>
+   289→        ))}
+   290→      </div>
+   291→    </PanelShell>
+   292→  );
+   293→}
+   294→
+   295→const humanEvent = (s: string) => s.toLowerCase().replace(/_/g, ' ');
+   296→
+   297→/** Phase 11.9 — Inbound Industrial Hubs: the GEO-IP intelligence slice,
+   298→ *  always-on in the telemetry deck and refreshed by the SSE traffic stream. */
+   299→export function GeoHubPanel({ geo }: { geo: GeoIntelView }) {
+   300→  const tiles: { label: string; strong: boolean; body: React.ReactNode }[] = [
+   301→    {
+   302→      label: 'Primary hub',
+   303→      strong: true,
+   304→      body: geo.primary ? (
+   305→        <>
+   306→          <div className="mt-1 font-display text-[22px] leading-tight text-ink">
+   307→            {geo.primary.city}, {geo.primary.country}
+   308→          </div>
+   309→          <div className="mt-1 text-[12.5px] text-steel">
+   310→            {geo.primary.share}% of today's landing traffic · {geo.primary.events} event{geo.primary.events === 1 ? '' : 's'}
+   311→          </div>
+   312→        </>
+   313→      ) : (
+   314→        <>
+   315→          <div className="mt-1 font-display text-[22px] text-smoke">—</div>
+   316→          <div className="mt-1 text-[12.5px] text-smoke">No geo-resolved landing traffic today</div>
+   317→        </>
+   318→      ),
+   319→    },
+   320→    {
+   321→      label: 'Active enclave hub',
+   322→      strong: false,
+   323→      body: geo.enclaveHub ? (
+   324→        <>
+   325→          <div className="mt-1 font-display text-[22px] leading-tight text-ink">
+   326→            {geo.enclaveHub.city}, {geo.enclaveHub.country}
+   327→          </div>
+   328→          <div className="mt-1 text-[12.5px] text-steel">
+   329→            {geo.enclaveHub.tenants} active enclave{geo.enclaveHub.tenants === 1 ? '' : 's'} · {geo.enclaveHub.reviews} HITL pending
+   330→          </div>
+   331→        </>
+   332→      ) : (
+   333→        <>
+   334→          <div className="mt-1 font-display text-[22px] text-smoke">—</div>
+   335→          <div className="mt-1 text-[12.5px] text-smoke">No active enclaves with geo on record</div>
+   336→        </>
+   337→      ),
+   338→    },
+   339→    {
+   340→      label: 'Emerging corridor',
+   341→      strong: false,
+   342→      body: geo.emerging ? (
+   343→        <>
+   344→          <div className="mt-1 font-display text-[22px] leading-tight text-ink">
+   345→            {geo.emerging.city}, {geo.emerging.country}
+   346→          </div>
+   347→          <div className="mt-1 text-[12.5px] text-steel">Latest high-intent signal · {humanEvent(geo.emerging.lastEventType)}</div>
+   348→        </>
+   349→      ) : (
+   350→        <>
+   351→          <div className="mt-1 font-display text-[22px] text-smoke">—</div>
+   352→          <div className="mt-1 text-[12.5px] text-smoke">No high-intent signals outside the primary hub</div>
+   353→        </>
+   354→      ),
+   355→    },
+   356→  ];
+   357→
+   358→  return (
+   359→    <section className={`mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300 p-6 sm:p-8 ${ARTIFACT}`}>
+   360→      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-hairline pb-5">
+   361→        <div>
+   362→          <div className="text-[14px] text-ash">Geo-IP intelligence · derived from the traffic ledger</div>
+   363→          <h3 className="mt-1.5 flex items-center gap-2.5 font-display text-[26px] font-normal leading-[1.18] tracking-[-0.01em] text-ink">
+   364→            <Globe2 className="h-5 w-5 text-sienna" strokeWidth={1.75} />
+   365→            Inbound industrial <em className="italic">hubs</em>
+   366→          </h3>
+   367→        </div>
+   368→        <span className="inline-flex items-center gap-2 rounded-full bg-blush px-3 py-1 text-[12px] font-medium text-sienna">
+   369→          <LiveDot />
+   370→          Live geo stream
+   371→        </span>
+   372→      </div>
+   373→
+   374→      <div className="grid grid-cols-1 gap-3 pt-6 sm:grid-cols-3">
+   375→        {tiles.map((t) => (
+   376→          <div key={t.label} className="rounded-2xl bg-fog p-5">
+   377→            <div className={`text-[11.5px] uppercase tracking-wide ${t.strong ? 'text-sienna/80' : 'text-smoke'}`}>{t.label}</div>
+   378→            {t.body}
+   379→          </div>
+   380→        ))}
+   381→      </div>
+   382→
+   383→      {geo.topLocations.length > 1 && (
+   384→        <div className="mt-4 grid grid-cols-2 gap-2 border-t border-hairline pt-4 sm:grid-cols-5">
+   385→          {geo.topLocations.map((l) => (
+   386→            <div key={`${l.city}${l.country}`} className="flex items-center justify-between gap-2 rounded-xl bg-fog px-3 py-2 text-[12.5px]">
+   387→              <span className="truncate text-ink">
+   388→                {l.city}, {l.country}
+   389→              </span>
+   390→              <span className="shrink-0 font-medium tabular-nums text-sienna">{l.events}</span>
+   391→            </div>
+   392→          ))}
+   393→        </div>
+   394→      )}
+   395→
+   396→      <p className="mt-4 text-[12px] text-smoke">
+   397→        Recomputed server-side for the current UTC day · last generated{' '}
+   398→        {new Date(geo.generatedAt).toLocaleTimeString('en-US', { hour12: false })} — the panel re-pulls the moment the SSE stream
+   399→        carries a landing or enclave event.
+   400→      </p>
+   401→    </section>
+   402→  );
+   403→}
+   404→
+   405→/* ── Show-the-work receipts (Feature: every number shows its work) ──
+   406→ * Unfolds the exact ledger rows behind a figure, fetched from
+   407→ * /api/ledger/receipts. Collapsed by default; fetched on first open. */
+   408→const receiptKindLabel = (kind: string) =>
+   409→  kind === 'MARGIN_DEFENDED' ? 'Margin defended' : kind === 'SETUP_FEE' ? 'Setup fee' : kind === 'AUDIT_FEE' ? 'Audit fee' : kind;
+   410→
+   411→export function ReceiptsDisclosure({
+   412→  tenant, metric = 'defended', label = 'Show the work',
+   413→}: {
+   414→  tenant: string | null; metric?: 'defended' | 'revshare'; label?: string;
+   415→}) {
+   416→  const [open, setOpen] = useState(false);
+   417→  const [data, setData] = useState<ReceiptsView | null>(null);
+   418→  const [error, setError] = useState(false);
+   419→
+   420→  const toggle = async () => {
+   421→    const next = !open;
+   422→    setOpen(next);
+   423→    if (next && !data && !error) {
+   424→      try {
+   425→        const params = new URLSearchParams();
+   426→        if (tenant) params.set('tenant', tenant);
+   427→        params.set('metric', metric);
+   428→        const res = await fetch(`/api/ledger/receipts?${params.toString()}`, { cache: 'no-store' });
+   429→        if (!res.ok) throw new Error(String(res.status));
+   430→        setData((await res.json()) as ReceiptsView);
+   431→      } catch {
+   432→        setError(true);
+   433→      }
+   434→    }
+   435→  };
+   436→
+   437→  return (
+   438→    <div className="border-t border-hairline pt-2.5">
+   439→      <button
+   440→        type="button"
+   441→        onClick={toggle}
+   442→        aria-expanded={open}
+   443→        className="inline-flex items-center gap-1.5 text-[12px] text-smoke transition-colors hover:text-sienna"
+   444→      >
+   445→        <ReceiptText className="h-3.5 w-3.5" strokeWidth={1.75} />
+   446→        {label}
+   447→        <ChevronDown className={`h-3 w-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} strokeWidth={2} />
+   448→      </button>
+   449→
+   450→      {open && (
+   451→        <div className="mt-2.5 animate-in fade-in slide-in-from-bottom-1 duration-200">
+   452→          {error && <div className="rounded-xl bg-fog px-3.5 py-3 text-[12.5px] text-steel">Receipts unavailable — the ledger did not answer. Retry in a moment.</div>}
+   453→          {!error && !data && <div className="rounded-xl bg-fog px-3.5 py-3 text-[12.5px] text-smoke">Pulling the ledger rows…</div>}
+   454→          {!error && data && (
+   455→            <div className="rounded-2xl bg-paper shadow-[0_0_0_1px_rgba(4,23,43,0.04)]">
+   456→              <div className="divide-y divide-hairline">
+   457→                {data.entries.map((e) => (
+   458→                  <div key={e.id} className="flex flex-col gap-1 px-3.5 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+   459→                    <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[12.5px]">
+   460→                      <span className="tabular-nums text-smoke">{new Date(e.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}</span>
+   461→                      <span className="font-medium text-ink">{receiptKindLabel(e.kind)}</span>
+   462→                      {data.scope === 'book' && <span className="text-steel">· {e.tenantName}</span>}
+   463→                      {e.note && <span className="truncate text-smoke">— {e.note}</span>}
+   464→                    </div>
+   465→                    <span className={`shrink-0 text-[13px] font-medium tabular-nums ${e.kind === 'MARGIN_DEFENDED' ? 'text-sienna' : 'text-steel'}`}>{fmtUsd(e.amountCents, true)}</span>
+   466→                  </div>
+   467→                ))}
+   468→                {data.entries.length === 0 && (
+   469→                  <div className="px-3.5 py-3 text-[12.5px] text-smoke">No ledger rows in scope yet — the figure is a zero by honest arithmetic.</div>
+   470→                )}
+   471→              </div>
+   472→              <div className="flex flex-wrap items-center justify-between gap-2 rounded-b-2xl border-t border-hairline bg-fog px-3.5 py-2.5 text-[12px]">
+   473→                <span className="text-steel">
+   474→                  {data.entries.length} entr{data.entries.length === 1 ? 'y' : 'ies'} · Σ defended{' '}<span className="font-medium tabular-nums text-ink">{fmtUsd(data.defendedCents, true)}</span>
+   475→                </span>
+   476→                {data.metric === 'revshare' ? (
+   477→                  <span className="rounded-full bg-blush px-2.5 py-0.5 font-medium text-sienna">
+   478→                    × {Math.round(data.rate * 100)}% = <span className="tabular-nums">{fmtUsd(data.derivedCents, true)}</span> rev-share
+   479→                  </span>
+   480→                ) : (
+   481→                  data.feeCents > 0 && <span className="text-smoke">+ fees <span className="tabular-nums">{fmtUsd(data.feeCents, true)}</span> outside the margin figure</span>
+   482→                )}
+   483→              </div>
+   484→            </div>
+   485→          )}
+   486→        </div>
+   487→      )}
+   488→    </div>
+   489→  );
+   490→}
+   491→
+   492→/* ────────────────────────── Intel panels (data-driven) ────────────────────────── */
+   493→
+   494→/* ── The Ship's Log (Feature: append-only command journal) ──
+   495→ * Every command issued through the station, attributed and irreversible.
+   496→ * Two founders, one memory. */
+   497→
+   498→const SHIP_ACTION_LABEL: Record<string, string> = {
+   499→  TARGET_ADJUSTED: 'Target adjusted',
+   500→  HITL_ACTION: 'HITL resolution',
+   501→  INVITE_ISSUED: 'Invite issued',
+   502→  ACCESS_REVOKED: 'Access revoked',
+   503→  MESSAGE_SENT: 'Message sent',
+   504→  RFQ_SIMULATED: 'RFQ ingested',
+   505→  RECONCILED: 'Books reconciled',
+   506→};
+   507→
+   508→const actorChipClass = (actor: string) => {
+   509→  if (actor.startsWith('Damon')) return 'bg-ink text-paper';
+   510→  if (actor.startsWith('Josias')) return 'bg-blush text-sienna';
+   511→  if (actor === 'Engine') return 'bg-mist text-steel';
+   512→  return 'bg-mist text-ink';
+   513→};
+   514→
+   515→export function ShipsLogPanel({ log }: { log: CommandLogView[] }) {
+   516→  const dayLabel = (iso: string) => new Date(iso).toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' });
+   517→
+   518→  // Group consecutive rows under day headings — an editorial chronology.
+   519→  const groups: { day: string; rows: CommandLogView[] }[] = [];
+   520→  for (const row of log) {
+   521→    const day = dayLabel(row.createdAt);
+   522→    const last = groups[groups.length - 1];
+   523→    if (last && last.day === day) last.rows.push(row);
+   524→    else groups.push({ day, rows: [row] });
+   525→  }
+   526→
+   527→  return (
+   528→    <section className={`mt-4 animate-in fade-in slide-in-from-bottom-2 duration-300 p-6 sm:p-8 ${ARTIFACT}`}>
+   529→      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-hairline pb-5">
+   530→        <div>
+   531→          <div className="text-[14px] text-ash">Append-only command journal · attributed & irreversible</div>
+   532→          <h3 className="mt-1.5 flex items-center gap-2.5 font-display text-[26px] font-normal leading-[1.18] tracking-[-0.01em] text-ink">
+   533→            <History className="h-5 w-5 text-sienna" strokeWidth={1.75} />
+   534→            The ship's <em className="italic">log</em>
+   535→          </h3>
+   536→        </div>
+   537→        <span className="inline-flex items-center gap-2 rounded-full bg-mist px-3 py-1 text-[12px] font-medium text-steel">
+   538→          {log.length} entr{log.length === 1 ? 'y' : 'ies'} · nothing edited, nothing deleted
+   539→        </span>
+   540→      </div>
+   541→
+   542→      {log.length === 0 ? (
+   543→        <p className="pt-6 text-[14px] text-smoke">
+   544→          The log fills as commands are issued — adjust a target, resolve a HITL item, or simulate an RFQ and it will be recorded here, signed by its operator.
+   545→        </p>
+   546→      ) : (
+   547→        <div className="pt-5">
+   548→          {groups.map((g) => (
+   549→            <div key={g.day} className="mb-2 last:mb-0">
+   550→              <div className="mb-2 mt-3 text-[12px] font-medium uppercase tracking-[0.08em] text-smoke first:mt-0">{g.day}</div>
+   551→              <div className="space-y-1.5">
+   552→                {g.rows.map((row) => (
+   553→                  <div key={row.id} className="flex flex-col gap-1.5 rounded-2xl bg-fog px-4 py-3 sm:flex-row sm:items-center sm:gap-4">
+   554→                    <span className="w-14 shrink-0 text-[12px] tabular-nums text-smoke">
+   555→                      {new Date(row.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}
+   556→                    </span>
+   557→                    <span className={`w-fit shrink-0 rounded-full px-2.5 py-0.5 text-[11.5px] font-medium ${actorChipClass(row.actor)}`}>
+   558→                      {row.actor}
+   559→                    </span>
+   560→                    <div className="min-w-0 flex-1 text-[13px] leading-relaxed">
+   561→                      <span className="font-medium text-ink">{SHIP_ACTION_LABEL[row.action] ?? row.action}</span>
+   562→                      {row.target && <span className="text-steel"> · {row.target}</span>}
+   563→                      {row.detail && <span className="text-steel"> — {row.detail}</span>}
+   564→                    </div>
+   565→                  </div>
+   566→                ))}
+   567→              </div>
+   568→            </div>
+   569→          ))}
+   570→        </div>
+   571→      )}
+   572→
+   573→      <p className="mt-5 border-t border-hairline pt-4 text-[12px] text-smoke">
+   574→        Written by the server at the moment of action — Tower commands sign with the active profile, Telegram approvals sign with the operator key, the engine signs as Engine. The journal is the station's memory: after a month this panel is the company's decision history, not just its dashboard.
+   575→      </p>
+   576→    </section>
+   577→  );
+   578→}
+   579→
+   580→/* ── Arena seasons (Feature: the leaderboard becomes a running match) ──
+   581→ * Weekly head-to-head + the belt, all computed from ledger ownership. */
+   582→export function SeasonStrip({ seasons }: { seasons: SeasonsView }) {
+   583→  const beltName = seasons.belt.holder
+   584→    ? seasons.scores.find((s) => s.founder === seasons.belt.holder)?.fullName ?? seasons.belt.holder
+   585→    : null;
+   586→
+   587→  return (
+   588→    <div className="mt-6 rounded-2xl bg-fog p-5">
+   589→      <div className="flex flex-wrap items-center justify-between gap-3">
+   590→        <h4 className="text-[14px] font-medium text-steel">This week's season · {seasons.weekLabel}</h4>
+   591→        <span
+   592→          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-medium ${
+   593→            seasons.belt.holder ? 'bg-blush text-sienna' : 'bg-mist text-steel'
+   594→          }`}
+   595→        >
+   596→          <Trophy className="h-3.5 w-3.5" strokeWidth={1.75} />
+   597→          {beltName ? `Belt · ${beltName} — ${seasons.belt.weeksHeld} week${seasons.belt.weeksHeld === 1 ? '' : 's'} held` : 'Belt · unclaimed'}
+   598→        </span>
+   599→      </div>
+   600→
+   601→      <div className="mt-3 space-y-2.5">
+   602→        {seasons.scores.map((s, i) => (
+   603→          <div key={s.founder}>
+   604→            <div className="flex items-center justify-between text-[12.5px]">
+   605→              <span className="font-medium text-ink">
+   606→                {s.fullName}
+   607→                {i === 0 && seasons.leader === s.founder && <span className="ml-2 text-[11px] font-medium text-sienna">leading</span>}
+   608→              </span>
+   609→              <span className="tabular-nums text-steel">
+   610→                {fmtUsd(s.defendedCents)} · {s.entries} def{s.entries === 1 ? '' : 's'} · {s.sharePct}%
+   611→              </span>
+   612→            </div>
+   613→            <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-mist">
+   614→              <div
+   615→                className={`h-full rounded-full transition-all duration-500 ${i === 0 && seasons.leader ? 'bg-sienna' : 'bg-ink/70'}`}
+   616→                style={{ width: `${s.sharePct}%` }}
+   617→              />
+   618→            </div>
+   619→          </div>
+   620→        ))}
+   621→      </div>
+   622→
+   623→      <div className="mt-3 text-[12.5px] text-steel">
+   624→        {seasons.leader
+   625→          ? `${seasons.scores.find((s) => s.founder === seasons.leader)?.fullName ?? seasons.leader} leads the week by ${fmtUsd(seasons.headToHeadCents)} of defended margin — credited through tenant ownership, recomputed from the ledger every poll.`
+   626→          : 'No margin defended yet this week — the season starts with the first defense.'}
+   627→      </div>
+   628→
+   629→      {seasons.history.length > 0 && (
+   630→        <div className="mt-4 border-t border-hairline pt-3.5">
+   631→          <div className="mb-2 text-[11.5px] uppercase tracking-wide text-smoke">Recent weeks</div>
+   632→          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+   633→            {seasons.history.slice().reverse().map((w) => (
+   634→              <div key={w.weekStart} className="rounded-xl bg-paper px-3 py-2">
+   635→                <div className="text-[11px] tabular-nums text-smoke">wk of {w.weekStart.slice(5)}</div>
+   636→                <div className={`mt-0.5 text-[12.5px] font-medium ${w.winner ? 'text-ink' : 'text-smoke'}`}>
+   637→                  {w.winner ? `${w.winner} · ${fmtUsd(w.winnerCents)}` : 'no defenses'}
+   638→                </div>
+   639→              </div>
+   640→            ))}
+   641→          </div>
+   642→        </div>
+   643→      )}
+   644→    </div>
+   645→  );
+   646→}
+   647→
+   648→export function ArenaPanel({
+   649→  ledger, currentUser, seasons, onUpdateTarget, onClose,
+   650→}: {
+   651→  ledger: LedgerView; currentUser: string; seasons: SeasonsView | null; onUpdateTarget: (id: string, next: number) => void; onClose: () => void;
+   652→}) {
+   653→  return (
+   654→    <PanelShell
+   655→      onClose={onClose}
+   656→      tag={
+   657→        <BlushChip className="mb-2">
+   658→          <Flame className="h-3.5 w-3.5" strokeWidth={1.75} />
+   659→          The arena · Damon vs. Josias founder leaderboard
+   660→        </BlushChip>
+   661→      }
+   662→      title={<>Outbound & conversion <em className="italic">targets</em></>}
+   663→    >
+   664→      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+   665→        {ledger.team.map((m) => (
+   666→          <TeamCard
+   667→            key={m.id}
+   668→            initial={m.fullName.charAt(0)}
+   669→            tone={m.tone}
+   670→            name={m.fullName}
+   671→            role={m.role}
+   672→            isOnline={m.isOnline}
+   673→            target={m.qOutboundTarget}
+   674→            completed={m.qOutboundCompleted}
+   675→            discovery={m.discoveryCalls}
+   676→            auditsClosed={m.auditsClosed}
+   677→            contracts={m.contractsConverted}
+   678→            isCurrentUser={m.name === currentUser}
+   679→            onTargetChange={(next) => onUpdateTarget(m.id, next)}
+   680→          />
+   681→        ))}
+   682→      </div>
+   683→
+   684→      {seasons && <SeasonStrip seasons={seasons} />}
+   685→
+   686→      <div className="mt-6 border-t border-hairline pt-5">
+   687→        <h4 className="text-[14px] font-medium text-steel">Live client progression pipeline</h4>
+   688→        <div className="mt-3 space-y-2">
+   689→          {ledger.pipeline.map((row) => (
+   690→            <div
+   691→              key={row.client}
+   692→              className="flex flex-col gap-1.5 rounded-2xl bg-fog px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+   693→            >
+   694→              <span className="text-[14px] font-medium text-ink">{row.client}</span>
+   695→              <span className="text-[13px] text-steel">{row.stage}</span>
+   696→              <span className="text-[13px] text-smoke">Owner · {row.owner}</span>
+   697→              <QuietChip>{row.value}</QuietChip>
+   698→            </div>
+   699→          ))}
+   700→        </div>
+   701→      </div>
+   702→    </PanelShell>
+   703→  );
+   704→}
+   705→
+   706→export function MarginPanel({ ledger, onClose }: { ledger: LedgerView; onClose: () => void }) {
+   707→  return (
+   708→    <PanelShell
+   709→      onClose={onClose}
+   710→      tag={<div className="text-[14px] text-ash">Live client stream</div>}
+   711→      title={<>Real-time margins defended <em className="italic">directory</em></>}
+   712→    >
+   713→      <div className="space-y-3">
+   714→        {ledger.clients.map((c) => (
+   715→          <React.Fragment key={c.name}>
+   716→            <div
+   717→              className="flex flex-col gap-3 rounded-2xl bg-fog p-4 md:flex-row md:items-center md:justify-between"
+   718→            >
+   719→            <div className="min-w-0">
+   720→              <div className="flex flex-wrap items-center gap-2">
+   721→                <span className="text-[14.5px] font-medium text-ink">{c.name}</span>
+   722→                <QuietChip>{c.erp}</QuietChip>
+   723→                <span
+   724→                  className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11.5px] font-medium ${
+   725→                    c.paymentStatus === 'PAID'
+   726→                      ? 'bg-blush text-sienna'
+   727→                      : c.paymentStatus === 'PENDING'
+   728→                        ? 'bg-mist text-steel'
+   729→                        : 'bg-ink text-paper'
+   730→                  }`}
+   731→                >
+   732→                  {c.paymentStatus}
+   733→                </span>
+   734→              </div>
+   735→              <div className="mt-1 text-[12.5px] text-steel">
+   736→                Primary vector: <span className="text-ink">{c.leakageVector || 'Baseline mapped'}</span>
+   737→              </div>
+   738→            </div>
+   739→
+   740→            <div className="flex flex-wrap items-center gap-5">
+   741→              <div>
+   742→                <div className="text-[11px] text-smoke">24-hour delta</div>
+   743→                <div className="text-[13.5px] font-medium tabular-nums text-sienna">
+   744→                  +{fmtUsd(c.last24hDeltaCents)}
+   745→                </div>
+   746→              </div>
+   747→              <div>
+   748→                <div className="text-[11px] text-smoke">Total defended</div>
+   749→                <div className="text-[17px] font-medium tabular-nums text-ink">{fmtUsd(c.totalDefendedCents)}</div>
+   750→              </div>
+   751→              <a
+   752→                href={`/portal?tenant=${encodeURIComponent(c.name)}`}
+   753→                target="_blank"
+   754→                rel="noreferrer"
+   755→                className="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-[12.5px] font-medium text-paper transition-colors hover:bg-[#33363b]"
+   756→              >
+   757→                Open enclave
+   758→                <ArrowUpRight className="h-3.5 w-3.5" strokeWidth={1.75} />
+   759→              </a>
+   760→            </div>
+   761→          </div>
+   762→
+   763→            <ReceiptsDisclosure tenant={c.name} metric="defended" label="Show the work — ledger rows behind these figures" />
+   764→          </React.Fragment>
+   765→        ))}
+   766→      </div>
+   767→    </PanelShell>
+   768→  );
+   769→}
+   770→
+   771→const HORIZONS = ['monthly', 'annual', 'lifetime'] as const;
+   772→
+   773→export function RevsharePanel({ ledger, onClose }: { ledger: LedgerView; onClose: () => void }) {
+   774→  const [horizon, setHorizon] = useState<(typeof HORIZONS)[number]>('monthly');
+   775→  return (
+   776→    <PanelShell
+   777→      onClose={onClose}
+   778→      tag={<div className="text-[14px] text-ash">Financial horizons & 20% rev-share</div>}
+   779→      title={<>Syntropic revenue <em className="italic">velocity</em></>}
+   780→    >
+   781→      <div className="flex flex-wrap items-center justify-between gap-3">
+   782→        <p className="max-w-xl text-[15px] leading-relaxed text-steel">
+   783→          20% of every defended margin, computed server-side from the ledger. Horizons are derived from entry
+   784→          timestamps — the monthly window counts the trailing 30 days, so it diverges from lifetime as the ledger ages.
+   785→        </p>
+   786→        <div className="inline-flex rounded-full border border-hairline bg-fog p-1">
+   787→          {HORIZONS.map((h) => (
+   788→            <button
+   789→              key={h}
+   790→              onClick={() => setHorizon(h)}
+   791→              aria-pressed={horizon === h}
+   792→              className={`rounded-full px-3.5 py-1.5 text-[12.5px] font-medium capitalize transition-colors ${
+   793→                horizon === h ? 'bg-ink text-paper' : 'text-steel hover:text-ink'
+   794→              }`}
+   795→            >
+   796→              {h}
+   797→            </button>
+   798→          ))}
+   799→        </div>
+   800→      </div>
+   801→
+   802→      <div className="mt-4 space-y-2">
+   803→        {ledger.clients.map((c) => {
+   804→          const value =
+   805→            horizon === 'monthly' ? c.monthlyRevShareCents : horizon === 'annual' ? c.annualRevShareCents : c.lifetimeRevShareCents;
+   806→          return (
+   807→            <div
+   808→              key={c.name}
+   809→              className="flex flex-col gap-2 rounded-2xl bg-fog px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between"
+   810→            >
+   811→              <div>
+   812→                <div className="text-[14px] font-medium text-ink">{c.name}</div>
+   813→                <div className="mt-0.5 text-[12.5px] text-steel">
+   814→                  Payment status:{' '}
+   815→                  <span className={`font-medium ${c.paymentStatus === 'PAID' ? 'text-sienna' : 'text-steel'}`}>
+   816→                    {c.paymentStatus}
+   817→                  </span>
+   818→                </div>
+   819→              </div>
+   820→              <div className="text-left sm:text-right">
+   821→                <div className="text-[11px] uppercase tracking-wide text-smoke">{horizon} 20% cut</div>
+   822→                <div className="text-[18px] font-medium tabular-nums text-ink">{fmtUsd(value)}</div>
+   823→              </div>
+   824→            </div>
+   825→          );
+   826→        })}
+   827→      </div>
+   828→
+   829→      <div className="mt-4 space-y-1">
+   830→        {ledger.clients.map((c) => (
+   831→          <div key={c.name} className="rounded-2xl bg-fog px-4 py-3">
+   832→            <ReceiptsDisclosure tenant={c.name} metric="revshare" label={`Show the work — ${c.name}'s cut, row by row`} />
+   833→          </div>
+   834→        ))}
+   835→      </div>
+   836→
+   837→      <div className="mt-3 rounded-2xl bg-fog px-4 py-3">
+   838→        <ReceiptsDisclosure tenant={null} metric="revshare" label="Show the work — the whole book behind the 20% headline" />
+   839→      </div>
+   840→
+   841→      <StatTrio
+   842→        rows={[
+   843→          ['Setup fee', fmtUsd(ledger.setupFeeCents)],
+   844→          ['Rev-share', `${Math.round(ledger.revShareRate * 100)}% net margin`],
+   845→          ['Projected MRR pipeline', fmtUsd(ledger.projectedMrrCents)],
+   846→        ]}
+   847→      />
+   848→    </PanelShell>
+   849→  );
+   850→}
+   851→
+   852→export function GuaranteePanel({ ledger, onClose }: { ledger: LedgerView; onClose: () => void }) {
+   853→  return (
+   854→    <PanelShell
+   855→      onClose={onClose}
+   856→      tag={<div className="text-[14px] text-ash">Audit guarantee vault</div>}
+   857→      title={<>Audit sales & conversion <em className="italic">history</em></>}
+   858→    >
+   859→      <div className="space-y-3">
+   860→        {ledger.audits.map((a) => (
+   861→          <div key={a.id} className="space-y-3 rounded-2xl bg-fog p-4">
+   862→            <div className="flex flex-wrap items-start justify-between gap-2">
+   863→              <div>
+   864→                <div className="text-[14.5px] font-medium text-ink">{a.companyName}</div>
+   865→                <div className="mt-0.5 text-[12.5px] text-steel">
+   866→                  Date sold: {a.dateSold} · Fee: {fmtUsd(a.auditFeeCents)}
+   867→                </div>
+   868→              </div>
+   869→              <span
+   870→                className={`inline-flex items-center rounded-full px-3 py-1 text-[11.5px] font-medium ${
+   871→                  a.convertedToClient ? 'bg-blush text-sienna' : 'bg-mist text-steel'
+   872→                }`}
+   873→              >
+   874→                {a.convertedToClient ? 'Converted ($50k executed)' : 'Pending conversion'}
+   875→              </span>
+   876→            </div>
+   877→
+   878→            <div className="space-y-1.5 rounded-xl bg-paper p-3.5 text-[12.5px]">
+   879→              <div className="flex justify-between">
+   880→                <span className="text-smoke">Briefing call host</span>
+   881→                <span className="font-medium text-ink">{a.callHost}</span>
+   882→              </div>
+   883→              <div className="flex justify-between">
+   884→                <span className="text-smoke">Attended call</span>
+   885→                <span className={`font-medium ${a.attendedCall ? 'text-sienna' : 'text-steel'}`}>
+   886→                  {a.attendedCall ? 'Yes (attended)' : 'No (missed session)'}
+   887→                </span>
+   888→              </div>
+   889→              <div className="flex justify-between">
+   890→                <span className="text-smoke">Identified profit leakage</span>
+   891→                <span className="font-medium tabular-nums text-ink">{fmtUsd(a.identifiedLeakageCents)}</span>
+   892→              </div>
+   893→            </div>
+   894→
+   895→            <p className="border-t border-hairline pt-2.5 text-[13px] italic leading-relaxed text-steel">
+   896→              “{a.callNotes}”
+   897→            </p>
+   898→          </div>
+   899→        ))}
+   900→      </div>
+   901→
+   902→      <div className="mt-5 border-t border-hairline pt-4">
+   903→        <StatTrio
+   904→          rows={[
+   905→            ['Diagnostic audit', fmtUsd(ledger.audits[0]?.auditFeeCents ?? 350_000)],
+   906→            ['Guaranteed recovery floor', '$10,000'],
+   907→            ['Guarantee pass rate', `${Math.round(ledger.guaranteePassRate * 100)}%`],
+   908→          ]}
+   909→        />
+   910→      </div>
+   911→    </PanelShell>
+   912→  );
+   913→}
+   914→
