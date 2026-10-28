@@ -49,3 +49,31 @@ class CASLViolation(DispatchError):
     """Attempted dispatch that would breach Canadian CASL policy."""
 
     retryable = False
+
+
+class ProfilerError(VertebraError):
+    """ERP / competitor tech-stack profiling failure (Module 5)."""
+
+    retryable = True
+
+
+class AuditPreviewError(VertebraError):
+    """Audit screenshot capture, widget composition or asset upload failure (Module 6)."""
+
+    retryable = True
+
+
+class SpatialError(VertebraError):
+    """Spatial clustering or proximity-hook failure (Module 7)."""
+
+
+class TelemetryError(VertebraError):
+    """Telemetry ingestion or alert fan-out failure (Module 8)."""
+
+    retryable = True
+
+
+class ReplyAgentError(VertebraError):
+    """Inbound-reply classification or autonomous action failure (Module 9)."""
+
+    retryable = True

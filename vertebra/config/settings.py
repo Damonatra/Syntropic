@@ -154,6 +154,96 @@ class CaslSettings(BaseModel):
     unsubscribe_sla_days: int = Field(default=10, ge=1, le=30)
 
 
+class ErpProfilerSettings(BaseModel):
+    """Module 5 — ERP & competitor tech-stack profiling policy."""
+
+    crawl_paths: list[str] = Field(
+        default_factory=lambda: [
+            "/", "/rfq", "/request-a-quote", "/request-quote", "/quote",
+            "/contact", "/contact-us", "/products", "/catalog", "/about",
+        ]
+    )
+    page_fetch_max_bytes: int = Field(default=400_000, ge=10_000, le=5_000_000)
+    scan_job_boards: bool = Field(default=True, description="Scan Greenhouse/Lever/Ashby for ERP keywords")
+    job_board_timeout_sec: float = Field(default=12.0, gt=0, le=60)
+    # Minimum evidence score before an ERP name is asserted on the record.
+    detection_confidence_floor: float = Field(default=0.9, ge=0.0, le=2.0)
+    sync_qdrant_payload: bool = Field(default=True, description="Mirror ERP fields onto the Qdrant point")
+
+
+class AuditPreviewSettings(BaseModel):
+    """Module 6 — screenshot capture + audit asset storage policy."""
+
+    viewport_width: int = Field(default=1440, ge=320, le=7680)
+    viewport_height: int = Field(default=900, ge=240, le=4320)
+    device_scale_factor: int = Field(default=2, ge=1, le=4)
+    navigation_timeout_ms: int = Field(default=30_000, ge=1_000, le=120_000)
+    storage_backend: Literal["local", "s3"] = "local"
+    s3_bucket: str | None = None
+    s3_region: str | None = None
+    s3_endpoint_url: str | None = None          # R2 / MinIO compatible endpoint
+    aws_access_key_id: str | None = None
+    aws_secret_access_key: SecretStr | None = None
+    cdn_base_url: str | None = Field(default=None, description="Public CDN serving the assets")
+    local_dir: str = Field(default="/var/lib/vertebra/audit-previews")
+    portal_base_url: str = Field(default="https://syntropic-os.com")
+
+    @property
+    def asset_public_base_url(self) -> str:
+        """Base URL under which stored asset keys resolve publicly."""
+        return (self.cdn_base_url or f"{self.portal_base_url}/assets").rstrip("/")
+
+
+class SpatialSettings(BaseModel):
+    """Module 7 — spatial proximity clustering policy."""
+
+    eps_meters: int = Field(
+        default=80_000, ge=1_000, le=1_000_000, description="DBSCAN neighbourhood radius"
+    )
+    min_points: int = Field(default=3, ge=1, le=50, description="DBSCAN core-point threshold")
+    seed_attach_km: int = Field(
+        default=150, ge=10, le=1_000, description="Max distance to adopt a named seed cluster"
+    )
+    max_assign_km: int = Field(
+        default=250, ge=10, le=2_000, description="Max distance for meeting→cluster assignment"
+    )
+    notify_on_meeting_proximity: bool = True
+
+
+class TelemetrySettings(BaseModel):
+    """Module 8 — visitor telemetry + high-intent alert fan-out."""
+
+    tracking_hmac_secret: SecretStr = Field(
+        description="HMAC secret for signed ?lid= tracking tokens (>= 16 chars)"
+    )
+    hot_prospect_score: int = Field(
+        default=85, ge=1, le=100, description="QLV score that qualifies a prospect as hot"
+    )
+    hot_intent_heat: int = Field(
+        default=40, ge=1, le=100, description="Live intent heat needed to page the operator"
+    )
+    alert_cooldown_minutes: int = Field(default=30, ge=1, le=1_440)
+    telegram_bot_token: SecretStr | None = None
+    telegram_chat_id: str | None = None
+    slack_webhook_url: str | None = None
+    alert_webhook_url: str | None = None
+
+    @field_validator("tracking_hmac_secret")
+    @classmethod
+    def _require_real_secret(cls, value: SecretStr) -> SecretStr:
+        if len(value.get_secret_value()) < 16:
+            raise ValueError("telemetry.tracking_hmac_secret must be at least 16 characters")
+        return value
+
+
+class ReplyAgentSettings(BaseModel):
+    """Module 9 — autonomous closed-loop follow-up policy."""
+
+    draft_max_words: int = Field(default=150, ge=40, le=400)
+    ooo_buffer_hours: int = Field(default=2, ge=0, le=48, description="Grace added after an OOO return date")
+    process_pending_limit: int = Field(default=25, ge=1, le=200)
+
+
 class DispatchPolicySettings(BaseModel):
     """Routing thresholds between Channel A and Channel B."""
 
@@ -195,6 +285,13 @@ class Settings(BaseSettings):
     scraping: ScrapingSettings = ScrapingSettings()
     casl: CaslSettings = CaslSettings()
     policy: DispatchPolicySettings = DispatchPolicySettings()
+
+    # -- advanced tactical modules (5-9) -------------------------------------
+    erp_profiler: ErpProfilerSettings = ErpProfilerSettings()
+    audit_preview: AuditPreviewSettings = AuditPreviewSettings()
+    spatial: SpatialSettings = SpatialSettings()
+    telemetry: TelemetrySettings
+    reply_agent: ReplyAgentSettings = ReplyAgentSettings()
 
 
 @lru_cache(maxsize=1)

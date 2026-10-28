@@ -28,6 +28,7 @@ os.environ.setdefault("VERTEBRA_DATABASE__DSN", "postgresql://u:p@localhost:5432
 os.environ.setdefault("VERTEBRA_QDRANT__URL", "http://localhost:6333")
 os.environ.setdefault("VERTEBRA_ANTHROPIC__API_KEY", "sk-ant-harness-not-a-real-key")
 os.environ.setdefault("VERTEBRA_CALENDAR__SERVICE_ACCOUNT_FILE", "/tmp/harness-sa.json")
+os.environ.setdefault("VERTEBRA_TELEMETRY__TRACKING_HMAC_SECRET", "harness-secret-0123456789abcdef")
 os.environ.setdefault("VERTEBRA_LOG_LEVEL", "WARNING")
 os.environ.setdefault("VERTEBRA_LOG_JSON", "false")
 

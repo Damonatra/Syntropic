@@ -244,3 +244,21 @@ class FirmographicIndex:
         """Lookalikes for one prospect, excluding itself."""
         neighbours = await self.search_similar(vector, top_k=top_k + 1)
         return [n for n in neighbours if n.prospect_id != exclude_prospect_id][:top_k]
+
+    # ------------------------------------------------------------------ patch
+    async def patch_payload(self, prospect_id: str, payload: dict[str, Any]) -> None:
+        """Merge payload fields onto an existing prospect point (Module 5).
+
+        Best-effort by design: a Qdrant outage must never fail the enriching
+        pipeline, so failures are logged and swallowed after a single attempt.
+        """
+        try:
+            await self._qdrant().set_payload(
+                collection_name=self._settings.collection,
+                payload=payload,
+                points=[prospect_id],
+                wait=True,
+            )
+            log.info("qdrant_payload_patched", prospect_id=prospect_id, fields=sorted(payload))
+        except Exception as exc:  # noqa: BLE001 - vector metadata is non-critical
+            log.warning("qdrant_payload_patch_failed", prospect_id=prospect_id, error=str(exc))

@@ -163,3 +163,137 @@ CREATE TABLE IF NOT EXISTS high_touch_queue (
 );
 
 CREATE INDEX IF NOT EXISTS high_touch_export_idx ON high_touch_queue (exported_at);
+
+-- ============================================================================ --
+--  MODULES 5-9 — advanced tactical extensions
+-- ============================================================================ --
+
+-- PostGIS is optional: every spatial query in vertebra.spatial.clustering has
+-- a deterministic haversine fallback, so a missing extension degrades gently.
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS postgis;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'postgis unavailable — spatial module runs in haversine fallback mode';
+END $$;
+
+-- Contacts gain a direct line for the Module 8 high-intent alert template.
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS phone TEXT;
+
+-- ---------------------------------------------------- Module 5: ERP metadata
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS erp_metadata      JSONB;
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS quote_portal_type TEXT;
+
+-- ------------------------------------------- Module 6: audit preview asset --
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS audit_image_url TEXT;
+
+-- ------------------------------------ Module 7: geocoding + cluster binding --
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS latitude  DOUBLE PRECISION;
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
+
+CREATE TABLE IF NOT EXISTS lead_clusters (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    cluster_key    TEXT NOT NULL UNIQUE,
+    cluster_name   TEXT NOT NULL,
+    anchor_city    TEXT,
+    anchor_country TEXT,
+    centroid_lat   DOUBLE PRECISION NOT NULL,
+    centroid_lng   DOUBLE PRECISION NOT NULL,
+    radius_m       INTEGER NOT NULL DEFAULT 0,
+    density_count  INTEGER NOT NULL DEFAULT 0,
+    vertical_focus TEXT,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+DO $$
+BEGIN
+    ALTER TABLE lead_clusters ADD COLUMN IF NOT EXISTS centroid_geog geography(Point, 4326);
+    CREATE INDEX IF NOT EXISTS lead_clusters_geog_idx ON lead_clusters USING GIST (centroid_geog);
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'lead_clusters geography column skipped (postgis unavailable)';
+END $$;
+
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS cluster_id UUID REFERENCES lead_clusters(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS prospects_cluster_idx ON prospects (cluster_id);
+CREATE INDEX IF NOT EXISTS prospects_geo_idx     ON prospects (latitude, longitude)
+    WHERE latitude IS NOT NULL AND longitude IS NOT NULL;
+CREATE INDEX IF NOT EXISTS prospects_portal_idx  ON prospects (quote_portal_type)
+    WHERE quote_portal_type IS NOT NULL;
+
+-- ------------------------------------------------- Module 8: visitor telemetry
+CREATE TABLE IF NOT EXISTS telemetry_events (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    prospect_id  UUID REFERENCES prospects(id) ON DELETE SET NULL,
+    session_id   TEXT NOT NULL,
+    event_type   TEXT NOT NULL,
+    url          TEXT,
+    referrer     TEXT,
+    city         TEXT,
+    country      TEXT,
+    latitude     DOUBLE PRECISION,
+    longitude    DOUBLE PRECISION,
+    user_agent   TEXT,
+    device       TEXT,
+    duration_ms  INTEGER,
+    payload      JSONB NOT NULL DEFAULT '{}'::jsonb,
+    occurred_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS telemetry_prospect_idx ON telemetry_events (prospect_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS telemetry_session_idx  ON telemetry_events (session_id);
+CREATE INDEX IF NOT EXISTS telemetry_type_idx     ON telemetry_events (event_type, occurred_at DESC);
+
+CREATE TABLE IF NOT EXISTS intent_alerts (
+    id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    prospect_id        UUID NOT NULL REFERENCES prospects(id) ON DELETE CASCADE,
+    title              TEXT NOT NULL,
+    body               TEXT NOT NULL,
+    dedupe_key         TEXT,
+    channels_attempted TEXT[] NOT NULL DEFAULT '{}',
+    channels_delivered TEXT[] NOT NULL DEFAULT '{}',
+    delivered          BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS intent_alerts_dedupe_idx  ON intent_alerts (dedupe_key, created_at DESC);
+CREATE INDEX IF NOT EXISTS intent_alerts_prospect_idx ON intent_alerts (prospect_id, created_at DESC);
+
+-- ------------------------------------------- Module 9: replies + agent drafts
+CREATE TABLE IF NOT EXISTS inbound_replies (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    prospect_id       UUID REFERENCES prospects(id) ON DELETE SET NULL,
+    message_id        TEXT,
+    from_email        TEXT NOT NULL,
+    subject           TEXT,
+    body              TEXT NOT NULL,
+    intent            TEXT NOT NULL DEFAULT 'unknown',
+    intent_confidence DOUBLE PRECISION,
+    rationale         TEXT,
+    extracted         JSONB,
+    processed_at      TIMESTAMPTZ,
+    received_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS inbound_replies_unprocessed_idx
+    ON inbound_replies (received_at) WHERE processed_at IS NULL;
+CREATE INDEX IF NOT EXISTS inbound_replies_prospect_idx
+    ON inbound_replies (prospect_id, received_at DESC);
+
+CREATE TABLE IF NOT EXISTS agent_drafts (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    reply_id      UUID NOT NULL REFERENCES inbound_replies(id) ON DELETE CASCADE,
+    prospect_id   UUID REFERENCES prospects(id) ON DELETE SET NULL,
+    intent        TEXT NOT NULL,
+    subject       TEXT NOT NULL,
+    body          TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'pending_human_review'
+                  CHECK (status IN ('pending_human_review','approved','sent','discarded')),
+    reviewer_note TEXT,
+    sent_at       TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS agent_drafts_status_idx ON agent_drafts (status, created_at);

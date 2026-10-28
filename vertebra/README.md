@@ -32,8 +32,13 @@ directories ──▶ ingestion ──▶ enrichment ──▶ ai.scorer ──�
 | `vertebra/ai` | Quote Leakage Vulnerability scorer (Claude 3.5 Sonnet tool-use; deterministic rubric fallback), hook authoring, LangGraph pipeline |
 | `vertebra/vector` | Qdrant firmographic kNN (64-dim deterministic embeddings, payload-indexed) |
 | `vertebra/dispatch` | Dual-channel router: A = rotating secondary domains via Resend/SMTP with warmup caps; B = Josias high-touch CSV + outbox + Google Calendar follow-ups |
+| `vertebra/enrichment/erp_profiler` | **Module 5** — ERP & competitor tech-stack profiler: domain crawl + HTTP headers + TLS metadata + Greenhouse/Lever/Ashby job-board scans → `erp_metadata` JSONB, quote-portal classification, ERP-specific pitch angle |
+| `vertebra/intelligence` | **Module 6** — audit preview generator: Playwright 2× screenshot of the RFQ page, achromatic leakage-widget overlay, S3/R2-or-local asset storage, public `audit_image_url` |
+| `vertebra/spatial` | **Module 7** — spatial clustering: deterministic haversine DBSCAN + PostGIS `ST_DWithin` proximity, seed tactical clusters (Gulf Coast, Chicago, Toronto, DFW, Great Lakes, Atlanta, SoCal, LAPPSET), localized meeting hooks |
+| `vertebra/telemetry` | **Module 8** — intent monitor: HMAC-signed `?lid=` tracking tokens, Vercel geo headers, rolling 14-day intent heat, 🚨 high-intent Telegram/Slack/webhook pager with cooldown |
+| `vertebra/ai/reply_agent` | **Module 9** — closed-loop follow-up: LangGraph + Claude 3.5 Sonnet intent classification (interested / OOO / info / not-interested / price / ERP objections), urgent calendar booking, human-review drafts, OOO rescheduling, sequence suppression |
 | `vertebra/workers` | asyncio scheduler (jittered intervals, per-job isolation, SKIP LOCKED claims) |
-| `vertebra/api` | FastAPI app factory + pipeline/system routes |
+| `vertebra/api` | FastAPI app factory + pipeline/system/tactical/telemetry routes |
 
 ## Scoring — Quote Leakage Vulnerability (1–100)
 
@@ -69,6 +74,9 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env         # fill every CHANGE_ME value
 
+# Module 6 headless browser (one-time per worker image)
+playwright install chromium
+
 # verify engine logic (no external services required)
 python ../scripts/verify_vertebra.py
 
@@ -88,6 +96,17 @@ uvicorn vertebra.api.main:create_app --factory --host 0.0.0.0 --port 8000
 | GET | `/pipeline/high-touch/export` | export Josias CSV queue |
 | GET | `/pipeline/stats` | live pipeline counters |
 | GET | `/pipeline/outbox` | outbox event log |
+| POST | `/tactical/erp-profile/{id}` | **M5** profile one prospect's ERP stack |
+| POST | `/tactical/erp-profile` | **M5** batch-profile unprofiled prospects |
+| POST | `/tactical/audit-preview/{id}` | **M6** screenshot + widget + CDN upload |
+| POST | `/tactical/audit-preview` | **M6** batch-generate previews |
+| POST | `/tactical/spatial/cluster` | **M7** refresh tactical clusters |
+| POST | `/tactical/spatial/regional-hook` | **M7** localized hook for a meeting coordinate |
+| POST | `/telemetry/visit` | **M8** record portal/audit visit (Vercel geo) |
+| POST | `/telemetry/event` | **M8** record downloads / pricing views |
+| GET | `/telemetry/sessions/{id}` | **M8** session rollup |
+| POST | `/tactical/inbound-email` | **M9** register + process an inbound reply |
+| POST | `/tactical/replies/process` | **M9** drain unprocessed replies |
 
 ## Operational guarantees
 

@@ -89,6 +89,105 @@ class CalendarSync:
         end = start.replace(hour=min(self._settings.work_end_hour, 23))
         return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
 
+    def _urgent_slot(self) -> tuple[datetime, datetime]:
+        """Same-day 30-minute slot ~90 minutes out, clamped to business hours."""
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo(self._settings.timezone)
+        start = datetime.now(tz=tz) + timedelta(minutes=90)
+        if start.hour < self._settings.work_start_hour:
+            start = start.replace(
+                hour=self._settings.work_start_hour, minute=0, second=0, microsecond=0
+            )
+        if start.weekday() >= 5 or start.hour >= self._settings.work_end_hour - 1:
+            start = (start + timedelta(days=1)).replace(
+                hour=self._settings.work_start_hour, minute=0, second=0, microsecond=0
+            )
+            while start.weekday() >= 5:
+                start += timedelta(days=1)
+        return start, start + timedelta(minutes=30)
+
+    # -------------------------------------------------------- urgent call slot
+    async def create_urgent_call_invite(
+        self,
+        *,
+        company_name: str,
+        contact_name: str,
+        prospect_id: str,
+        intent: str,
+        reply_excerpt: str = "",
+        qlv_score: int | None = None,
+        audit_image_url: str | None = None,
+    ) -> dict[str, str]:
+        """Book an urgent same-day call for an INTERESTED reply (Module 9).
+
+        Inserts directly into the Josias calendar with a Meet link and a
+        popup reminder at T-0. ``colorId`` 11 (red) is deliberate Google
+        Calendar urgency semantics for the operator — the Vertebra UI itself
+        stays strictly achromatic per DESIGN.md.
+        """
+        start, _end = self._urgent_slot()
+        score_line = f"QLV {qlv_score}/100" if qlv_score is not None else "QLV pending"
+        description_lines = [
+            "Vertebra closed-loop agent booked this call from an INTERESTED reply.",
+            "",
+            f"Company: {company_name}",
+            f"Contact: {contact_name}",
+            f"Score: {score_line}",
+            f"Detected intent: {intent}",
+            f"Prospect ID: {prospect_id}",
+        ]
+        if audit_image_url:
+            description_lines.append(f"Audit preview: {audit_image_url}")
+        if reply_excerpt:
+            description_lines += ["", "Reply excerpt:", reply_excerpt]
+
+        body: dict[str, Any] = {
+            "id": uuid.uuid5(uuid.NAMESPACE_URL, f"vertebra-urgent:{prospect_id}").hex,
+            "summary": f"URGENT CALL — {company_name} ({contact_name})",
+            "description": "\n".join(description_lines),
+            "start": {"dateTime": start.isoformat(), "timeZone": self._settings.timezone},
+            "end": {"dateTime": (start + timedelta(minutes=30)).isoformat(), "timeZone": self._settings.timezone},
+            "reminders": {"useDefault": False, "overrides": [{"method": "popup", "minutes": 0}]},
+            "conferenceData": {
+                "createRequest": {
+                    "requestId": uuid.uuid4().hex,
+                    "conferenceSolutionKey": {"type": "hangoutsMeet"},
+                }
+            },
+            "colorId": "11",
+            "transparency": "opaque",
+            "source": {"title": "Vertebra Reply Agent", "url": "https://syntropic-os.com"},
+        }
+
+        def _create() -> dict[str, Any]:
+            service = self._google_service()
+            return (
+                service.events()
+                .insert(
+                    calendarId=self._settings.calendar_id,
+                    body=body,
+                    conferenceDataVersion=1,
+                    sendUpdates="all",
+                )
+                .execute()
+            )
+
+        created = await asyncio.to_thread(_create)
+        event_id = str(created.get("id", body["id"]))
+        log.info(
+            "urgent_call_booked",
+            company=company_name,
+            contact=contact_name,
+            event_id=event_id,
+            start=start.isoformat(),
+        )
+        return {
+            "event_id": event_id,
+            "html_link": str(created.get("htmlLink", "")),
+            "start": str(created.get("start", {}).get("dateTime", start.isoformat())),
+        }
+
     # ------------------------------------------------------------------ build
     def _event_body(
         self,

@@ -25,6 +25,10 @@ dependencies = [
     "qdrant-client>=1.12",
     "google-api-python-client>=2.149",
     "google-auth>=2.35",
+    # -- advanced tactical modules (5-9) --------------------------------------
+    "playwright>=1.47",     # Module 6: headless audit screenshots
+    "Pillow>=10.4",         # Module 6: audit widget overlay composition
+    "boto3>=1.35",          # Module 6: S3/R2 asset storage
 ]
 
 [project.optional-dependencies]

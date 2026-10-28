@@ -29,6 +29,14 @@ model Prospect {
   revenueEstimateUsd Int?
   revenueConfidence  String   @default("unknown")
   detectedErp        String?
+  erpMetadata        String? // Module 5: full erp_metadata JSON document
+  quotePortalType    String? // Module 5: manual_mailto | static_pdf_form | legacy_portal | modern_quote_api | undetermined
+  auditImageUrl      String? // Module 6: public CDN link of the audit preview
+  latitude           Float? // Module 7: geocoded HQ/warehouse coordinates
+  longitude          Float?
+  clusterId          String? // Module 7: membership in a tactical cluster
+  cluster            LeadCluster? @relation(fields: [clusterId], references: [id], onDelete: SetNull)
+  lastIntentHeat     Int      @default(0) // Module 8: rolling 14-day intent heat
   rawExcerpt         String?
   ingestion          String   @default("pending") // pending | ingested | filtered | failed
   filterReason       String?
@@ -40,6 +48,9 @@ model Prospect {
   scores             Score[]
   dispatches         Dispatch[]
   highTouch          HighTouchQueueItem?
+  telemetryEvents    TelemetryEvent[]
+  intentAlerts       IntentAlert[]
+  inboundReplies     InboundReply[]
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -55,6 +66,7 @@ model Contact {
   lastName   String
   role       String   @default("unknown")
   titleRaw   String?
+  phone      String? // Module 8: direct line surfaced in high-intent alerts
   createdAt  DateTime @default(now())
 
   @@index([prospectId])
@@ -121,4 +133,98 @@ model HighTouchQueueItem {
   calendarEventId String?
   exportedAt      DateTime?
   createdAt       DateTime  @default(now())
+}
+
+// --------------------------------------------------------------------------
+// Modules 5-9 — advanced tactical extensions (mirror of migrations.sql)
+// --------------------------------------------------------------------------
+
+model LeadCluster {
+  id             String    @id @default(cuid())
+  clusterKey     String    @unique // deterministic hash for idempotent re-runs
+  clusterName    String
+  anchorCity     String?
+  anchorCountry  String?
+  centroidLat    Float
+  centroidLng    Float
+  radiusM        Int       @default(0)
+  densityCount   Int       @default(0)
+  verticalFocus  String?
+  prospects      Prospect[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model TelemetryEvent {
+  id          String             @id @default(cuid())
+  prospect    Prospect?          @relation(fields: [prospectId], references: [id], onDelete: SetNull)
+  prospectId  String?
+  sessionId   String
+  eventType   String // portal_visit | audit_view | document_download | pricing_view | session_end
+  url         String?
+  referrer    String?
+  city        String?
+  country     String?
+  latitude    Float?
+  longitude   Float?
+  userAgent   String?
+  device      String?
+  durationMs  Int?
+  payloadJson String?
+  occurredAt  DateTime           @default(now())
+
+  @@index([prospectId, occurredAt])
+  @@index([sessionId])
+}
+
+model IntentAlert {
+  id                String   @id @default(cuid())
+  prospect          Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  prospectId        String
+  title             String
+  body              String
+  dedupeKey         String?
+  channelsAttempted String   @default("[]")
+  channelsDelivered String   @default("[]")
+  delivered         Boolean  @default(false)
+  createdAt         DateTime @default(now())
+
+  @@index([dedupeKey, createdAt])
+  @@index([prospectId])
+}
+
+model InboundReply {
+  id               String       @id @default(cuid())
+  prospect         Prospect?    @relation(fields: [prospectId], references: [id], onDelete: SetNull)
+  prospectId       String?
+  messageId        String?
+  fromEmail        String
+  subject          String?
+  body             String
+  intent           String       @default("unknown") // interested | out_of_office | send_information | not_interested | objection_price | objection_erp | unknown
+  intentConfidence Float?
+  rationale        String?
+  extractedJson    String?
+  processedAt      DateTime?
+  receivedAt       DateTime     @default(now())
+  drafts           AgentDraft[]
+
+  @@index([processedAt])
+  @@index([prospectId])
+}
+
+model AgentDraft {
+  id           String       @id @default(cuid())
+  reply        InboundReply @relation(fields: [replyId], references: [id], onDelete: Cascade)
+  replyId      String
+  prospectId   String?
+  intent       String
+  subject      String
+  body         String
+  status       String       @default("pending_human_review") // pending_human_review | approved | sent | discarded
+  reviewerNote String?
+  sentAt       DateTime?
+  createdAt    DateTime     @default(now())
+
+  @@index([status])
 }

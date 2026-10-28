@@ -250,3 +250,124 @@ async def list_outbox(
             for r in rows
         ]
     }
+
+
+# --------------------------------------------------------------------------- #
+# Advanced tactical modules (5-9) — operational endpoints
+# --------------------------------------------------------------------------- #
+
+tactical_router = APIRouter(prefix="/tactical", tags=["tactical"])
+
+
+@tactical_router.post("/erp-profile/{prospect_id}")
+async def profile_prospect_erp(request: Request, prospect_id: str) -> dict[str, Any]:
+    """Module 5 — classify one prospect's ERP stack and persist erp_metadata."""
+    profiler = request.app.state.erp_profiler
+    try:
+        metadata = await profiler.profile_prospect(prospect_id)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"erp profiling failed: {exc}") from exc
+    if metadata is None:
+        raise HTTPException(status_code=422, detail="prospect has no domain to profile")
+    return metadata.model_dump(mode="json")
+
+
+@tactical_router.post("/erp-profile")
+async def profile_erp_batch(request: Request, body: IngestRequest) -> dict[str, Any]:
+    """Module 5 — batch-profile every prospect missing erp_metadata."""
+    profiler = request.app.state.erp_profiler
+    results = await profiler.profile_unprofiled(limit=body.limit)
+    return {"requested": len(results), "profiled": sum(1 for r in results if r is not None)}
+
+
+@tactical_router.post("/audit-preview/{prospect_id}")
+async def generate_audit_preview(request: Request, prospect_id: str) -> dict[str, Any]:
+    """Module 6 — capture, overlay the leakage widget and publish the asset."""
+    generator = request.app.state.audit_preview
+    try:
+        preview = await generator.generate(prospect_id)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"audit preview failed: {exc}") from exc
+    return preview.model_dump(mode="json")
+
+
+@tactical_router.post("/audit-preview")
+async def generate_audit_batch(request: Request, body: IngestRequest) -> dict[str, Any]:
+    """Module 6 — batch-generate previews for top unscreenshotted prospects."""
+    generator = request.app.state.audit_preview
+    done = await generator.generate_batch(limit=body.limit)
+    return {"generated": len(done), "prospect_ids": done}
+
+
+class ClusterRequest(BaseModel):
+    eps_meters: int | None = Field(default=None, ge=1_000, le=1_000_000)
+    min_points: int | None = Field(default=None, ge=1, le=50)
+
+
+@tactical_router.post("/spatial/cluster")
+async def run_spatial_clustering(request: Request, body: ClusterRequest) -> dict[str, Any]:
+    """Module 7 — DBSCAN the geocoded base and refresh tactical clusters."""
+    clusterer = request.app.state.spatial
+    clusters = await clusterer.cluster_prospects(
+        eps_meters=body.eps_meters, min_points=body.min_points
+    )
+    return {"clusters": [c.model_dump() for c in clusters]}
+
+
+class RegionalHookRequest(BaseModel):
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    meeting_id: str | None = None
+    prospect_id: str | None = None
+    contact_first_name: str | None = None
+    company_name: str | None = None
+    vertical: Literal["pvf", "electrical", "hvac", "fluid_power"] | None = None
+
+
+@tactical_router.post("/spatial/regional-hook")
+async def build_regional_hook(request: Request, body: RegionalHookRequest) -> dict[str, Any]:
+    """Module 7 — localized hook when a meeting lands inside a cluster."""
+    from vertebra.models.domain import MeetingContext
+
+    clusterer = request.app.state.spatial
+    meeting = MeetingContext(**body.model_dump())
+    hook = await clusterer.regional_hook_for_meeting(meeting)
+    return hook.model_dump() if hook else {"hook": None, "reason": "outside known clusters"}
+
+
+class InboundEmailRequest(BaseModel):
+    """An inbound prospect reply handed over by the mailbox webhook."""
+
+    from_email: str = Field(description="Reply-From address")
+    subject: str | None = None
+    body: str = Field(min_length=1, max_length=20_000)
+    message_id: str | None = None
+
+
+@tactical_router.post("/inbound-email")
+async def receive_inbound_email(request: Request, body: InboundEmailRequest) -> dict[str, Any]:
+    """Module 9 — closed loop: register the reply and run the agent on it."""
+    agent = request.app.state.reply_agent
+    try:
+        reply_id = await agent.register_inbound(
+            from_email=body.from_email,
+            subject=body.subject,
+            body=body.body,
+            message_id=body.message_id,
+        )
+        decision = await agent.process_reply(reply_id)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"reply agent failed: {exc}") from exc
+    return {"reply_id": reply_id, "decision": decision.model_dump(mode="json")}
+
+
+class ProcessRepliesRequest(BaseModel):
+    limit: int = Field(default=25, ge=1, le=200)
+
+
+@tactical_router.post("/replies/process")
+async def process_pending_replies(request: Request, body: ProcessRepliesRequest) -> dict[str, Any]:
+    """Module 9 — drain every unprocessed inbound reply."""
+    agent = request.app.state.reply_agent
+    decisions = await agent.process_pending(limit=body.limit)
+    return {"processed": len(decisions), "decisions": [d.model_dump(mode="json") for d in decisions]}
