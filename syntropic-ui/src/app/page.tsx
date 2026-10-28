@@ -359,7 +359,13 @@ export default function Home() {
             <span>RFQ AUDIT WORKSTATION</span>
           </div>
         </div>
-        <div className="topbar-status">
+        <div className="topbar-status flex items-center gap-4">
+          <a
+            href="/dashboard"
+            className="text-xs text-[#777b86] hover:text-[#17191c] underline underline-offset-2 mr-2"
+          >
+            Telemetry &amp; ROI →
+          </a>
           <span className={`status-dot ${isAuthenticated ? "online" : ""}`} />
           {isAuthenticated ? "API connected" : "Authentication required"}
         </div>
