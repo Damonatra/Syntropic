@@ -36,13 +36,15 @@ export const INTENT_LABELS: Record<ReplyIntent, string> = {
 // Leakage math (Module 6 audit widget)
 // --------------------------------------------------------------------------- //
 
-export const NET_MARGIN_ASSUMPTION = 0.21;
-export const EXPOSURE_CEILING = 0.35;
+import { auditLeakage, LEAKAGE_MODEL } from "./leakage";
+
+export { LEAKAGE_MODEL } from "./leakage";
+export const NET_MARGIN_ASSUMPTION = LEAKAGE_MODEL.netMarginAssumption;
+export const EXPOSURE_CEILING = LEAKAGE_MODEL.exposureCeiling;
 
 /** Estimated annual net-profit leakage: revenue × net margin × exposure curve. */
 export function annualLeakageUsd(revenueUsd: number | null, qlvScore: number | null): number | null {
-  if (!revenueUsd || qlvScore == null) return null;
-  return Math.round(revenueUsd * NET_MARGIN_ASSUMPTION * (qlvScore / 100) * EXPOSURE_CEILING);
+  return auditLeakage(revenueUsd, qlvScore)?.annual ?? null;
 }
 
 // --------------------------------------------------------------------------- #

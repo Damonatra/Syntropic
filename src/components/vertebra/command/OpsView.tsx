@@ -2,8 +2,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Chip, ErpBadge, LiveDot, SectionLabel, SoftCard } from "./bits";
+import { Chip, ErpBadge, LiveDot, PillButton, SectionLabel, SoftCard } from "./bits";
 import type { CommandSnapshot } from "@/lib/vertebra/command";
+
+interface TickResult {
+  ok: boolean;
+  due: number;
+  sent: number;
+  stopped: number;
+  deferred: number;
+  failed: number;
+  provider: string;
+  details: Array<{ prospect: string; outcome: string; note?: string }>;
+}
 
 /** Live compute telemetry — jitters inside calibrated bands. */
 function useHudTelemetry() {
@@ -44,6 +55,23 @@ function HudBar({ label, value, display, unit = "%" }: { label: string; value: n
 export function OpsView({ snap }: { snap: CommandSnapshot }) {
   const hud = useHudTelemetry();
   const warn = snap.ops.modules.filter((m) => m.status !== "ok").length;
+  const [tick, setTick] = useState<TickResult | null>(null);
+  const [ticking, setTicking] = useState(false);
+  const [tickError, setTickError] = useState<string | null>(null);
+
+  const runTick = async () => {
+    setTicking(true);
+    setTickError(null);
+    try {
+      const res = await fetch("/api/ops/tick", { method: "POST", headers: { "Content-Type": "application/json" } });
+      const data = (await res.json()) as TickResult & { error?: string };
+      if (!res.ok || data.error) setTickError(data.error ?? `server_${res.status}`);
+      else setTick(data);
+    } catch {
+      setTickError("network_error");
+    }
+    setTicking(false);
+  };
 
   const erpCounts = snap.leads.reduce<Record<string, number>>((acc, l) => {
     const erp = l.erp?.detected_erp;
@@ -93,6 +121,50 @@ export function OpsView({ snap }: { snap: CommandSnapshot }) {
         ))}
       </div>
 
+      {/* Sequence engine */}
+      <SoftCard className="mt-5 px-6 py-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <SectionLabel>Sequence engine — Module 4/9 loop closer</SectionLabel>
+            <p className="mt-1.5 text-[12.5px] leading-relaxed text-[#8E9194]">
+              Claims due Channel A dispatches, honors the suppression ledger, sends through the configured provider, backs off honestly when none is set.
+            </p>
+          </div>
+          <PillButton tone="dark" onClick={() => void runTick()} disabled={ticking}>
+            {ticking ? "Ticking…" : "Run tick"}
+          </PillButton>
+        </div>
+        {tickError && (
+          <p className="mt-3 font-mono text-[10.5px] uppercase tracking-[0.14em] text-[#FF8A7A]">tick failed: {tickError}</p>
+        )}
+        {tick && (
+          <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-white/[0.08] pt-3">
+            {(
+              [
+                ["due", tick.due],
+                ["sent", tick.sent],
+                ["stopped", tick.stopped],
+                ["deferred", tick.deferred],
+                ["failed", tick.failed],
+                ["provider", tick.provider],
+              ] as Array<[string, string | number]>
+            ).map(([k, v]) => (
+              <div key={k}>
+                <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#6E736E]">{k}</p>
+                <p className="font-mono text-[13px] tabular-nums text-[#F4F5F2]">{String(v)}</p>
+              </div>
+            ))}
+            {tick.details.slice(0, 4).map((d, i) => (
+              <Chip key={i} tone="outline">
+                {d.prospect} · {d.outcome}
+                {d.note ? ` · ${d.note}` : ""}
+              </Chip>
+            ))}
+          </div>
+        )}
+      </SoftCard>
+
+      {/* Module health */}
       <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         {snap.ops.modules.map((m) => (
           <SoftCard key={m.id} className="px-5 py-4">

@@ -68,6 +68,7 @@ model Contact {
   role       String   @default("unknown")
   titleRaw   String?
   phone      String? // Module 8: direct line surfaced in high-intent alerts
+  linkedinUrl String? // engine enrichment: contact LinkedIn profile
   createdAt  DateTime @default(now())
 
   @@index([prospectId])
@@ -180,16 +181,17 @@ model TelemetryEvent {
 }
 
 model IntentAlert {
-  id                String   @id @default(cuid())
-  prospect          Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  id                String    @id @default(cuid())
+  prospect          Prospect  @relation(fields: [prospectId], references: [id], onDelete: Cascade)
   prospectId        String
   title             String
   body              String
   dedupeKey         String?
-  channelsAttempted String   @default("[]")
-  channelsDelivered String   @default("[]")
-  delivered         Boolean  @default(false)
-  createdAt         DateTime @default(now())
+  channelsAttempted String    @default("[]")
+  channelsDelivered String    @default("[]")
+  delivered         Boolean   @default(false)
+  acknowledgedAt    DateTime? // operator saw it (toast displayed / acked)
+  createdAt         DateTime  @default(now())
 
   @@index([dedupeKey, createdAt])
   @@index([prospectId])
@@ -209,6 +211,7 @@ model InboundReply {
   extractedJson    String?
   processedAt      DateTime?
   receivedAt       DateTime     @default(now())
+  createdAt        DateTime     @default(now())
   drafts           AgentDraft[]
 
   @@index([processedAt])
@@ -241,4 +244,40 @@ model AgentDraft {
   createdAt    DateTime     @default(now())
 
   @@index([status])
+}
+
+// --------------------------------------------------------------------------
+// Loop-closure extensions — suppression, audit intake
+// --------------------------------------------------------------------------
+
+/// CASL / CAN-SPAM suppression ledger. Any address (or prospect) here is
+/// never emailed again; checked by the sequence ticker and the draft sender.
+model SuppressionRecord {
+  id         String   @id @default(cuid())
+  email      String   @unique
+  prospectId String?
+  reason     String   @default("unsubscribe") // unsubscribe | complaint | bounce | manual
+  source     String   @default("unsubscribe_link") // unsubscribe_link | operator | engine
+  createdAt  DateTime @default(now())
+
+  @@index([prospectId])
+}
+
+/// Real audit-dropzone intake: files parsed server-side by /api/audit/parse.
+/// Findings carry only what extraction actually recovered — never fabricated.
+model AuditDocument {
+  id           String   @id @default(cuid())
+  prospectId   String?
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+  sha256       String
+  pages        Int?
+  lineItems    Int?
+  extraction   String   @default("partial") // full_text | partial | header_only
+  findingsJson String?
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([sha256])
 }

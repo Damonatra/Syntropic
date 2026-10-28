@@ -14,6 +14,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { AUTO_SEND_INTENTS, type ReplyIntent, money } from "@/lib/vertebra/command";
+import { auditLeakage } from "@/lib/vertebra/leakage";
+import { keywordClassify } from "@/lib/vertebra/reply-intent";
+import { isSuppressed, mailProvider, sendEmail } from "@/lib/vertebra/mailer";
+import { guardWrite } from "@/lib/vertebra/guard";
 
 // --------------------------------------------------------------------------- //
 // Classification
@@ -46,30 +50,6 @@ const CLASSIFY_PROMPT = `You are the intent classifier and draft writer inside V
 For interested / objection_price / objection_erp, also draft a reply email (max 160 words) in the voice of Josias — direct, numbers-first, zero fluff, references the prospect's own quote-leakage audit numbers. For objection_erp, address the zero-coupling integration concern. For objection_price, answer with their own leakage math, never a discount.
 For out_of_office, extract the return_date (YYYY-MM-DD) if stated.
 Respond with strict JSON only: {"intent", "confidence", "rationale", "draft_subject", "draft_body", "return_date"}. Nulls allowed for draft fields and return_date.`;
-
-function keywordClassify(text: string): { intent: ReplyIntent; confidence: number; rationale: string } {
-  const blob = text.toLowerCase();
-  const has = (...words: string[]) => words.some((w) => blob.includes(w));
-  if (has("out of office", "automatic reply", "auto-reply", "away from the office", "on leave")) {
-    return { intent: "out_of_office", confidence: 0.85, rationale: "Keyword fallback: autoresponder phrasing detected." };
-  }
-  if (has("not interested", "take us off", "remove us", "unsubscribe", "stop contacting", "no thank you")) {
-    return { intent: "not_interested", confidence: 0.85, rationale: "Keyword fallback: explicit decline phrasing." };
-  }
-  if (has("send me", "send the", "one-pager", "more information", "pricing doc", "brochure", "circulate")) {
-    return { intent: "send_information", confidence: 0.8, rationale: "Keyword fallback: collateral request detected." };
-  }
-  if (has("expensive", "too costly", "3x", "roi", "your pricing", "your price", "budget")) {
-    return { intent: "objection_price", confidence: 0.78, rationale: "Keyword fallback: cost/ROI objection detected." };
-  }
-  if (has("erp", "netsuite", "sap", "eclipse", "p21", "prophet", "quickbooks", "integration", "implementation")) {
-    return { intent: "objection_erp", confidence: 0.78, rationale: "Keyword fallback: ERP/integration objection detected." };
-  }
-  if (has("interested", "call me", "schedule", "thursday", "meeting", "walk us", "let's talk", "book")) {
-    return { intent: "interested", confidence: 0.8, rationale: "Keyword fallback: engagement request detected." };
-  }
-  return { intent: "unknown", confidence: 0.3, rationale: "Keyword fallback: no decisive signal." };
-}
 
 async function classifyWithLLM(context: string): Promise<z.infer<typeof CLASSIFY_OUT> | null> {
   try {
@@ -136,6 +116,8 @@ const PostSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const denied = guardWrite(request, "replies/post", { limit: 20, windowMs: 60_000 });
+  if (denied) return denied;
   try {
     const parsed = PostSchema.safeParse(await request.json());
     if (!parsed.success) {
@@ -155,9 +137,7 @@ export async function POST(request: Request) {
     const contact = prospect.contacts[0];
     const qlvScore = prospect.scores[0]?.qlvScore ?? null;
     const portalLabel = (prospect.quotePortalType ?? "manual_mailto").replace(/_/g, " ");
-    const leakage = prospect.revenueEstimateUsd != null && qlvScore != null
-      ? Math.round(prospect.revenueEstimateUsd * 0.21 * (qlvScore / 100) * 0.35)
-      : null;
+    const leakage = auditLeakage(prospect.revenueEstimateUsd, qlvScore)?.annual ?? null;
 
     const llm = await classifyWithLLM(
       [
@@ -196,6 +176,21 @@ export async function POST(request: Request) {
 
     let draft: { id: string; status: string; subject: string; body: string } | null = null;
     let action: string;
+
+    // Suppression ledger: record the reply, but never automate anything outbound.
+    if (await isSuppressed(prospect.bestEmail, prospect.id)) {
+      action = "suppressed_no_send";
+      return NextResponse.json({
+        ok: true,
+        replyId: reply.id,
+        intent,
+        confidence,
+        tier: 0,
+        action,
+        draft: null,
+        prospect: { id: prospect.id, name: prospect.name, qlvScore },
+      });
+    }
 
     if ((AUTO_SEND_INTENTS as readonly string[]).includes(intent)) {
       // Tier 1 — resolve autonomously, no human gate.
@@ -281,6 +276,8 @@ const PatchSchema = z.object({
 });
 
 export async function PATCH(request: Request) {
+  const denied = guardWrite(request, "replies/patch", { key: false, limit: 40, windowMs: 60_000 });
+  if (denied) return denied;
   try {
     const parsed = PatchSchema.safeParse(await request.json());
     if (!parsed.success) {
@@ -290,9 +287,23 @@ export async function PATCH(request: Request) {
 
     const draft = await db.agentDraft.findUnique({
       where: { id: draftId },
-      include: { reply: { include: { prospect: { select: { id: true, name: true } } } } },
+      include: {
+        reply: {
+          include: {
+            prospect: {
+              select: { id: true, name: true, caslScope: true, contacts: { take: 1 } },
+            },
+          },
+        },
+      },
     });
     if (!draft) return NextResponse.json({ error: "draft_not_found" }, { status: 404 });
+
+    // Suppression ledger wins: approving a draft for a suppressed address is refused.
+    const toAddress = draft.reply.fromEmail;
+    if (decision === "approved" && (await isSuppressed(toAddress, draft.prospectId))) {
+      return NextResponse.json({ error: "address_suppressed", hint: "this address unsubscribed; sends are refused" }, { status: 409 });
+    }
 
     const updated = await db.agentDraft.update({
       where: { id: draftId },
@@ -305,12 +316,38 @@ export async function PATCH(request: Request) {
       },
     });
 
+    // Approved tier-2 drafts leave through the real mailer when a provider is
+    // configured; otherwise the approval is recorded honestly as staged.
+    let delivery: { status: string; reason?: string; providerMsgId?: string } = { status: "not_applicable" };
+    if (decision === "approved") {
+      const prospect = draft.reply.prospect;
+      const result = await sendEmail({
+        to: toAddress,
+        subject: updated.subject,
+        text: updated.body,
+        prospectId: prospect?.id ?? null,
+        caslScope: prospect?.caslScope ?? false,
+        region: prospect?.caslScope ? "ca" : "us",
+        replyTo: process.env.VERTEBRA_REPLY_TO ?? null,
+      });
+      delivery = { status: result.status, reason: result.reason, providerMsgId: result.providerMsgId };
+      if (result.status === "staged") {
+        await db.agentDraft.update({
+          where: { id: draftId },
+          data: { reviewerNote: `approved in command centre · staged (${mailProvider()})` },
+        });
+      }
+    }
+
     if (draft.prospectId) {
       await db.operatorAction.create({
         data: {
           prospectId: draft.prospectId,
           action: "note",
-          note: decision === "approved" ? `Draft approved and sent: "${updated.subject}"` : `Draft discarded: "${draft.subject}"`,
+          note:
+            decision === "approved"
+              ? `Draft approved and sent: "${updated.subject}" (${delivery.status})`
+              : `Draft discarded: "${draft.subject}"`,
         },
       });
     }
@@ -318,6 +355,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({
       ok: true,
       draft: { id: updated.id, status: updated.status, subject: updated.subject, body: updated.body },
+      delivery,
       prospect: draft.reply.prospect,
     });
   } catch (error) {

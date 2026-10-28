@@ -17,6 +17,13 @@ import { Server } from "socket.io";
 
 const ENCLAVE = "http://127.0.0.1:3000";
 const PORT = 3003;
+// The bridge writes through the same guarded endpoints as the production
+// engine — it must present the shared ingest key.
+const INGEST_KEY = process.env.VERTEBRA_INGEST_KEY ?? "enclave-dev-key";
+
+function engineHeaders(): Record<string, string> {
+  return { "Content-Type": "application/json", "x-vertebra-key": INGEST_KEY };
+}
 
 const httpServer = createServer();
 const io = new Server(httpServer, {
@@ -119,7 +126,7 @@ async function simulateTelemetry(): Promise<void> {
   try {
     const res = await fetch(`${ENCLAVE}/api/telemetry/ingest`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: engineHeaders(),
       signal: AbortSignal.timeout(8000),
       body: JSON.stringify({
         prospectId: lead.id,
@@ -196,7 +203,7 @@ async function simulateReply(): Promise<void> {
   try {
     const res = await fetch(`${ENCLAVE}/api/replies`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: engineHeaders(),
       signal: AbortSignal.timeout(30_000),
       body: JSON.stringify({
         prospectId: lead.id,

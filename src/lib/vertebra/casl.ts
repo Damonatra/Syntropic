@@ -2,24 +2,45 @@
  * CASL compliance kit for the console — TypeScript parity with
  * `vertebra/enrichment/casl.py`. Channel A sends always carry the footer;
  * CASL-scope recipients additionally get RFC 8058 one-click headers.
+ *
+ * Unsubscribe tokens are HMAC-SHA256 (secret-keyed) bindings of
+ * prospect+address; the one-click endpoint is the console's own
+ * /api/unsubscribe route (see src/app/api/unsubscribe/route.ts).
  */
+import { createHmac, timingSafeEqual } from "node:crypto";
 
-const UNSUBSCRIBE_BASE_URL = "https://syntropic-os.com/u";
+const UNSUBSCRIBE_SECRET = process.env.VERTEBRA_UNSUBSCRIBE_SECRET ?? "vertebra-dev-unsubscribe-secret";
 
-const FOOTER_CA = `You are receiving this one-time business inquiry because Syntropic believes it is relevant to your role. Syntropic Engine LLC, compliance@syntropic.com. Prefer not to hear from us again? Unsubscribe instantly: {unsubscribe_url}`;
-const FOOTER_US = `Sent by Syntropic Engine LLC. Don't want these emails? Unsubscribe: {unsubscribe_url}`;
-
-/** Signed (HMAC-style digest) single-click unsubscribe URL. */
-export function unsubscribeUrl(prospectId: string, address: string): string {
-  const digest = simpleDigest(`${UNSUBSCRIBE_BASE_URL}:${prospectId}:${address}`);
+export function unsubscribePath(prospectId: string, address: string): string {
+  const digest = tokenFor(prospectId, address);
   const p = encodeURIComponent(prospectId);
   const a = encodeURIComponent(address);
-  return `${UNSUBSCRIBE_BASE_URL}?p=${p}&a=${a}&t=${digest}`;
+  return `/api/unsubscribe?p=${p}&a=${a}&t=${digest}`;
+}
+
+/** Absolute unsubscribe URL when the deployment origin is known. */
+export function unsubscribeUrl(prospectId: string, address: string, origin?: string | null): string {
+  const base = origin ?? process.env.VERTEBRA_PUBLIC_ORIGIN ?? "https://syntropic-os.com";
+  return `${base.replace(/\/$/, "")}${unsubscribePath(prospectId, address)}`;
+}
+
+export function tokenFor(prospectId: string, address: string): string {
+  return createHmac("sha256", UNSUBSCRIBE_SECRET).update(`${prospectId}:${address}`).digest("hex").slice(0, 32);
+}
+
+export function verifyToken(prospectId: string, address: string, token: string): boolean {
+  const expected = Buffer.from(tokenFor(prospectId, address));
+  const provided = Buffer.from(token ?? "");
+  if (expected.length !== provided.length) return false;
+  return timingSafeEqual(expected, provided);
 }
 
 export function buildCaslFooter(prospectId: string, address: string, region: string | null): string {
   const link = unsubscribeUrl(prospectId, address);
-  const template = region === "ca" ? FOOTER_CA : FOOTER_US;
+  const template =
+    region === "ca"
+      ? `You are receiving this one-time business inquiry because Syntropic believes it is relevant to your role. Syntropic Engine LLC, compliance@syntropic.com. Prefer not to hear from us again? Unsubscribe instantly: {unsubscribe_url}`
+      : `Sent by Syntropic Engine LLC. Don't want these emails? Unsubscribe: {unsubscribe_url}`;
   return template.replace("{unsubscribe_url}", link);
 }
 
@@ -32,16 +53,6 @@ export function buildEmailHeaders(
   const headers: Record<string, string> = { "List-Unsubscribe": `<${link}>` };
   if (caslScope) headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
   return headers;
-}
-
-function simpleDigest(input: string): string {
-  // FNV-1a 32-bit, hex — deterministic token binding URL to prospect+address.
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < input.length; i++) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash.toString(16).padStart(8, "0");
 }
 
 /** Subject line keyed off the top hook's flavor (parity with router.py). */

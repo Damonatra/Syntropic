@@ -1,24 +1,14 @@
 /**
- * Interactive margin leakage estimator — the Custo hero moment.
- * Canvas Gunmetal #9EA29F band hosting a single obsidian object:
- * the leakage verdict. Obsidian ink on gunmetal, white controls,
- * monolithic Space Grotesk numerals.
- *
- * Model (stated on the tile): lines/yr × avg line value × exposure share × slippage.
- * Calibrated to the Module 2 factor medians of the NA industrial book
- * (PVF · Electrical · HVAC · Fluid Power, $10M–$150M revenue).
+ * Interactive margin leakage estimator — the portal hero moment.
+ * Gunmetal band hosting a single obsidian object: the leakage verdict.
+ * All constants derive from the unified model card (src/lib/vertebra/
+ * leakage.ts) — same calibration as the dossier audit math, version-stamped.
  */
 "use client";
 
 import { useMemo, useState } from "react";
 import { HudMeta } from "../bits";
-
-const LINE_VALUE_USD = 420; // avg revenue per RFQ line item
-const EXPOSURE_SHARE = 0.38; // share of lines flowing through late / manual / SPA-unapplied paths
-const SLIPPAGE = 0.068; // margin lost per exposed line
-const CAPTURE_Y1 = 0.55; // recoverable share in year one
-const GUARANTEE_FLOOR = 10_000;
-const AUDIT_FEE = 3_500;
+import { LEAKAGE_MODEL, engagementLeakage } from "@/lib/vertebra/leakage";
 
 const usd = (v: number) => `$${Math.round(v).toLocaleString("en-US")}`;
 
@@ -69,15 +59,10 @@ export function LeakageCalculator() {
   const [rfqPerMonth, setRfqPerMonth] = useState(120);
   const [lineItems, setLineItems] = useState(22);
 
-  const result = useMemo(() => {
-    const linesPerYear = rfqPerMonth * 12 * lineItems;
-    const annual = linesPerYear * LINE_VALUE_USD * EXPOSURE_SHARE * SLIPPAGE;
-    const low = annual * 0.85;
-    const high = annual * 1.15;
-    const recoverable = annual * CAPTURE_Y1;
-    const multiple = recoverable / AUDIT_FEE;
-    return { linesPerYear, annual, low, high, recoverable, multiple };
-  }, [rfqPerMonth, lineItems]);
+  const result = useMemo(
+    () => engagementLeakage(rfqPerMonth, lineItems),
+    [rfqPerMonth, lineItems],
+  );
 
   return (
     <div className="gunmetal flex flex-col gap-4 rounded-lg border border-black/10 px-7 py-6">
@@ -116,19 +101,26 @@ export function LeakageCalculator() {
         </p>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/15 pt-4">
           <div>
-            <p className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-white/60">Recoverable year one · 55% capture</p>
+            <p className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-white/60">
+              Recoverable year one · {(LEAKAGE_MODEL.captureYearOne * 100).toFixed(0)}% capture
+            </p>
             <p className="mt-1 font-display text-[19px] font-semibold tracking-[-0.02em] tabular-nums text-white">{usd(result.recoverable)}</p>
           </div>
           <div className="text-right">
-            <p className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-white/60">vs $3,500 audit</p>
-            <p className="mt-1 font-display text-[19px] font-semibold tracking-[-0.02em] tabular-nums text-white">{result.multiple.toFixed(1)}×</p>
+            <p className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-white/60">
+              vs {usd(LEAKAGE_MODEL.auditFeeUsd)} audit
+            </p>
+            <p className="mt-1 font-display text-[19px] font-semibold tracking-[-0.02em] tabular-nums text-white">{result.auditMultiple.toFixed(1)}×</p>
           </div>
         </div>
       </div>
 
       <p className="font-mono text-[9.5px] leading-relaxed tracking-[0.06em] text-[#2E322E]">
-        MODEL // {result.linesPerYear.toLocaleString("en-US")} lines/yr × ${LINE_VALUE_USD} avg line value × {(EXPOSURE_SHARE * 100).toFixed(0)}% exposure
-        share × {(SLIPPAGE * 100).toFixed(1)}% slippage · guarantee floor {usd(GUARANTEE_FLOOR)} applies when the audit confirms the model
+        MODEL // {LEAKAGE_MODEL.version} · {result.linesPerYear.toLocaleString("en-US")} lines/yr × $
+        {LEAKAGE_MODEL.lineValueUsd} avg line value × {(LEAKAGE_MODEL.exposureShare * 100).toFixed(0)}% exposure share
+        × {(LEAKAGE_MODEL.slippagePerExposedLine * 100).toFixed(1)}% slippage · implied book{" "}
+        {usd(result.impliedRevenueUsd)} · guarantee floor {usd(LEAKAGE_MODEL.guaranteeFloorUsd)} applies when the audit
+        confirms the model
       </p>
     </div>
   );

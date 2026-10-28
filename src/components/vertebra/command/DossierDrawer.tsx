@@ -321,6 +321,11 @@ export function DossierDrawer({
                 <PillButton tone="well" onClick={() => onAction(data.prospect.id, "snoozed", undefined)}>
                   Snooze 24h
                 </PillButton>
+                {data.prospect.score && (
+                  <PillButton tone="well" href={`/api/dossier/brief?id=${data.prospect.id}`} target="_blank">
+                    Export brief
+                  </PillButton>
+                )}
               </div>
             </section>
           </div>

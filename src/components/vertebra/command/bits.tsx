@@ -319,6 +319,7 @@ export function PillButton({
   tone = "dark",
   className = "",
   href,
+  target,
   disabled = false,
 }: {
   children: ReactNode;
@@ -326,6 +327,7 @@ export function PillButton({
   tone?: "dark" | "ghost" | "well";
   className?: string;
   href?: string;
+  target?: string;
   disabled?: boolean;
 }) {
   const cls = `inline-flex h-9 items-center justify-center rounded-full px-4 font-mono text-[11px] font-medium uppercase tracking-[0.14em] transition-all disabled:opacity-40 ${
@@ -337,7 +339,7 @@ export function PillButton({
   } ${className}`;
   if (href) {
     return (
-      <a href={href} onClick={onClick} className={cls}>
+      <a href={href} target={target} rel={target === "_blank" ? "noopener" : undefined} onClick={onClick} className={cls}>
         {children}
       </a>
     );

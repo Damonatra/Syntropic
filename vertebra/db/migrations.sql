@@ -297,3 +297,52 @@ CREATE TABLE IF NOT EXISTS agent_drafts (
 );
 
 CREATE INDEX IF NOT EXISTS agent_drafts_status_idx ON agent_drafts (status, created_at);
+
+-- ------------------------- Console loop-closure: operator decision log -------
+CREATE TABLE IF NOT EXISTS operator_actions (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    prospect_id UUID NOT NULL REFERENCES prospects(id) ON DELETE CASCADE,
+    action     TEXT NOT NULL CHECK (action IN ('called','deferred','snoozed','booked','note')),
+    note       TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS operator_actions_prospect_idx ON operator_actions (prospect_id, created_at DESC);
+
+-- ------------------------- Console loop-closure: CASL suppression ledger -----
+CREATE TABLE IF NOT EXISTS suppressions (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email       TEXT NOT NULL UNIQUE,
+    prospect_id UUID REFERENCES prospects(id) ON DELETE SET NULL,
+    reason      TEXT NOT NULL DEFAULT 'unsubscribe'
+                CHECK (reason IN ('unsubscribe','complaint','bounce','manual')),
+    source      TEXT NOT NULL DEFAULT 'unsubscribe_link'
+                CHECK (source IN ('unsubscribe_link','one_click','operator','engine')),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS suppressions_prospect_idx ON suppressions (prospect_id);
+
+-- ------------------------- Console loop-closure: audit intake ----------------
+CREATE TABLE IF NOT EXISTS audit_documents (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    prospect_id   UUID REFERENCES prospects(id) ON DELETE SET NULL,
+    file_name     TEXT NOT NULL,
+    mime_type     TEXT NOT NULL,
+    size_bytes    INTEGER NOT NULL,
+    sha256        TEXT NOT NULL,
+    pages         INTEGER,
+    line_items    INTEGER,
+    extraction    TEXT NOT NULL DEFAULT 'partial'
+                  CHECK (extraction IN ('full_text','partial','header_only')),
+    findings      JSONB,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS audit_documents_created_idx ON audit_documents (created_at DESC);
+CREATE INDEX IF NOT EXISTS audit_documents_sha_idx ON audit_documents (sha256);
+
+ALTER TABLE intent_alerts ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ;
+
+-- ------------------------- Module 8: rolling intent heat on the prospect ----
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS intent_heat INTEGER NOT NULL DEFAULT 0;

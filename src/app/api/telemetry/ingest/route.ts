@@ -10,6 +10,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { isHighSignal } from "@/lib/vertebra/command";
+import { guardWrite } from "@/lib/vertebra/guard";
+import { invalidateSnapshot } from "@/lib/vertebra/snapshot-cache";
+import { deliverAlert } from "@/lib/vertebra/pager";
 
 const BodySchema = z.object({
   prospectId: z.string().min(1).optional(),
@@ -37,6 +40,8 @@ const HEAT_BUMP: Record<string, number> = {
 };
 
 export async function POST(request: Request) {
+  const denied = guardWrite(request, "telemetry/ingest", { limit: 60, windowMs: 60_000 });
+  if (denied) return denied;
   try {
     const json = await request.json();
     const parsed = BodySchema.safeParse(json);
@@ -82,6 +87,7 @@ export async function POST(request: Request) {
     const bump = HEAT_BUMP[body.eventType] ?? 2;
     const heat = Math.min(100, prospect.lastIntentHeat + bump);
     await db.prospect.update({ where: { id: prospect.id }, data: { lastIntentHeat: heat } });
+    invalidateSnapshot();
 
     const qlvScore = prospect.scores[0]?.qlvScore ?? 0;
     let alert: { id: string; title: string; body: string } | null = null;
@@ -94,19 +100,22 @@ export async function POST(request: Request) {
         const exec = contact
           ? `${contact.firstName} ${contact.lastName} (${contact.titleRaw ?? contact.role}) — ${contact.phone ?? "direct line pending"}`
           : "Primary contact pending";
+        const alertBody = [
+          `Company: ${prospect.name}`,
+          `Executive: ${exec}`,
+          `Location: ${prospect.city ?? "unknown"}, ${prospect.country ?? "unknown"}`,
+          `Action: Call direct line immediately.`,
+        ].join("\n");
+        // Fan out to Telegram/Slack when configured — channels recorded honestly.
+        const pager = await deliverAlert("HIGH-INTENT PROSPECT ON PORTAL", alertBody);
         const created = await db.intentAlert.create({
           data: {
             prospectId: prospect.id,
             title: "HIGH-INTENT PROSPECT ON PORTAL",
-            body: [
-              `Company: ${prospect.name}`,
-              `Executive: ${exec}`,
-              `Location: ${prospect.city ?? "unknown"}, ${prospect.country ?? "unknown"}`,
-              `Action: Call direct line immediately.`,
-            ].join("\n"),
+            body: alertBody,
             dedupeKey,
-            channelsAttempted: JSON.stringify(["in_app", "telegram", "slack"]),
-            channelsDelivered: JSON.stringify(["in_app"]),
+            channelsAttempted: JSON.stringify(["in_app", ...pager.attempted]),
+            channelsDelivered: JSON.stringify(["in_app", ...pager.delivered]),
             delivered: true,
           },
         });

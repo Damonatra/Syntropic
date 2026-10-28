@@ -6,6 +6,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { guardWrite } from "@/lib/vertebra/guard";
 
 const ActionSchema = z.object({
   prospectId: z.string().min(1),
@@ -15,6 +16,8 @@ const ActionSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const denied = guardWrite(request, "actions", { key: false, limit: 60, windowMs: 60_000 });
+  if (denied) return denied;
   try {
     const parsed = ActionSchema.safeParse(await request.json());
     if (!parsed.success) {

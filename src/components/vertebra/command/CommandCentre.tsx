@@ -123,6 +123,26 @@ export function CommandCentre() {
     return () => clearInterval(t);
   }, []);
 
+  // ---- persisted alert acknowledgement ----------------------------------- //
+  // A displayed alert is an acknowledged alert: recorded server-side and in
+  // localStorage so a reload never re-fires stale toasts.
+  const ackAlerts = useCallback((alertIds: string[]) => {
+    if (alertIds.length === 0) return;
+    try {
+      const KEY = "vertebra-acked-alerts";
+      const acked: Set<string> = new Set(JSON.parse(localStorage.getItem(KEY) ?? "[]") as string[]);
+      for (const id of alertIds) acked.add(id);
+      localStorage.setItem(KEY, JSON.stringify([...acked].slice(-500)));
+    } catch {
+      /* storage unavailable — server ack still lands */
+    }
+    void fetch("/api/alerts/ack", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ alertIds }),
+    }).catch(() => {});
+  }, []);
+
   // ---- snapshot loading -------------------------------------------------- //
   const refresh = useCallback(async () => {
     try {
@@ -132,19 +152,29 @@ export function CommandCentre() {
       setSnap(data);
       if (!bootAlerted.current) {
         bootAlerted.current = true;
-        const recent = data.alerts.filter((a) => Date.now() - a.createdAtMs <= 15 * 60_000).slice(0, 2);
+        let storageAcked: Set<string> = new Set();
+        try {
+          storageAcked = new Set(JSON.parse(localStorage.getItem("vertebra-acked-alerts") ?? "[]") as string[]);
+        } catch { /* ignore */ }
+        const recent = data.alerts
+          .filter((a) => Date.now() - a.createdAtMs <= 15 * 60_000)
+          .filter((a) => a.acknowledgedAtMs == null && !storageAcked.has(a.id))
+          .slice(0, 2);
+        const displayed: string[] = [];
         for (const a of recent) {
           const key = `boot:${a.id}`;
           if (alertSeen.current.has(key)) continue;
           alertSeen.current.add(key);
+          displayed.push(a.id);
           pushToast({ kind: "alert", title: a.title, body: a.body, prospectId: a.prospectId });
           chime("alert");
         }
+        ackAlerts(displayed);
       }
     } catch {
       /* offline — retry on next tick */
     }
-  }, []);
+  }, [ackAlerts]);
 
   const pushToast = useCallback((t: Omit<Toast, "id">) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -232,6 +262,7 @@ export function CommandCentre() {
         const dedupe = `${ev.prospectId}:${ev.eventType}:${Math.floor(atMs / 900_000)}`;
         if (!alertSeen.current.has(dedupe)) {
           alertSeen.current.add(dedupe);
+          if (push.alert) ackAlerts([push.alert.id]);
           pushToast({
             kind: "alert",
             title: push.alert?.title ?? "HIGH-INTENT PROSPECT ON PORTAL",

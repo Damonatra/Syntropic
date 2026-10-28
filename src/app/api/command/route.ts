@@ -1,9 +1,13 @@
 /**
  * GET /api/command — aggregate read model for the Executive Enclave.
  * One round-trip: leads + live feed + triage + alerts + clusters + funnel + ops.
+ * Served through a short in-memory window (5s) with ETag revalidation — the
+ * console polls every 60s and the bridge scrapes leads, so identical
+ * snapshots return 304 instead of re-serializing the whole read model.
  */
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { getCachedSnapshot, storeSnapshot } from "@/lib/vertebra/snapshot-cache";
 import {
   annualLeakageUsd,
   effectivePriority,
@@ -72,7 +76,18 @@ function parseScore(
 
 const SNOOZE_RE = /snooze:(\d+)h/;
 
-export async function GET() {
+export async function GET(request: Request) {
+  const ifNoneMatch = request.headers.get("if-none-match");
+  const cached = getCachedSnapshot(ifNoneMatch);
+  if (cached.status === 304 && cached.etag) {
+    return new NextResponse(null, { status: 304, headers: { ETag: cached.etag } });
+  }
+  if (cached.body) {
+    return new NextResponse(cached.body, {
+      status: 200,
+      headers: { "Content-Type": "application/json", ETag: cached.etag ?? "" },
+    });
+  }
   try {
     const now = Date.now();
     const dayAgo = new Date(now - 86_400_000);
@@ -314,7 +329,7 @@ export async function GET() {
       prospectName: a.prospect?.name ?? "Unknown",
       title: a.title,
       body: a.body,
-      acknowledgedAtMs: null,
+      acknowledgedAtMs: a.acknowledgedAt?.getTime() ?? null,
       createdAtMs: a.createdAt.getTime(),
     }));
 
@@ -409,7 +424,12 @@ export async function GET() {
       funnel,
       ops,
     };
-    return NextResponse.json(snapshot);
+    const body = JSON.stringify(snapshot);
+    const etag = storeSnapshot(body);
+    return new NextResponse(body, {
+      status: 200,
+      headers: { "Content-Type": "application/json", ETag: etag },
+    });
   } catch (error) {
     console.error("[api/command] failed", error);
     return NextResponse.json({ error: "command snapshot failed" }, { status: 500 });

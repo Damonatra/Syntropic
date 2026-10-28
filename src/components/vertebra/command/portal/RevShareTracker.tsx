@@ -3,10 +3,11 @@
 
 import { HudMeta, SectionLabel } from "../bits";
 import type { CommandSnapshot } from "@/lib/vertebra/command";
+import { LEAKAGE_MODEL } from "@/lib/vertebra/leakage";
 
-const AUDIT_FEE = 3_500;
-const SOW_FEE = 50_000;
-const REV_SHARE = 0.2;
+const AUDIT_FEE = LEAKAGE_MODEL.auditFeeUsd;
+const SOW_FEE = LEAKAGE_MODEL.sowFloorUsd;
+const REV_SHARE = LEAKAGE_MODEL.revShareRate;
 
 export function RevShareTracker({ snap }: { snap: CommandSnapshot }) {
   const auditQualified = snap.leads.filter((l) => (l.score?.qlvScore ?? 0) >= 85).length;
