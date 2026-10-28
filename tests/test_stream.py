@@ -494,6 +494,51 @@ async def test_draft_injected_stream_event(session_factory, tmp_path, monkeypatc
         await client.aclose()
 
 
+# ---------------------------------------------------- 6. Typesafe AI JEV
+
+
+def test_typesafe_jev_stream_validation(stream):
+    """Typesafe AI JEV validates payloads before appending to the stream."""
+    valid_ingested = stream.emit(
+        "tenant-jev",
+        "rfq_ingested",
+        {"filename_ext": "pdf", "size_bytes": 1024, "sha256_16": "0123456789abcdef"},
+    )
+    assert valid_ingested["payload"]["filename_ext"] == "pdf"
+
+    valid_ocr = stream.emit(
+        "tenant-jev",
+        "ocr_extracted",
+        {"text_chars": 500, "tables": 1, "text_blocks": 10},
+    )
+    assert valid_ocr["payload"]["text_chars"] == 500
+
+    valid_margin = stream.emit(
+        "tenant-jev",
+        "margin_adjusted",
+        {
+            "decision": "reprice",
+            "line_count": 2,
+            "repriced_count": 1,
+            "veto_count": 0,
+            "margin_delta": 15.0,
+            "sku_ids": ["SKU-1"],
+            "margin_delta_by_currency": {"USD": 15.0},
+        },
+    )
+    assert valid_margin["payload"]["decision"] == "reprice"
+
+    # Malformed payload with invalid type/constraint triggers Pydantic ValidationError
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        stream.emit(
+            "tenant-jev",
+            "rfq_ingested",
+            {"size_bytes": -500},  # size_bytes must be >= 0
+        )
+
+
 def test_dispatch_claim_signature_tenant_aware():
     """The claim contract now threads tenant_id into the success path."""
     from syntropic.core.dispatch import outlook_dispatch

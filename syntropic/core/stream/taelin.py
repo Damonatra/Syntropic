@@ -216,8 +216,10 @@ class TaelinStream:
         payload: Dict[str, Any],
         job_id: str | None = None,
     ) -> Dict[str, Any]:
-        """Append one event. Returns the persisted record."""
+        """Append one event with Typesafe AI JEV validation. Returns the persisted record."""
         tenant_id = self.validate_tenant(tenant_id)
+        from syntropic.core.schemas import validate_jev_payload
+        payload = validate_jev_payload(event, payload)
         with self._lock:
             state = self._ensure_index(tenant_id)
             directory = self._root / tenant_id

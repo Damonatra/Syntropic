@@ -1,7 +1,7 @@
 # syntropic/core/schemas.py
 
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 import instructor
 from openai import OpenAI
 
@@ -172,7 +172,68 @@ class SKUExtractionEngine:
 
 
 # =====================================================================
-# 3. VERIFICATION & LOCAL EXECUTION
+# 3. TYPESAFE AI JEV (JSON EVENT VERIFICATION) STREAM SCHEMAS
+# =====================================================================
+
+class RFQIngestedJEV(BaseModel):
+    """Schema validator for rfq_ingested stream event payloads."""
+    model_config = ConfigDict(extra="allow")
+    filename_ext: Optional[str] = Field(default=None, description="File extension, e.g. 'pdf'")
+    size_bytes: Optional[int] = Field(default=None, ge=0, description="Source file size in bytes")
+    sha256_16: Optional[str] = Field(default=None, description="16-character SHA-256 hash prefix")
+
+
+class OCRExtractedJEV(BaseModel):
+    """Schema validator for ocr_extracted stream event payloads."""
+    model_config = ConfigDict(extra="allow")
+    text_chars: Optional[int] = Field(default=None, ge=0, description="Total extracted text characters")
+    tables: Optional[int] = Field(default=None, ge=0, description="Count of extracted table structures")
+    text_blocks: Optional[int] = Field(default=None, ge=0, description="Count of extracted text blocks")
+
+
+class MarginAdjustedJEV(BaseModel):
+    """Schema validator for margin_adjusted stream event payloads."""
+    model_config = ConfigDict(extra="allow")
+    decision: Optional[str] = Field(default=None, description="Margin defender decision: 'pass', 'veto', or 'reprice'")
+    line_count: Optional[int] = Field(default=None, ge=1, description="Number of evaluated line items")
+    repriced_count: Optional[int] = Field(default=None, ge=0, description="Number of repriced line items")
+    veto_count: Optional[int] = Field(default=None, ge=0, description="Number of vetoed line items")
+    margin_delta: Optional[float] = Field(default=None, description="Net margin price delta")
+    sku_ids: Optional[List[str]] = Field(default=None, description="List of matched SKU IDs")
+    margin_delta_by_currency: Optional[Dict[str, float]] = Field(
+        default=None,
+        description="Margin delta breakdown grouped by currency code"
+    )
+
+
+class DraftInjectedJEV(BaseModel):
+    """Schema validator for draft_injected stream event payloads."""
+    model_config = ConfigDict(extra="allow")
+    sla_ms: Optional[int] = Field(default=None, ge=0, description="Execution SLA in milliseconds")
+    sla_breached: Optional[bool] = Field(default=None, description="Flag indicating if execution breached SLA")
+    line_count: Optional[int] = Field(default=None, ge=1, description="Number of draft quote line items")
+
+
+JEV_SCHEMA_MAP = {
+    "rfq_ingested": RFQIngestedJEV,
+    "ocr_extracted": OCRExtractedJEV,
+    "margin_adjusted": MarginAdjustedJEV,
+    "draft_injected": DraftInjectedJEV,
+}
+
+
+def validate_jev_payload(event_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Validates an event payload against its corresponding Typesafe AI JEV schema if defined."""
+    schema = JEV_SCHEMA_MAP.get(event_type)
+    if schema is None or not isinstance(payload, dict):
+        return payload
+    # Validate payload structure & types
+    schema.model_validate(payload)
+    return payload
+
+
+# =====================================================================
+# 4. VERIFICATION & LOCAL EXECUTION
 # =====================================================================
 
 if __name__ == "__main__":
