@@ -66,6 +66,7 @@ from syntropic.core.roi.reporting import (
     roi_summary,
     verify_statement,
 )
+from syntropic.core.roi.jev_accounting import build_monthly_statement_jev
 from syntropic.core.dispatch.outlook_dispatch import (
     deliver_dispatch_outbox,
     dispatch_enabled,
@@ -980,3 +981,33 @@ async def get_roi_statement(
     # their auditor) can recompute ``statement_hash`` over the untouched
     # statement via verify_statement() with no key-stripping.
     return {"statement": statement, "hash_verified": verify_statement(statement)}
+
+
+@app.get(
+    "/api/v1/roi/jev/{year}/{month}",
+    dependencies=[Depends(bind_tenant_context)],
+)
+async def get_roi_jev_voucher(
+    year: int,
+    month: int,
+    session: AsyncSession = Depends(get_session),
+):
+    """General Ledger Journal Entry Voucher (JEV) for one calendar month (UTC).
+
+    Returns a balanced double-entry accounting voucher (Debits = Credits)
+    formatted for direct General Ledger integration (SAP, NetSuite, Oracle,
+    Dynamics 365).
+    """
+    try:
+        statement = await monthly_statement(
+            session,
+            get_current_tenant(),
+            year,
+            month,
+            share_pct=settings.ROI_SHARE_PCT,
+            reporting_currency=settings.ROI_REPORTING_CURRENCY,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    voucher = build_monthly_statement_jev(statement)
+    return voucher.model_dump()

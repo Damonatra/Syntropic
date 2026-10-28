@@ -564,3 +564,34 @@ def test_roi_statement_api_empty_month_is_zeroed(roi_client):
     assert statement["captured_by_currency"] == {}
     assert statement["share_by_currency"] == {}
     assert statement["statement_hash"]
+
+
+def test_build_monthly_statement_jev_balanced():
+    """GL Journal Entry Voucher must produce balanced double-entry GL lines (Debits = Credits)."""
+    from syntropic.core.roi.jev_accounting import build_monthly_statement_jev
+
+    statement = {
+        "tenant_id": "acme",
+        "period": {"year": 2026, "month": 11},
+        "share_by_currency": {"USD": 20.0, "EUR": 8.0},
+        "statement_hash": "abc123def4567890",
+    }
+    voucher = build_monthly_statement_jev(statement)
+    assert voucher.tenant_id == "acme"
+    assert voucher.accounting_period == "2026-11"
+    assert voucher.is_balanced is True
+    assert voucher.total_debit == voucher.total_credit == 28.0
+    assert len(voucher.entries) == 4  # 2 entries per currency bucket (1 Debit, 1 Credit)
+
+
+def test_roi_jev_api_endpoint(roi_client):
+    """API endpoint /api/v1/roi/jev/{year}/{month} returns balanced GL vouchers."""
+    db_path = str(roi_client.app.state.test_db_path)
+    _seed_ledger_row(db_path, "job-jev-1", "acme", 100.0, 40.0)
+    response = roi_client.get("/api/v1/roi/jev/2026/11")
+    assert response.status_code == 200
+    voucher = response.json()
+    assert voucher["tenant_id"] == "acme"
+    assert voucher["is_balanced"] is True
+    assert voucher["total_debit"] == voucher["total_credit"] == 28.0  # 20% of (100 USD + 40 EUR)
+    assert len(voucher["entries"]) == 4
