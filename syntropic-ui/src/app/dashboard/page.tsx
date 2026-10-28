@@ -106,8 +106,13 @@ export default function SyntropicDashboard() {
       {/* Blush-peach milestone card — one accent card per page */}
       <section className="bg-[#fbe1d1] text-[#5d2a1a] rounded-[24px] p-10 mt-12 flex items-center justify-between gap-8">
         <div>
-          <div className="text-[14px] font-[400] opacity-80 mb-2">
-            Value delivery milestone
+          <div className="text-[14px] font-[400] opacity-80 mb-2 flex items-center gap-2">
+            <span>Value delivery milestone</span>
+            {summary?.tenant_id && (
+              <span className="text-[11px] px-2 py-0.5 rounded bg-[#5d2a1a]/10 text-[#5d2a1a] font-mono font-medium">
+                Client Enclave: {summary.tenant_id}
+              </span>
+            )}
           </div>
           <div className="text-[26px] font-[450] tracking-[-0.23px] leading-[1.3] max-w-[560px]">
             Syntropic has generated ${netValue.toLocaleString()} in net value

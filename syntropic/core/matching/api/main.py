@@ -77,6 +77,7 @@ from security.ast_veto import (
     get_current_tenant,
     set_current_tenant,
     reset_current_tenant,
+    tenant_context,
 )
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
@@ -823,18 +824,34 @@ async def process_rfq_document(
             raise HTTPException(
                 status_code=503, detail="Workflow execution is unavailable."
             )
-        final_state = await graph_app.ainvoke(
-            initial_state,
-            config={
-                "configurable": {"thread_id": job_id},
-                "run_name": "rfq-processing",
-                "tags": ["rfq", "enterprise"],
-                "metadata": {
-                    "job_id": job_id,
-                    "workflow": "rfq-processing",
+        current_tenant = get_current_tenant()
+        if current_tenant:
+            with tenant_context(current_tenant):
+                final_state = await graph_app.ainvoke(
+                    initial_state,
+                    config={
+                        "configurable": {"thread_id": job_id},
+                        "run_name": "rfq-processing",
+                        "tags": ["rfq", "enterprise"],
+                        "metadata": {
+                            "job_id": job_id,
+                            "workflow": "rfq-processing",
+                        },
+                    },
+                )
+        else:
+            final_state = await graph_app.ainvoke(
+                initial_state,
+                config={
+                    "configurable": {"thread_id": job_id},
+                    "run_name": "rfq-processing",
+                    "tags": ["rfq", "enterprise"],
+                    "metadata": {
+                        "job_id": job_id,
+                        "workflow": "rfq-processing",
+                    },
                 },
-            },
-        )
+            )
         status = _status_from_final_state(final_state)
         await persist_review_job(session, job_id, filename, status, final_state)
         persisted = True

@@ -373,6 +373,11 @@ export default function Home() {
           >
             Telemetry &amp; ROI →
           </a>
+          {isAuthenticated && (
+            <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono">
+              Enclave Active
+            </span>
+          )}
           <span className={`status-dot ${isAuthenticated ? "online" : ""}`} />
           {isAuthenticated ? "API connected" : "Authentication required"}
         </div>
