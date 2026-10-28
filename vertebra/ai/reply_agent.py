@@ -39,7 +39,7 @@ from __future__ import annotations
 import json
 import re
 import uuid as uuid_mod
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -432,7 +432,7 @@ def build_reply_graph(
         except ValueError:
             target = utcnow() + timedelta(days=7)
         if target.tzinfo is None:
-            target = target.replace(tzinfo=timezone.utc)
+            target = target.replace(tzinfo=UTC)
         target += timedelta(hours=agent_settings.ooo_buffer_hours)
 
         prospect_uuid = uuid_mod.UUID(state["prospect_id"]) if state.get("prospect_id") else None

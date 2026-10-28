@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import uuid as uuid_mod
 from dataclasses import dataclass
 from pathlib import Path
@@ -626,7 +627,7 @@ async def _run(args: list[str]) -> int:
     try:
         if args.batch:
             done = await generator.generate_batch(limit=args.limit)
-            print({"generated": len(done), "prospect_ids": done})
+            print(json.dumps({"generated": len(done), "prospect_ids": done}))
         else:
             if not args.prospect_id:
                 raise AuditPreviewError("either --prospect-id or --batch is required")
@@ -640,7 +641,6 @@ async def _run(args: list[str]) -> int:
 
 if __name__ == "__main__":  # pragma: no cover - CLI entrypoint
     import argparse
-    import json
     import sys
 
     parser = argparse.ArgumentParser(description="Module 6 — audit preview generator")

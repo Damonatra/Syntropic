@@ -371,6 +371,54 @@ def module9_graph_not_interested():
 
 
 # --------------------------------------------------------------------------- #
+# Autonomous tactical jobs (Modules 5-9 scheduler wiring)
+# --------------------------------------------------------------------------- #
+
+
+def tactical_jobs_wiring():
+    import asyncio
+
+    from vertebra.config.settings import TacticalJobsSettings
+    from vertebra.workers.tactical_jobs import (
+        AUDIT_PREVIEWS_INTERVAL_SEC,
+        ERP_PROFILING_INTERVAL_SEC,
+        REPLY_PROCESSING_INTERVAL_SEC,
+        SPATIAL_CLUSTERING_INTERVAL_SEC,
+        TacticalJobs,
+        default_tactical_jobs,
+    )
+
+    jobs = default_tactical_jobs(object(), object())  # wiring only — no I/O at build time
+    names = [j.name for j in jobs]
+    assert names == [
+        "erp_profiling", "audit_previews", "spatial_clustering", "reply_processing"
+    ], names
+    by_name = {job.name: job for job in jobs}
+    assert by_name["erp_profiling"].interval_sec == ERP_PROFILING_INTERVAL_SEC == 900.0
+    assert by_name["audit_previews"].interval_sec == AUDIT_PREVIEWS_INTERVAL_SEC == 1_800.0
+    assert by_name["spatial_clustering"].interval_sec == SPATIAL_CLUSTERING_INTERVAL_SEC == 21_600.0
+    assert by_name["reply_processing"].interval_sec == REPLY_PROCESSING_INTERVAL_SEC == 120.0
+
+    # Disabled deployments must no-op cleanly without touching any component.
+    tactical = TacticalJobs.__new__(TacticalJobs)  # bypass __init__ (no components)
+    tactical._components = {}
+    tactical._settings = TacticalJobsSettings(
+        erp_profiling_enabled=False,
+        audit_previews_enabled=False,
+        spatial_clustering_enabled=False,
+        reply_processing_enabled=False,
+    )
+    for coro in (
+        tactical.erp_profiling(),
+        tactical.audit_previews(),
+        tactical.spatial_clustering(),
+        tactical.reply_processing(),
+    ):
+        asyncio.run(coro)
+    return "4 tactical jobs wired (900s/1800s/21600s/120s); disabled no-op path verified"
+
+
+# --------------------------------------------------------------------------- #
 # Domain-contract roundtrips
 # --------------------------------------------------------------------------- #
 
@@ -409,6 +457,7 @@ def main() -> int:
     guard("M9  LangGraph loop — interested → urgent call", module9_graph_interested)
     guard("M9  LangGraph loop — out_of_office → reschedule", module9_graph_ooo)
     guard("M9  LangGraph loop — not_interested → suppress", module9_graph_not_interested)
+    guard("M5-9 tactical scheduler job wiring", tactical_jobs_wiring)
     guard("     domain model roundtrips", domain_models_roundtrip)
 
     print("-" * 72)

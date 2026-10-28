@@ -89,7 +89,7 @@ class SMTPVerifier:
         mx = hosts[0]
 
         # Catch-all discrimination: a random local part must be rejected.
-        catch_all = await self._probe_rcpt(f"{''.join(random.choices(string.ascii_lowercase, k=24))}@{domain}", mx)
+        catch_all = await self._probe_rcpt(f"{''.join(random.choices(string.ascii_lowercase, k=24))}@{domain}", mx)  # noqa: S311 - probe nonce, not crypto
         code, detail = await self._probe_rcpt(address, mx)
 
         if code in _DELIVER_CODES:
@@ -135,7 +135,7 @@ class SMTPVerifier:
             await self._send(writer, f"RCPT TO:<{address}>")
             rcpt_reply = await self._read_reply(reader)
             return rcpt_reply[0], rcpt_reply[1]
-        except (asyncio.TimeoutError, TimeoutError):
+        except TimeoutError:
             return None, "timeout"
         except (ConnectionError, OSError) as exc:
             return None, f"connection_error:{exc.__class__.__name__}"
@@ -160,7 +160,7 @@ class SMTPVerifier:
         while True:
             try:
                 raw = await asyncio.wait_for(reader.readline(), timeout=self._timeout)
-            except (asyncio.TimeoutError, TimeoutError):
+            except TimeoutError:
                 return code, last or "timeout"
             if not raw:
                 return code, last or "connection_closed"

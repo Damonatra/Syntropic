@@ -14,14 +14,14 @@ inject the channel terminals without a circular import.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from vertebra.config.settings import get_settings
 from vertebra.db.outbox import OutboxStore
 from vertebra.db.pool import Database
 from vertebra.dispatch.calendar_sync import CalendarSync
-from vertebra.dispatch.channel_email import DomainRotator, EmailDispatcher
+from vertebra.dispatch.channel_email import EmailDispatcher
 from vertebra.dispatch.high_touch import HighTouchExporter
 from vertebra.enrichment.casl import build_casl_footer, build_email_headers
 from vertebra.logging_conf import get_logger
@@ -152,7 +152,7 @@ class DispatchRouter:
         decision.body = body
         decision.from_domain = outbound.from_domain
         # Pacing: defer queued rows to the rotator's next clean window.
-        decision.send_after = datetime.now(tz=timezone.utc) + timedelta(seconds=5)
+        decision.send_after = datetime.now(tz=UTC) + timedelta(seconds=5)
 
         try:
             message_id = await self._email.send(outbound)

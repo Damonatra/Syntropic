@@ -8,7 +8,7 @@ outage never blocks telemetry ingestion.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 
@@ -104,7 +104,7 @@ class AlertDispatcher:
                 "severity": severity,
                 "title": title,
                 "body": body,
-                "ts": datetime.now(tz=timezone.utc).isoformat(),
+                "ts": datetime.now(tz=UTC).isoformat(),
             },
         )
         response.raise_for_status()

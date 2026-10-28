@@ -8,9 +8,9 @@ by the FastAPI lifespan or the worker bootstrap and shared by all tasks.
 from __future__ import annotations
 
 import asyncio
-from importlib import resources
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 import asyncpg
 

@@ -1,0 +1,792 @@
+     1→"""Module 5 — ERP & Competitor Tech Stack Profiler.
+     2→
+     3→Crawls a prospect's public web surface and classifies the exact ERP /
+     4→quoting stack in use, then attaches a structured ``erp_metadata`` JSON
+     5→object to the prospect profile in Neon Postgres.
+     6→
+     7→Evidence sources
+     8→----------------
+     9→1. Domain crawl  — static HTML on RFQ/quote/contact/product paths plus
+    10→   ``<meta name="generator">`` tags (httpx, politeness-capped).
+    11→2. HTTP headers  — ``Server``, ``X-Powered-By``, ``X-AspNet-Version``, …
+    12→3. TLS metadata  — live certificate issuer / SANs (asyncio + stdlib ssl).
+    13→4. Job boards    — Greenhouse / Lever / Ashby public posting APIs scanned
+    14→   for ERP keywords ("Prophet 21", "Epicor", "Infor", "SAP", "NetSuite", …).
+    15→   A company *hiring* around an ERP is the strongest intent signal there is.
+    16→
+    17→Outputs
+    18→-------
+    19→* ``prospects.erp_metadata``       — full ERPMetadata JSONB document
+    20→* ``prospects.detected_erp``       — asserted ERP name (COALESCE-protected)
+    21→* ``prospects.quote_portal_type``  — mailto / PDF form / legacy portal / API
+    22→* ``recommended_pitch_angle``      — ERP-integration-specific talking track
+    23→* ``outbox`` event                 — ``prospect.erp_profiled``
+    24→* Qdrant payload patch             — optional mirror for kNN filtering
+    25→
+    26→Usage
+    27→-----
+    28→    python -m vertebra.enrichment.erp_profiler --prospect-id <uuid>
+    29→    python -m vertebra.enrichment.erp_profiler --batch --limit 25
+    30→"""
+    31→
+    32→from __future__ import annotations
+    33→
+    34→import asyncio
+    35→import html as _html
+    36→import json
+    37→import re
+    38→import ssl
+    39→import uuid
+    40→from collections import defaultdict
+    41→from dataclasses import dataclass, field
+    42→from typing import Any
+    43→
+    44→import httpx
+    45→
+    46→from vertebra.config.settings import ErpProfilerSettings, ScrapingSettings, get_settings
+    47→from vertebra.db.outbox import OutboxStore
+    48→from vertebra.db.pool import Database
+    49→from vertebra.logging_conf import get_logger
+    50→from vertebra.models.domain import ERPMetadata, ERPSignal, QuotePortalType
+    51→from vertebra.models.errors import ProfilerError
+    52→
+    53→log = get_logger("enrichment.erp_profiler")
+    54→
+    55→# --------------------------------------------------------------------------- #
+    56→# ERP signature registry — each pattern is matched case-insensitively.
+    57→# --------------------------------------------------------------------------- #
+    58→
+    59→
+    60→@dataclass(slots=True, frozen=True)
+    61→class ERPSignature:
+    62→    """One ERP fingerprint: patterns, vertical affinity and its pitch line."""
+    63→
+    64→    name: str
+    65→    family: str
+    66→    patterns: tuple[re.Pattern[str], ...]
+    67→    verticals: frozenset[str]
+    68→    integration_surface: str
+    69→    pitch_line: str
+    70→
+    71→
+    72→def _sig(
+    73→    name: str,
+    74→    family: str,
+    75→    expressions: tuple[str, ...],
+    76→    verticals: tuple[str, ...],
+    77→    integration: str,
+    78→    pitch: str,
+    79→) -> ERPSignature:
+    80→    return ERPSignature(
+    81→        name=name,
+    82→        family=family,
+    83→        patterns=tuple(re.compile(p, re.IGNORECASE) for p in expressions),
+    84→        verticals=frozenset(verticals),
+    85→        integration_surface=integration,
+    86→        pitch_line=pitch,
+    87→    )
+    88→
+    89→
+    90→_ALL = ("pvf", "electrical", "hvac", "fluid_power")
+    91→
+    92→ERP_SIGNATURES: dict[str, ERPSignature] = {
+    93→    sig.name: sig
+    94→    for sig in (
+    95→        _sig(
+    96→            "Prophet 21", "Epicor", (r"prophet\s?-?21", r"\bP21\b"),
+    97→            ("pvf", "electrical", "hvac", "fluid_power"),
+    98→            "Epicor Commerce Connect + P21 REST APIs",
+    99→            "P21-native RFQ intake: quotes out in minutes, not days, without a rip-and-replace project.",
+   100→        ),
+   101→        _sig(
+   102→            "Epicor Eclipse", "Epicor",
+   103→            (r"epicor['’']?s?\s+eclipse", r"\beclipse\b(?=[^\n]{0,60}(?:pvf|distribut|wholesal|supply))"),
+   104→            ("pvf", "electrical"),
+   105→            "Eclipse REST/COM integration surface",
+   106→            "Eclipse-native quoting kills the re-keying between the RFQ inbox and order entry.",
+   107→        ),
+   108→        _sig(
+   109→            "Epicor Kinetic", "Epicor",
+   110→            (r"epicor\s+kinetic", r"\bkinetic\b(?=[^\n]{0,40}(?:erp|manufactur))"),
+   111→            _ALL,
+   112→            "Kinetic REST + Epicor function APIs",
+   113→            "Kinetic-grade quote automation without another six-figure implementation cycle.",
+   114→        ),
+   115→        _sig(
+   116→            "Infor CloudSuite", "Infor",
+   117→            (r"infor\s+cloudsuite", r"infor\s+(m3|ln|distribution)"),
+   118→            ("hvac", "electrical", "pvf"),
+   119→            "Infor OS / ION APIs",
+   120→            "ION-wired quoting: Infor data in, same-day quotes out.",
+   121→        ),
+   122→        _sig(
+   123→            "SAP", "SAP",
+   124→            (
+   125→                r"\bSAP\s+(S/?4|HANA|Business\s+One|B1)\b",
+   126→                r"\bSAP\b(?=[^\n]{0,50}(?:ERP|integration|landscape|module))",
+   127→            ),
+   128→            _ALL,
+   129→            "SAP OData / RFC middleware",
+   130→            "SAP-grade pricing discipline without SAP-grade quote friction.",
+   131→        ),
+   132→        _sig(
+   133→            "NetSuite", "Oracle NetSuite", (r"\bnetsuite\b", r"\bsuitecommerce\b"),
+   134→            _ALL,
+   135→            "SuiteTalk REST/SOAP + SuiteCommerce",
+   136→            "NetSuite quoting on autopilot: vendor SPA pricing enforced at the moment of quote.",
+   137→        ),
+   138→        _sig(
+   139→            "Dynamics 365", "Microsoft", (r"dynamics\s?365", r"\bD365\b", r"business\s+central"),
+   140→            _ALL,
+   141→            "Dataverse / OData bindings",
+   142→            "D365-native quote intake: your Business Central data, zero re-keying.",
+   143→        ),
+   144→        _sig(
+   145→            "Acumatica", "Acumatica", (r"\bacumatica\b",), _ALL,
+   146→            "Acumatica REST contract-based APIs",
+   147→            "Acumatica-native quoting: same-day turnaround as a feature, not a favour.",
+   148→        ),
+   149→        _sig(
+   150→            "Sage", "Sage", (r"\bsage\s+(x3|100|200|300|intacct)\b", r"\bsage\b(?=[^\n]{0,30}erp)"),
+   151→            _ALL,
+   152→            "Sage APIs + spreadsheet bridging",
+   153→            "Sage-based quoting without the spreadsheet bridge that leaks margin.",
+   154→        ),
+   155→        _sig(
+   156→            "Syspro", "Syspro", (r"\bsyspro\b",), ("pvf", "fluid_power", "electrical"),
+   157→            "Syspro business objects / OData",
+   158→            "Syspro-native quoting for branch-scale RFQ volume.",
+   159→        ),
+   160→        _sig(
+   161→            "QuickBooks", "Intuit", (r"\bquickbooks\b",), _ALL,
+   162→            "QuickBooks + spreadsheets — the classic $10M–$150M ceiling",
+   163→            "When quoting lives in QuickBooks and spreadsheets, every RFQ is a latency "
+   164→            "event — we close that gap in days.",
+   165→        ),
+   166→        _sig(
+   167→            "Odoo", "Odoo", (r"\bodoo\b",), _ALL,
+   168→            "Odoo JSON-RPC / XML-RPC",
+   169→            "Odoo-native quote automation before headcount becomes the bottleneck.",
+   170→        ),
+   171→    )
+   172→}
+   173→
+   174→# --------------------------------------------------------------------------- #
+   175→# Portal classification markers
+   176→# --------------------------------------------------------------------------- #
+   177→
+   178→_LEGACY_PORTAL_MARKERS: tuple[re.Pattern[str], ...] = tuple(
+   179→    re.compile(p, re.IGNORECASE)
+   180→    for p in (
+   181→        r"__VIEWSTATE",
+   182→        r"aspnetForm",
+   183→        r"jquery-1\.\d",
+   184→        r"\bweb-to-lead\b",
+   185→        r"salesforce",
+   186→        r"\.aspx\b",
+   187→        r"sharepoint",
+   188→    )
+   189→)
+   190→
+   191→_MODERN_PORTAL_MARKERS: tuple[re.Pattern[str], ...] = tuple(
+   192→    re.compile(p, re.IGNORECASE)
+   193→    for p in (
+   194→        r"/api/(quote|rfq|pricing)",
+   195→        r"\bconfigurator\b",
+   196→        r"quote-?builder",
+   197→        r"\bcpq\b",
+   198→        r"epicor\s+commerce",
+   199→        r"suitecommerce",
+   200→    )
+   201→)
+   202→
+   203→_INTERESTING_HEADERS = frozenset({"server", "x-powered-by", "x-aspnet-version", "via", "x-generator"})
+   204→_MAILTO_HINTS = ("quote", "rfq", "sales", "pricing", "estimate")
+   205→_PDF_HINTS = ("quote", "rfq", "form", "credit", "request")
+   206→
+   207→_HREF_RE = re.compile(r"""href\s*=\s*["']([^"']+)["']""", re.IGNORECASE)
+   208→_GENERATOR_RE = re.compile(
+   209→    r"""<meta[^>]+name\s*=\s*["']generator["'][^>]+content\s*=\s*["']([^"']+)["']""",
+   210→    re.IGNORECASE,
+   211→)
+   212→
+   213→_SOURCE_WEIGHTS: dict[str, float] = {
+   214→    "page_body": 1.0,
+   215→    "page_meta": 0.5,
+   216→    "http_header": 0.6,
+   217→    "job_posting": 1.15,
+   218→}
+   219→
+   220→_GREENHOUSE_URL = "https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true"
+   221→_LEVER_URL = "https://api.lever.co/v0/postings/{slug}?mode=json"
+   222→_ASHBY_URL = "https://api.ashbyhq.com/posting-api/job-board/{slug}"
+   223→
+   224→
+   225→# --------------------------------------------------------------------------- #
+   226→# Probe containers
+   227→# --------------------------------------------------------------------------- #
+   228→
+   229→
+   230→@dataclass(slots=True)
+   231→class PageFetch:
+   232→    url: str
+   233→    status: int
+   234→    body: str
+   235→    headers: dict[str, str] = field(default_factory=dict)
+   236→
+   237→
+   238→@dataclass(slots=True)
+   239→class DomainProbe:
+   240→    base_url: str
+   241→    pages: list[PageFetch] = field(default_factory=list)
+   242→    mailto_hits: list[str] = field(default_factory=list)
+   243→    pdf_form_hits: list[str] = field(default_factory=list)
+   244→    meta_generators: list[str] = field(default_factory=list)
+   245→    header_evidence: list[str] = field(default_factory=list)
+   246→
+   247→    @property
+   248→    def bodies(self) -> str:
+   249→        return "\n".join(page.body for page in self.pages)
+   250→
+   251→
+   252→@dataclass(slots=True)
+   253→class TlsMetadata:
+   254→    issuer: str | None
+   255→    not_after: str | None
+   256→    san_domains: list[str]
+   257→
+   258→
+   259→@dataclass(slots=True)
+   260→class JobScan:
+   261→    boards_tried: list[str] = field(default_factory=list)
+   262→    postings_scanned: int = 0
+   263→    signals: list[ERPSignal] = field(default_factory=list)
+   264→
+   265→
+   266→def _strip_html(raw: str, cap: int = 4_000) -> str:
+   267→    text = re.sub(r"<[^>]+>", " ", raw)
+   268→    text = _html.unescape(text)
+   269→    return re.sub(r"\s+", " ", text).strip()[:cap]
+   270→
+   271→
+   272→def _snippet(text: str, match: re.Match[str], radius: int = 90) -> str:
+   273→    start = max(0, match.start() - radius)
+   274→    end = min(len(text), match.end() + radius)
+   275→    return re.sub(r"\s+", " ", text[start:end]).strip()[:400]
+   276→
+   277→
+   278→def _cert_attr(node: Any, key: str) -> str | None:
+   279→    """Extract one attribute from an ssl cert dict (issuer/subject)."""
+   280→    for group in node or ():
+   281→        for attr_key, value in group:
+   282→            if attr_key == key:
+   283→                return str(value)
+   284→    return None
+   285→
+   286→
+   287→# --------------------------------------------------------------------------- #
+   288→# Profiler
+   289→# --------------------------------------------------------------------------- #
+   290→
+   291→
+   292→class ERPProfiler:
+   293→    """Classifies a prospect's ERP stack and attaches ``erp_metadata``."""
+   294→
+   295→    def __init__(
+   296→        self,
+   297→        db: Database,
+   298→        outbox: OutboxStore,
+   299→        *,
+   300→        settings: ErpProfilerSettings | None = None,
+   301→        scraping: ScrapingSettings | None = None,
+   302→        qdrant_index: Any | None = None,
+   303→    ) -> None:
+   304→        self._db = db
+   305→        self._outbox = outbox
+   306→        self._settings = settings or get_settings().erp_profiler
+   307→        self._scraping = scraping or get_settings().scraping
+   308→        self._qdrant_index = qdrant_index
+   309→        self._http = httpx.AsyncClient(
+   310→            headers={"User-Agent": self._scraping.user_agent, "Accept-Language": "en-US,en;q=0.9"},
+   311→            timeout=httpx.Timeout(self._scraping.request_timeout_sec, connect=8.0),
+   312→            follow_redirects=True,
+   313→        )
+   314→
+   315→    async def aclose(self) -> None:
+   316→        await self._http.aclose()
+   317→
+   318→    # ------------------------------------------------------------ public API
+   319→    async def profile_prospect(self, prospect_id: str) -> ERPMetadata | None:
+   320→        """Profile one stored prospect and persist the result. Idempotent."""
+   321→        row = await self._db.fetchrow(
+   322→            "SELECT id, name, domain, vertical FROM prospects WHERE id = $1",
+   323→            uuid.UUID(prospect_id),
+   324→        )
+   325→        if row is None:
+   326→            raise ProfilerError("prospect not found", context={"prospect_id": prospect_id})
+   327→        if not row["domain"]:
+   328→            log.warning("erp_profile_skipped_no_domain", prospect_id=prospect_id)
+   329→            return None
+   330→
+   331→        metadata = await self.profile(
+   332→            domain=str(row["domain"]),
+   333→            company_name=str(row["name"]),
+   334→            prospect_id=prospect_id,
+   335→            vertical=str(row["vertical"]) if row["vertical"] else None,
+   336→        )
+   337→        await self._persist(prospect_id, metadata)
+   338→        return metadata
+   339→
+   340→    async def profile(
+   341→        self,
+   342→        *,
+   343→        domain: str,
+   344→        company_name: str,
+   345→        prospect_id: str,
+   346→        vertical: str | None,
+   347→    ) -> ERPMetadata:
+   348→        """Run all probes concurrently and classify the stack."""
+   349→        probe, tls, jobs = await asyncio.gather(
+   350→            self._probe_domain(domain),
+   351→            self._tls_metadata(domain),
+   352→            self._scan_job_boards(domain),
+   353→            return_exceptions=True,
+   354→        )
+   355→        if isinstance(probe, Exception):
+   356→            log.warning("erp_probe_failed", domain=domain, error=str(probe))
+   357→            probe = DomainProbe(base_url=f"https://{domain}")
+   358→        if isinstance(tls, Exception):
+   359→            log.debug("erp_tls_probe_failed", domain=domain, error=str(tls))
+   360→            tls = None
+   361→        if isinstance(jobs, Exception):
+   362→            log.warning("erp_job_scan_failed", domain=domain, error=str(jobs))
+   363→            jobs = JobScan()
+   364→
+   365→        signals = self._collect_signals(probe, jobs)
+   366→        erp_name, erp_family, confidence = self._classify_erp(signals, vertical)
+   367→        portal, portal_evidence = self._classify_portal(probe)
+   368→        pitch = self._pitch_angle(erp_name, portal, vertical)
+   369→
+   370→        metadata = ERPMetadata(
+   371→            detected_erp=erp_name,
+   372→            erp_family=erp_family,
+   373→            detection_confidence=round(min(confidence, 0.97), 2),
+   374→            quote_portal_type=portal,
+   375→            portal_evidence=portal_evidence,
+   376→            signals=signals,
+   377→            recommended_pitch_angle=pitch,
+   378→            ssl_issuer=tls.issuer if tls else None,
+   379→            job_boards_scanned=jobs.boards_tried,
+   380→            job_postings_scanned=jobs.postings_scanned,
+   381→        )
+   382→        log.info(
+   383→            "erp_profile_completed",
+   384→            prospect_id=prospect_id,
+   385→            domain=domain,
+   386→            detected_erp=erp_name,
+   387→            confidence=metadata.detection_confidence,
+   388→            portal=metadata.quote_portal_type.value,
+   389→            signals=len(signals),
+   390→        )
+   391→        return metadata
+   392→
+   393→    async def profile_unprofiled(self, *, limit: int = 25) -> list[ERPMetadata | None]:
+   394→        """Batch-queue: every prospect with a domain but no erp_metadata yet."""
+   395→        rows = await self._db.fetch(
+   396→            """
+   397→            SELECT id FROM prospects
+   398→             WHERE erp_metadata IS NULL
+   399→               AND domain IS NOT NULL
+   400→               AND ingestion <> 'filtered'
+   401→             ORDER BY created_at
+   402→             LIMIT $1
+   403→            """,
+   404→            limit,
+   405→        )
+   406→        results: list[ERPMetadata | None] = []
+   407→        for row in rows:
+   408→            try:
+   409→                results.append(await self.profile_prospect(str(row["id"])))
+   410→            except Exception as exc:  # noqa: BLE001 - batch must survive bad rows
+   411→                log.exception("erp_profile_batch_item_failed", prospect_id=str(row["id"]), error=str(exc))
+   412→                results.append(None)
+   413→        return results
+   414→
+   415→    # ---------------------------------------------------------- persistence
+   416→    async def _persist(self, prospect_id: str, metadata: ERPMetadata) -> None:
+   417→        async with self._db.pool.acquire() as conn:
+   418→            async with conn.transaction():
+   419→                await conn.execute(
+   420→                    """
+   421→                    UPDATE prospects
+   422→                       SET erp_metadata = $2::jsonb,
+   423→                           detected_erp = COALESCE($3, detected_erp),
+   424→                           quote_portal_type = $4,
+   425→                           updated_at = now()
+   426→                     WHERE id = $1
+   427→                    """,
+   428→                    uuid.UUID(prospect_id),
+   429→                    json.dumps(metadata.model_dump(mode="json"), default=str),
+   430→                    metadata.detected_erp,
+   431→                    str(metadata.quote_portal_type.value),
+   432→                )
+   433→                await self._outbox.enqueue(
+   434→                    conn,
+   435→                    aggregate_type="prospect",
+   436→                    aggregate_id=prospect_id,
+   437→                    event_type="prospect.erp_profiled",
+   438→                    payload={
+   439→                        "detected_erp": metadata.detected_erp,
+   440→                        "erp_family": metadata.erp_family,
+   441→                        "quote_portal_type": metadata.quote_portal_type.value,
+   442→                        "confidence": metadata.detection_confidence,
+   443→                    },
+   444→                )
+   445→        if self._qdrant_index is not None and self._settings.sync_qdrant_payload:
+   446→            await self._qdrant_index.patch_payload(
+   447→                prospect_id,
+   448→                {
+   449→                    "detected_erp": metadata.detected_erp,
+   450→                    "erp_family": metadata.erp_family,
+   451→                    "quote_portal_type": metadata.quote_portal_type.value,
+   452→                    "pitch_angle": metadata.recommended_pitch_angle,
+   453→                },
+   454→            )
+   455→
+   456→    # ------------------------------------------------------------ domain crawl
+   457→    async def _probe_domain(self, host: str) -> DomainProbe:
+   458→        base = f"https://{host}"
+   459→        probe = DomainProbe(base_url=base)
+   460→        for path in self._settings.crawl_paths:
+   461→            url = f"{base}{path}"
+   462→            try:
+   463→                response = await self._http.get(url)
+   464→            except httpx.HTTPError as exc:
+   465→                log.debug("erp_probe_fetch_failed", url=url, error=str(exc))
+   466→                continue
+   467→            if response.status_code != 200:
+   468→                continue
+   469→            if "html" not in response.headers.get("content-type", ""):
+   470→                continue
+   471→            body = response.text[: self._settings.page_fetch_max_bytes]
+   472→            headers = {
+   473→                k.lower(): v
+   474→                for k, v in response.headers.items()
+   475→                if k.lower() in _INTERESTING_HEADERS
+   476→            }
+   477→            probe.pages.append(PageFetch(url=str(response.url), status=200, body=body, headers=headers))
+   478→            for href in _HREF_RE.findall(body):
+   479→                low = href.lower()
+   480→                if low.startswith("mailto:") and any(hint in low for hint in _MAILTO_HINTS):
+   481→                    probe.mailto_hits.append(href[:300])
+   482→                elif low.endswith(".pdf") and any(hint in low for hint in _PDF_HINTS):
+   483→                    probe.pdf_form_hits.append(href[:300])
+   484→            gen = _GENERATOR_RE.search(body)
+   485→            if gen:
+   486→                probe.meta_generators.append(gen.group(1)[:200])
+   487→        for page in probe.pages:
+   488→            for key, value in page.headers.items():
+   489→                probe.header_evidence.append(f"{key}: {value}")
+   490→        log.debug(
+   491→            "erp_probe_summary",
+   492→            host=host,
+   493→            pages=len(probe.pages),
+   494→            mailto=len(probe.mailto_hits),
+   495→            pdf_forms=len(probe.pdf_form_hits),
+   496→        )
+   497→        return probe
+   498→
+   499→    # ---------------------------------------------------------------- TLS meta
+   500→    async def _tls_metadata(self, host: str) -> TlsMetadata | None:
+   501→        context = ssl.create_default_context()
+   502→        try:
+   503→            reader, writer = await asyncio.wait_for(
+   504→                asyncio.open_connection(host, 443, ssl=context), timeout=self._scraping.request_timeout_sec
+   505→            )
+   506→        except Exception as exc:  # noqa: BLE001 - TLS probing is best-effort
+   507→            log.debug("erp_tls_unreachable", host=host, error=str(exc))
+   508→            return None
+   509→        try:
+   510→            cert = writer.get_extra_info("peercert") or {}
+   511→            issuer = _cert_attr(cert.get("issuer"), "organizationName") or _cert_attr(
+   512→                cert.get("issuer"), "commonName"
+   513→            )
+   514→            sans = [value for kind, value in cert.get("subjectAltName", ()) if kind == "DNS"][:16]
+   515→            return TlsMetadata(issuer=issuer, not_after=cert.get("notAfter"), san_domains=sans)
+   516→        finally:
+   517→            writer.close()
+   518→            try:
+   519→                await writer.wait_closed()
+   520→            except Exception as exc:  # noqa: BLE001 - socket already closing
+   521→                log.debug("erp_tls_close_failed", host=host, error=str(exc))
+   522→
+   523→    # -------------------------------------------------------------- job boards
+   524→    async def _scan_job_boards(self, host: str) -> JobScan:
+   525→        if not self._settings.scan_job_boards:
+   526→            return JobScan()
+   527→        slug = host.split(".")[0]
+   528→        postings: list[tuple[str, str, str]] = []
+   529→        boards_tried: list[str] = []
+   530→
+   531→        async def _fetch(board: str, url: str) -> None:
+   532→            try:
+   533→                response = await self._http.get(url, timeout=self._settings.job_board_timeout_sec)
+   534→            except httpx.HTTPError as exc:
+   535→                log.debug("erp_job_board_unreachable", board=board, slug=slug, error=str(exc))
+   536→                return
+   537→            boards_tried.append(board)
+   538→            if response.status_code != 200:
+   539→                return
+   540→            try:
+   541→                data: Any = response.json()
+   542→            except ValueError:
+   543→                return
+   544→            if board == "greenhouse" and isinstance(data, dict):
+   545→                for job in data.get("jobs", [])[:50]:
+   546→                    postings.append(
+   547→                        (
+   548→                            str(job.get("title", "")),
+   549→                            _strip_html(str(job.get("content", "") or "")),
+   550→                            f"https://boards.greenhouse.io/{slug}/jobs/{job.get('id', '')}",
+   551→                        )
+   552→                    )
+   553→            elif board == "lever" and isinstance(data, list):
+   554→                for posting in data[:50]:
+   555→                    text = posting.get("descriptionPlain") or _strip_html(
+   556→                        str(posting.get("description", "") or "")
+   557→                    )
+   558→                    postings.append((str(posting.get("text", "")), text, str(posting.get("hostedUrl", ""))))
+   559→            elif board == "ashby" and isinstance(data, dict):
+   560→                for job in data.get("jobs", [])[:50]:
+   561→                    text = job.get("descriptionPlain") or _strip_html(
+   562→                        str(job.get("descriptionHtml", "") or "")
+   563→                    )
+   564→                    postings.append((str(job.get("title", "")), text, str(job.get("jobUrl", ""))))
+   565→
+   566→        await asyncio.gather(
+   567→            _fetch("greenhouse", _GREENHOUSE_URL.format(slug=slug)),
+   568→            _fetch("lever", _LEVER_URL.format(slug=slug)),
+   569→            _fetch("ashby", _ASHBY_URL.format(slug=slug)),
+   570→        )
+   571→
+   572→        signals: list[ERPSignal] = []
+   573→        for title, text, url in postings:
+   574→            haystack = f"{title}\n{text}"
+   575→            for signature in ERP_SIGNATURES.values():
+   576→                for pattern in signature.patterns:
+   577→                    match = pattern.search(haystack)
+   578→                    if match:
+   579→                        signals.append(
+   580→                            ERPSignal(
+   581→                                source="job_posting",
+   582→                                keyword=signature.name,
+   583→                                snippet=_snippet(haystack, match),
+   584→                                url=url or None,
+   585→                                weight=_SOURCE_WEIGHTS["job_posting"],
+   586→                            )
+   587→                        )
+   588→                        break  # one hit per signature per posting
+   589→        log.debug(
+   590→            "erp_job_scan_summary", slug=slug, boards=boards_tried,
+   591→            postings=len(postings), hits=len(signals),
+   592→        )
+   593→        return JobScan(boards_tried=boards_tried, postings_scanned=len(postings), signals=signals[:20])
+   594→
+   595→    # ----------------------------------------------------------------- signals
+   596→    def _collect_signals(self, probe: DomainProbe, jobs: JobScan) -> list[ERPSignal]:
+   597→        signals: list[ERPSignal] = []
+   598→        per_signature: dict[str, int] = defaultdict(int)
+   599→
+   600→        for signature in ERP_SIGNATURES.values():
+   601→            for page in probe.pages:
+   602→                if per_signature[signature.name] >= 2:
+   603→                    break
+   604→                for pattern in signature.patterns:
+   605→                    match = pattern.search(page.body)
+   606→                    if match:
+   607→                        signals.append(
+   608→                            ERPSignal(
+   609→                                source="page_body",
+   610→                                keyword=signature.name,
+   611→                                snippet=_snippet(page.body, match),
+   612→                                url=page.url,
+   613→                                weight=_SOURCE_WEIGHTS["page_body"],
+   614→                            )
+   615→                        )
+   616→                        per_signature[signature.name] += 1
+   617→                        break
+   618→
+   619→        generators = " ".join(probe.meta_generators)
+   620→        if generators:
+   621→            for signature in ERP_SIGNATURES.values():
+   622→                if per_signature[signature.name] >= 2:
+   623→                    continue
+   624→                for pattern in signature.patterns:
+   625→                    match = pattern.search(generators)
+   626→                    if match:
+   627→                        signals.append(
+   628→                            ERPSignal(
+   629→                                source="page_meta",
+   630→                                keyword=signature.name,
+   631→                                snippet=_snippet(generators, match),
+   632→                                url=probe.base_url,
+   633→                                weight=_SOURCE_WEIGHTS["page_meta"],
+   634→                            )
+   635→                        )
+   636→                        per_signature[signature.name] += 1
+   637→                        break
+   638→
+   639→        header_blob = " | ".join(probe.header_evidence)
+   640→        if header_blob:
+   641→            for signature in ERP_SIGNATURES.values():
+   642→                for pattern in signature.patterns:
+   643→                    match = pattern.search(header_blob)
+   644→                    if match:
+   645→                        signals.append(
+   646→                            ERPSignal(
+   647→                                source="http_header",
+   648→                                keyword=signature.name,
+   649→                                snippet=_snippet(header_blob, match),
+   650→                                url=probe.base_url,
+   651→                                weight=_SOURCE_WEIGHTS["http_header"],
+   652→                            )
+   653→                        )
+   654→                        break
+   655→
+   656→        signals.extend(jobs.signals)
+   657→        return signals[:40]
+   658→
+   659→    # ------------------------------------------------------------- classifiers
+   660→    def _classify_erp(
+   661→        self, signals: list[ERPSignal], vertical: str | None
+   662→    ) -> tuple[str | None, str | None, float]:
+   663→        scores: dict[str, float] = defaultdict(float)
+   664→        sources: dict[str, set[str]] = defaultdict(set)
+   665→        hits: dict[str, int] = defaultdict(int)
+   666→
+   667→        for signal in signals:
+   668→            signature = ERP_SIGNATURES.get(signal.keyword)
+   669→            if signature is None:
+   670→                continue
+   671→            scores[signal.keyword] += signal.weight * _SOURCE_WEIGHTS.get(signal.source, 1.0)
+   672→            sources[signal.keyword].add(signal.source)
+   673→            hits[signal.keyword] += 1
+   674→
+   675→        best_name: str | None = None
+   676→        best_score = 0.0
+   677→        for name, score in scores.items():
+   678→            signature = ERP_SIGNATURES[name]
+   679→            adjusted = score + (0.25 if vertical and vertical.lower() in signature.verticals else 0.0)
+   680→            if adjusted > best_score:
+   681→                best_name, best_score = name, adjusted
+   682→
+   683→        if best_name is None or best_score < self._settings.detection_confidence_floor:
+   684→            return None, None, 0.0
+   685→
+   686→        confidence = 0.45 + 0.12 * len(sources[best_name]) + 0.05 * max(0, hits[best_name] - 1)
+   687→        return best_name, ERP_SIGNATURES[best_name].family, confidence
+   688→
+   689→    def _classify_portal(self, probe: DomainProbe) -> tuple[QuotePortalType, list[str]]:
+   690→        bodies = probe.bodies.lower()
+   691→        modern_hits = [m.group(0) for marker in _MODERN_PORTAL_MARKERS for m in marker.finditer(bodies)]
+   692→        legacy_hits = [m.group(0) for marker in _LEGACY_PORTAL_MARKERS for m in marker.finditer(bodies)]
+   693→
+   694→        if modern_hits:
+   695→            return QuotePortalType.MODERN_QUOTE_API, [
+   696→                f"modern quote surface markers: {sorted(set(modern_hits))[:3]}"
+   697→            ]
+   698→        if legacy_hits:
+   699→            return QuotePortalType.LEGACY_PORTAL, [
+   700→                f"legacy portal markers: {sorted(set(legacy_hits))[:3]}",
+   701→                *(probe.header_evidence[:2]),
+   702→            ]
+   703→        if probe.pdf_form_hits:
+   704→            return QuotePortalType.STATIC_PDF_FORM, [f"PDF quote forms: {probe.pdf_form_hits[:2]}"]
+   705→        if probe.mailto_hits:
+   706→            return QuotePortalType.MANUAL_MAILTO, [f"mailto RFQ links: {probe.mailto_hits[:2]}"]
+   707→        return QuotePortalType.UNDETERMINED, []
+   708→
+   709→    def _pitch_angle(
+   710→        self, erp_name: str | None, portal: QuotePortalType, vertical: str | None
+   711→    ) -> str:
+   712→        if erp_name:
+   713→            signature = ERP_SIGNATURES[erp_name]
+   714→            base = f"{signature.pitch_line} (integration surface: {signature.integration_surface}.)"
+   715→        else:
+   716→            base = (
+   717→                "No ERP fingerprint surfaced — lead with RFQ latency math and let "
+   718→                "the audit preview do the talking."
+   719→            )
+   720→
+   721→        portal_line = {
+   722→            QuotePortalType.MANUAL_MAILTO: (
+   723→                "Their RFQ inbox is the pricing bottleneck: every quote waits on an "
+   724→                "inbox sweep and a spreadsheet."
+   725→            ),
+   726→            QuotePortalType.STATIC_PDF_FORM: (
+   727→                "PDF quote forms mean re-keying, version drift and quotes that never get sent."
+   728→            ),
+   729→            QuotePortalType.LEGACY_PORTAL: (
+   730→                "A legacy portal customers avoid is friction their competitors are already monetizing."
+   731→            ),
+   732→            QuotePortalType.MODERN_QUOTE_API: (
+   733→                "Modern quote plumbing exists — the gap is cross-vendor SPA enforcement "
+   734→                "and pricing intelligence on top."
+   735→            ),
+   736→            QuotePortalType.UNDETERMINED: (
+   737→                "Quote workflow looks manual or opaque — probe RFQ turnaround on the first call."
+   738→            ),
+   739→        }[portal]
+   740→
+   741→        vertical_line = {
+   742→            "pvf": "Anchor on scheduled-price-agreement (SPA) leakage and mill-to-counter price drift.",
+   743→            "electrical": "Anchor on distributor price-protection windows and project-quote turnaround.",
+   744→            "hvac": "Anchor on seasonal surge quoting and stock-out quote abandonment.",
+   745→            "fluid_power": "Anchor on hydraulic spec turnaround and OEM cross-reference time.",
+   746→        }.get((vertical or "").lower(), "Anchor on manual RFQ latency and unapplied vendor SPAs.")
+   747→
+   748→        return f"{base} {portal_line} {vertical_line}"
+   749→
+   750→
+   751→# --------------------------------------------------------------------------- #
+   752→# CLI
+   753→# --------------------------------------------------------------------------- #
+   754→
+   755→
+   756→async def _run(args: list[str]) -> int:
+   757→    from vertebra.logging_conf import configure_logging
+   758→
+   759→    settings = get_settings()
+   760→    configure_logging(settings.log_level, settings.log_json)
+   761→    db = Database(settings.database)
+   762→    await db.connect()
+   763→    outbox = OutboxStore(db)
+   764→    profiler = ERPProfiler(db, outbox)
+   765→    try:
+   766→        if args.batch:
+   767→            results = await profiler.profile_unprofiled(limit=args.limit)
+   768→            profiled = sum(1 for r in results if r is not None)
+   769→            log.info("erp_profile_batch_done", requested=len(results), profiled=profiled)
+   770→            print(json.dumps({"requested": len(results), "profiled": profiled}))
+   771→        else:
+   772→            if not args.prospect_id:
+   773→                raise ProfilerError("either --prospect-id or --batch is required")
+   774→            metadata = await profiler.profile_prospect(args.prospect_id)
+   775→            payload = metadata.model_dump(mode="json") if metadata else {"skipped": True}
+   776→            print(json.dumps(payload, indent=2, default=str))
+   777→    finally:
+   778→        await profiler.aclose()
+   779→        await db.close()
+   780→    return 0
+   781→
+   782→
+   783→if __name__ == "__main__":  # pragma: no cover - CLI entrypoint
+   784→    import argparse
+   785→    import sys
+   786→
+   787→    parser = argparse.ArgumentParser(description="Module 5 — ERP & tech-stack profiler")
+   788→    parser.add_argument("--prospect-id", help="Profile a single stored prospect")
+   789→    parser.add_argument("--batch", action="store_true", help="Profile every prospect missing erp_metadata")
+   790→    parser.add_argument("--limit", type=int, default=25, help="Batch size")
+   791→    sys.exit(asyncio.run(_run(parser.parse_args())))
+   792→

@@ -8,9 +8,8 @@ changes they describe.
 
 from __future__ import annotations
 
+from datetime import UTC
 from typing import Any
-
-import asyncpg
 
 from vertebra.ai.scorer import QuoteLeakageScorer, ScoringInput
 from vertebra.db.outbox import OutboxStore
@@ -191,7 +190,7 @@ def _portal_hint(excerpt: str | None) -> str | None:
 
 async def load_prospect(db: Database, prospect_id: Any):
     """Load a prospect + latest score from Postgres into domain models."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from vertebra.models.domain import (
         Channel,
@@ -253,7 +252,7 @@ async def load_prospect(db: Database, prospect_id: Any):
             rationale=row["rationale"],
             model=row["model"],
             input_fingerprint=row["input_fingerprint"],
-            scored_at=row["scored_at"] or datetime.now(tz=timezone.utc),
+            scored_at=row["scored_at"] or datetime.now(tz=UTC),
         )
     prospect = Prospect(
         id=str(row["id"]), company=company, contacts=contacts, casl_scope=row["casl_scope"],

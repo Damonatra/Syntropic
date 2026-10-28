@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 
@@ -52,7 +52,7 @@ class DomainRotator:
 
     def next_domain(self, *, now: datetime | None = None) -> str:
         """Return the next domain with capacity (round-robin), or raise."""
-        now = now or datetime.now(tz=timezone.utc)
+        now = now or datetime.now(tz=UTC)
         day_key = now.strftime("%Y%m%d")
         hour_key = now.strftime("%Y%m%d%H")
         total = len(self._domains)
@@ -77,7 +77,7 @@ class DomainRotator:
         )
 
     def record_send(self, domain: str, *, now: datetime | None = None) -> None:
-        now = now or datetime.now(tz=timezone.utc)
+        now = now or datetime.now(tz=UTC)
         window = self._windows[domain]
         window.day_count += 1
         hour_key = now.strftime("%Y%m%d%H")

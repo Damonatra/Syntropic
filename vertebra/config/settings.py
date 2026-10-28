@@ -244,6 +244,22 @@ class ReplyAgentSettings(BaseModel):
     process_pending_limit: int = Field(default=25, ge=1, le=200)
 
 
+class TacticalJobsSettings(BaseModel):
+    """Autonomous scheduling policy for the advanced tactical modules (5-9).
+
+    Each heavy job can be disabled independently — e.g. a worker image
+    without Chromium sets ``audit_previews_enabled = false`` and the
+    scheduler skips Module 6 without logging a failure every cycle.
+    """
+
+    erp_profiling_enabled: bool = Field(default=True)
+    erp_profiling_batch: int = Field(default=8, ge=1, le=100)
+    audit_previews_enabled: bool = Field(default=True)
+    audit_previews_batch: int = Field(default=4, ge=1, le=50)
+    spatial_clustering_enabled: bool = Field(default=True)
+    reply_processing_enabled: bool = Field(default=True)
+
+
 class DispatchPolicySettings(BaseModel):
     """Routing thresholds between Channel A and Channel B."""
 
@@ -253,7 +269,9 @@ class DispatchPolicySettings(BaseModel):
     # Canadian prospects always get the CASL-enforced single-click headers.
     enforce_casl_headers: bool = True
     # High-touch CSV export location (writable path or s3:// style handled by ops).
-    high_touch_export_dir: str = Field(default="/tmp/vertebra/high-touch")
+    high_touch_export_dir: str = Field(
+        default="/tmp/vertebra/high-touch"  # noqa: S108 - operator-overridable default, no secrets
+    )
     max_hooks_per_prospect: int = Field(default=3, ge=1, le=5)
 
 
@@ -274,7 +292,7 @@ class Settings(BaseSettings):
     log_json: bool = Field(default=True, description="Emit JSON logs for ingestion by log shippers")
     service_name: str = "vertebra"
 
-    api_host: str = "0.0.0.0"
+    api_host: str = "0.0.0.0"  # noqa: S104 - container service binding, expected default
     api_port: int = Field(default=8000, ge=1, le=65535)
 
     database: DatabaseSettings
@@ -292,6 +310,7 @@ class Settings(BaseSettings):
     spatial: SpatialSettings = SpatialSettings()
     telemetry: TelemetrySettings
     reply_agent: ReplyAgentSettings = ReplyAgentSettings()
+    tactical_jobs: TacticalJobsSettings = TacticalJobsSettings()
 
 
 @lru_cache(maxsize=1)

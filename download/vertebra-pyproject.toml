@@ -1,0 +1,60 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vertebra"
+version = "1.0.0"
+description = "Syntropic autonomous lead & intelligence engine for US/CA industrial distribution"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "Syntropic Engineering" }]
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "asyncpg>=0.30",
+    "anthropic>=0.39",
+    "langgraph>=0.2",
+    "httpx[http2]>=0.27",
+    "selectolax>=0.3",
+    "dnspython>=2.7",
+    "aiosmtplib>=3.0",
+    "qdrant-client>=1.12",
+    "google-api-python-client>=2.149",
+    "google-auth>=2.35",
+    # -- advanced tactical modules (5-9) --------------------------------------
+    "playwright>=1.47",     # Module 6: headless audit screenshots
+    "Pillow>=10.4",         # Module 6: audit widget overlay composition
+    "boto3>=1.35",          # Module 6: S3/R2 asset storage
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "mypy>=1.13",
+    "ruff>=0.7",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["vertebra"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "ASYNC", "S"]
+ignore = ["S101"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

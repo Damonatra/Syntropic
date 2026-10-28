@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from typing import Any, TypedDict
 
-from vertebra.config.settings import get_settings
 from vertebra.ai.scorer import QuoteLeakageScorer, ScoringInput
+from vertebra.config.settings import get_settings
 from vertebra.enrichment.engine import EnrichmentEngine
 from vertebra.logging_conf import get_logger
 from vertebra.models.domain import Channel, CompanyRecord, DispatchDecision, Prospect
@@ -181,7 +181,9 @@ def build_prospect_graph(
     graph.set_entry_point("enrich")
     graph.add_edge("enrich", "score")
     graph.add_edge("score", "route")
-    graph.add_conditional_edges("route", route_branch, {"channel_a": "channel_a", "channel_b": "channel_b", "__end__": END})
+    graph.add_conditional_edges(
+        "route", route_branch, {"channel_a": "channel_a", "channel_b": "channel_b", "__end__": END}
+    )
     graph.add_edge("channel_a", END)
     graph.add_edge("channel_b", END)
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from vertebra.config.settings import GoogleCalendarSettings, get_settings
@@ -87,7 +87,7 @@ class CalendarSync:
         while start.weekday() >= 5:  # skip weekends
             start += timedelta(days=1)
         end = start.replace(hour=min(self._settings.work_end_hour, 23))
-        return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+        return start.astimezone(UTC), end.astimezone(UTC)
 
     def _urgent_slot(self) -> tuple[datetime, datetime]:
         """Same-day 30-minute slot ~90 minutes out, clamped to business hours."""

@@ -9,8 +9,8 @@ sync) with retries and records failures on the row.
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Mapping, Sequence
-from datetime import datetime, timezone
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from datetime import datetime
 from typing import Any
 
 import asyncpg
@@ -114,7 +114,7 @@ class OutboxStore:
     # ------------------------------------------------------------------ relay
     async def relay(
         self,
-        publisher: "Publisher",
+        publisher: Callable[[OutboxEvent], Awaitable[None]],
         *,
         batch_size: int = 50,
         max_attempts: int = 8,

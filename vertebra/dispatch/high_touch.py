@@ -9,16 +9,20 @@ exported so no lead is worked twice.
 from __future__ import annotations
 
 import csv
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import asyncpg
 
-from vertebra.db.pool import Database
+from vertebra.config.settings import get_settings
 from vertebra.db.outbox import OutboxStore
-from vertebra.config.settings import DispatchPolicySettings, get_settings
+from vertebra.db.pool import Database
 from vertebra.logging_conf import get_logger
 from vertebra.models.domain import HighTouchQueueItem, Prospect
+
+if TYPE_CHECKING:
+    from vertebra.dispatch.calendar_sync import CalendarSync
 
 log = get_logger("dispatch.high_touch")
 
@@ -51,7 +55,7 @@ class HighTouchExporter:
         outbox: OutboxStore,
         *,
         export_dir: str | None = None,
-        calendar: "CalendarSync | None" = None,
+        calendar: CalendarSync | None = None,
         schedule_calendar: bool = True,
     ) -> None:
         self._db = db
@@ -154,7 +158,9 @@ class HighTouchExporter:
             log.info("high_touch_export_empty")
             return self._ensure_dir() / "high-touch-empty.csv"
 
-        export_path = Path(path) if path else self._ensure_dir() / f"josias-high-touch-{datetime.now(tz=timezone.utc):%Y%m%d-%H%M%S}.csv"
+        export_path = Path(path) if path else self._ensure_dir() / (
+            f"josias-high-touch-{datetime.now(tz=UTC):%Y%m%d-%H%M%S}.csv"
+        )
         columns = [
             "prospect_id", "company_name", "contact_first", "contact_last", "role",
             "email", "phone", "city", "state_province", "region", "vertical",
@@ -168,7 +174,7 @@ class HighTouchExporter:
                 writer.writerow({column: record.get(column) for column in columns})
 
         ids = [str(r["prospect_id"]) for r in rows]
-        await self._db.execute(_MARK_EXPORTED_SQL, ids, datetime.now(tz=timezone.utc))
+        await self._db.execute(_MARK_EXPORTED_SQL, ids, datetime.now(tz=UTC))
         log.info("high_touch_exported", rows=len(rows), path=str(export_path))
         return export_path
 

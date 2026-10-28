@@ -9,8 +9,8 @@ it.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 from fastapi import FastAPI
 
@@ -18,12 +18,12 @@ from vertebra.api.routes import pipeline_router, system_router, tactical_router
 from vertebra.config.settings import get_settings
 from vertebra.db.outbox import OutboxStore
 from vertebra.db.pool import Database, database_from_settings
-from vertebra.dispatch.high_touch import HighTouchExporter
 from vertebra.dispatch.router import DispatchRouter
 from vertebra.logging_conf import configure_logging, get_logger
 from vertebra.telemetry.intent_tracker import IntentMonitor, telemetry_router
 from vertebra.workers.jobs import default_jobs
 from vertebra.workers.scheduler import Scheduler
+from vertebra.workers.tactical_jobs import default_tactical_jobs
 
 log = get_logger("api.main")
 
@@ -59,7 +59,10 @@ def create_app(*, start_scheduler: bool = True) -> FastAPI:
 
         scheduler: Scheduler | None = None
         if start_scheduler:
-            scheduler = Scheduler(default_jobs(db, outbox, dispatch_router))
+            scheduler = Scheduler(
+                default_jobs(db, outbox, dispatch_router)
+                + default_tactical_jobs(db, outbox)
+            )
             await scheduler.start()
             app.state.scheduler_status = scheduler.status
 

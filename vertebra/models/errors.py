@@ -45,7 +45,7 @@ class DispatchError(VertebraError):
     retryable = True
 
 
-class CASLViolation(DispatchError):
+class CASLViolation(DispatchError):  # noqa: N818 - documented operator-facing contract name
     """Attempted dispatch that would breach Canadian CASL policy."""
 
     retryable = False

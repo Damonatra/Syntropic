@@ -109,7 +109,11 @@ def detect_region(
 
     if country_norm in {"canada", "ca", "can"} or prov in _CA_PROVINCES or prov in _CA_PROVINCE_CODES:
         return Region.CA
-    if country_norm in {"usa", "us", "united states", "united states of america"} or prov in _US_STATE_CODES or prov in _US_STATE_NAMES:
+    if (
+        country_norm in {"usa", "us", "united states", "united states of america"}
+        or prov in _US_STATE_CODES
+        or prov in _US_STATE_NAMES
+    ):
         return Region.US
     if postal_code and _CA_POSTAL_RE.search(postal_code):
         return Region.CA

@@ -19,11 +19,11 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-from vertebra.config.settings import AnthropicSettings, get_settings
 from vertebra.ai.hooks import build_rubric_hooks
+from vertebra.config.settings import AnthropicSettings, get_settings
 from vertebra.logging_conf import get_logger
 from vertebra.models.domain import (
     Hook,
@@ -85,7 +85,7 @@ class ScoringInput:
             f"Company: {self.company_name}",
             f"Vertical: {self.vertical or 'unknown'}",
             f"Region: {self.region or 'unknown'}",
-            f"Revenue estimate: {'${:,.0f}'.format(self.revenue_estimate_usd) if self.revenue_estimate_usd else 'unknown'}",
+            f"Revenue estimate: {f'${self.revenue_estimate_usd:,.0f}' if self.revenue_estimate_usd else 'unknown'}",
             f"Employee count: {self.employee_count or 'unknown'}",
             f"Detected ERP: {self.detected_erp or 'none detected'}",
             f"Legacy portal signals: {self.legacy_portal or 'none'}",
@@ -204,7 +204,7 @@ class RubricScorer:
             hooks=hooks,
             rationale=rationale,
             model="vertebra-rubric-1.0",
-            scored_at=datetime.now(tz=timezone.utc),
+            scored_at=datetime.now(tz=UTC),
             input_fingerprint=payload.fingerprint(),
         )
 
@@ -229,10 +229,17 @@ class RubricScorer:
         size_fit = 100 if 20_000_000 <= revenue <= 100_000_000 else 70 if revenue else 35
 
         return {
-            "rfq_latency": (rfq_points, f"ERP={p.detected_erp or 'unknown'}, portal signals={p.legacy_portal or 'none'}"),
+            "rfq_latency": (
+                rfq_points, f"ERP={p.detected_erp or 'unknown'}, portal signals={p.legacy_portal or 'none'}"
+            ),
             "legacy_portal": (portal_points, f"legacy portal evidence: {p.legacy_portal or 'none detected'}"),
-            "unapplied_spa": (min(95, erp_points + 20), f"SPA enforcement typically absent on {p.detected_erp or 'manual stacks'}"),
-            "manual_quoting_share": (erp_points, f"quoting maturity inferred from {p.detected_erp or 'absent ERP signal'}"),
+            "unapplied_spa": (
+                min(95, erp_points + 20),
+                f"SPA enforcement typically absent on {p.detected_erp or 'manual stacks'}",
+            ),
+            "manual_quoting_share": (
+                erp_points, f"quoting maturity inferred from {p.detected_erp or 'absent ERP signal'}"
+            ),
             "vertical_fit": (float(vertical_fit), f"vertical={p.vertical or 'unknown'} (RFQ complexity fit)"),
             "size_fit": (float(size_fit), f"revenue ${revenue:,}" if revenue else "revenue unknown"),
         }

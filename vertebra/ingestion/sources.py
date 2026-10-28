@@ -298,7 +298,8 @@ def _parse_jsonld_node(node: dict[str, Any]) -> list[ParsedListing]:
     if isinstance(address, list):
         address = address[0] if address else {}
     address_text = " ".join(
-        str(address.get(k) or "") for k in ("streetAddress", "addressLocality", "addressRegion", "postalCode", "addressCountry")
+        str(address.get(k) or "")
+        for k in ("streetAddress", "addressLocality", "addressRegion", "postalCode", "addressCountry")
     ).strip() or None
     city, state, postal = split_address(address_text)
     revenue = extract_revenue_usd(json.dumps(node))

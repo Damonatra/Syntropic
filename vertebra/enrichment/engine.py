@@ -12,10 +12,10 @@ from __future__ import annotations
 
 import asyncio
 
-from vertebra.ingestion.normalizer import detect_region
 from vertebra.enrichment.casl import evaluate_casl_scope
 from vertebra.enrichment.permutations import EmailPermutator
 from vertebra.enrichment.smtp_verifier import SMTPVerifier
+from vertebra.ingestion.normalizer import detect_region
 from vertebra.logging_conf import get_logger
 from vertebra.models.domain import CompanyRecord, Prospect, SmtpVerification
 from vertebra.models.errors import EnrichmentError

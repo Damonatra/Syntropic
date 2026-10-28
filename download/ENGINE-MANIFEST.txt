@@ -1,0 +1,26 @@
+Vertebra Engine — Deliverable Manifest
+=======================================
+Generated : 2026-10-28T19:32:26+00:00
+Archive   : download/vertebra-engine.zip  (54 files)
+SHA-256   : b9fbd3fc1323837e056049c5c09eada814876c347766129e7fbe16f4a0f233d2
+Standalone: download/vertebra-pyproject.toml  (corrected dependency contract,
+            identical to vertebra/pyproject.toml inside the archive)
+
+Contents (Modules 5-9 advanced tactical extensions + shared engine):
+  vertebra/enrichment/erp_profiler.py     Module 5 — ERP & competitor tech-stack profiler
+  vertebra/intelligence/audit_preview.py  Module 6 — Playwright audit screenshot + leakage widget
+  vertebra/spatial/clustering.py          Module 7 — PostGIS / haversine DBSCAN tactical clusters
+  vertebra/telemetry/intent_tracker.py    Module 8 — real-time intent telemetry + hot-lead pager
+  vertebra/telemetry/notifier.py          Module 8 — Telegram / Slack / webhook alert fan-out
+  vertebra/ai/reply_agent.py              Module 9 — LangGraph closed-loop reply agent
+  vertebra/workers/tactical_jobs.py       Modules 5-9 autonomous scheduler jobs
+  vertebra/api/main.py, routes.py         FastAPI app: pipeline / tactical / telemetry routes
+  prisma/schema.prisma                    Neon data model (11 models)
+  scripts/verify_vertebra.py              Engine harness  (12 checks)
+  scripts/verify_modules_5_9.py           Tactical harness (13 checks)
+
+Post-download verification:
+  unzip -t vertebra-engine.zip
+  python -c "import zipfile; print(zipfile.ZipFile('vertebra-engine.zip').read('vertebra/pyproject.toml').decode().count('httpxttp2'))"   # expect 0
+  pip install -e ".[dev]" && playwright install chromium
+  python scripts/verify_vertebra.py && python scripts/verify_modules_5_9.py

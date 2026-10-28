@@ -54,10 +54,10 @@ class Job:
 
     async def _sleep_interval(self, override: float | None = None) -> None:
         interval = override if override is not None else self.interval_sec
-        jitter = interval * self.jitter_frac * random.uniform(-1, 1)
+        jitter = interval * self.jitter_frac * random.uniform(-1, 1)  # noqa: S311 - schedule jitter, not crypto
         try:
             await asyncio.wait_for(self._stopped.wait(), timeout=max(0.1, interval + jitter))
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
 
 

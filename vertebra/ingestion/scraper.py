@@ -15,8 +15,8 @@ import random
 import time
 import urllib.robotparser
 from collections import defaultdict
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import AsyncIterator
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -80,7 +80,7 @@ class Fetcher:
         self._semaphore = asyncio.Semaphore(self._settings.max_concurrency)
         self._client: httpx.AsyncClient | None = None
 
-    async def __aenter__(self) -> "Fetcher":
+    async def __aenter__(self) -> Fetcher:
         self._client = httpx.AsyncClient(
             headers={
                 "User-Agent": self._settings.user_agent,
@@ -122,7 +122,7 @@ class Fetcher:
                     else:
                         response.raise_for_status()
                         return response
-            backoff = min(30.0, 2**attempt) + random.uniform(0, 1.5)
+            backoff = min(30.0, 2**attempt) + random.uniform(0, 1.5)  # noqa: S311 - jitter, not crypto
             log.warning(
                 "fetch_retry", url=url, attempt=attempt + 1, backoff_sec=round(backoff, 2), error=str(last_error)
             )
@@ -262,7 +262,9 @@ class DirectoryScraper:
             region=region,
             city=listing.city,
             state_province=listing.state_province,
-            country=listing.country or ("Canada" if region is Region.CA else "United States" if region is Region.US else None),
+            country=listing.country or (
+                "Canada" if region is Region.CA else "United States" if region is Region.US else None
+            ),
             postal_code=listing.postal_code,
             employee_count=listing.employee_count,
             revenue_estimate_usd=revenue,

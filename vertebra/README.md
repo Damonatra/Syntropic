@@ -37,7 +37,7 @@ directories ──▶ ingestion ──▶ enrichment ──▶ ai.scorer ──�
 | `vertebra/spatial` | **Module 7** — spatial clustering: deterministic haversine DBSCAN + PostGIS `ST_DWithin` proximity, seed tactical clusters (Gulf Coast, Chicago, Toronto, DFW, Great Lakes, Atlanta, SoCal, LAPPSET), localized meeting hooks |
 | `vertebra/telemetry` | **Module 8** — intent monitor: HMAC-signed `?lid=` tracking tokens, Vercel geo headers, rolling 14-day intent heat, 🚨 high-intent Telegram/Slack/webhook pager with cooldown |
 | `vertebra/ai/reply_agent` | **Module 9** — closed-loop follow-up: LangGraph + Claude 3.5 Sonnet intent classification (interested / OOO / info / not-interested / price / ERP objections), urgent calendar booking, human-review drafts, OOO rescheduling, sequence suppression |
-| `vertebra/workers` | asyncio scheduler (jittered intervals, per-job isolation, SKIP LOCKED claims) |
+| `vertebra/workers` | asyncio scheduler (jittered intervals, per-job isolation, SKIP LOCKED claims); core pipeline jobs + autonomous tactical jobs (`tactical_jobs.py`: ERP profiling 15m, audit previews 30m, spatial clustering 6h, reply processing 2m — each independently toggleable via `TacticalJobsSettings`) |
 | `vertebra/api` | FastAPI app factory + pipeline/system/tactical/telemetry routes |
 
 ## Scoring — Quote Leakage Vulnerability (1–100)
@@ -79,6 +79,7 @@ playwright install chromium
 
 # verify engine logic (no external services required)
 python ../scripts/verify_vertebra.py
+python ../scripts/verify_modules_5_9.py
 
 # run the API + workers
 uvicorn vertebra.api.main:create_app --factory --host 0.0.0.0 --port 8000
