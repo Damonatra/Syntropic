@@ -1,0 +1,1784 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Syntropic — We Take a Cut of the Margin You're Already Losing</title>
+<meta name="description" content="Syntropic operates inside your Outlook inbox on a pure performance-split model. Zero software fees until we defend your profit." />
+<meta property="og:title" content="Syntropic — We Take a Cut of the Margin You're Already Losing" />
+<meta property="og:description" content="Zero subscription fees. We defend 2–4% margin leakage on every multi-line RFQ and take 20% of what we save you. $3,500 diagnostic audit, $10,000 recovery guarantee." />
+<meta property="og:type" content="website" />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:title" content="Syntropic — Autonomous Margin Defense" />
+<meta name="twitter:description" content="48-hour diagnostic audit · $10,000 recovery guarantee · Zero-UI Outlook native." />
+<script>document.documentElement.classList.remove('no-js');</script>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23fbe1d1'/%3E%3Ctext x='32' y='44' font-family='Georgia,serif' font-size='36' fill='%235d2a1a' text-anchor='middle'%3Es%3C/text%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;1,8..60,400&family=Inter:wght@400..500&display=swap" rel="stylesheet" />
+
+<style>
+:root{--ink:#17191c;--paper:#fff;--mist:#f2f2f3;--fog:#fafafb;--slate:#777b86;--ash:#979799;--smoke:#a3a6af;--peach:#fbe1d1;--sienna:#5d2a1a;--hairline:#ececec;--serif:'Source Serif 4',ui-serif,Georgia,serif;--sans:'Inter',ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;--shadow-artifact:0 0 0 1px rgba(4,23,43,.05),0 20px 25px -5px rgba(0,0,0,.1),0 8px 10px -6px rgba(0,0,0,.1);--shadow-pop:0 0 0 1px rgba(4,23,43,.05),0 4px 24px rgba(0,0,0,.08);--shadow-modal:0 0 0 1px rgba(4,23,43,.05),0 8px 40px rgba(0,0,0,.1);--max-w:1200px}
+*{box-sizing:border-box;margin:0;padding:0}[hidden]{display:none!important}
+html{scroll-behavior:smooth}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.35;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+::selection{background:var(--peach);color:var(--ink)}
+a{color:inherit;text-decoration:none}svg{display:block}button{font-family:inherit}
+.container{max-width:var(--max-w);margin:0 auto;padding:0 24px}
+section[id]{scroll-margin-top:84px}
+.display{font-family:var(--serif);font-weight:400;font-size:clamp(44px,6.2vw,88px);line-height:1.12;letter-spacing:-.025em}
+.display-line{display:flex;flex-wrap:wrap;column-gap:.18em}
+.display-sub{display:flex;flex-wrap:wrap;column-gap:.15em;margin-top:14px;font-size:clamp(28px,4.4vw,56px);line-height:1.18;letter-spacing:-.015em;color:var(--slate)}
+.hw{cursor:pointer;transition:color .2s ease}.hw--ink{color:var(--ink)}.hw--ink:hover{color:var(--slate)}.hw--slate{color:var(--slate)}.hw--slate:hover{color:var(--ink)}
+.heading{font-family:var(--serif);font-weight:400;font-size:clamp(32px,3.8vw,56px);line-height:1.25;letter-spacing:-.015em}
+.eyebrow{font-size:15px;color:var(--ash)}
+.eyebrow-rule{display:flex;align-items:center;gap:16px;margin-bottom:28px}.eyebrow-rule::after{content:'';flex:1;height:1px;background:var(--hairline)}
+.muted{color:var(--slate)}.no-js .reveal-el{opacity:1!important;transform:none!important}
+.pill{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:9999px;padding:14px 28px;font-size:16px;font-weight:400;cursor:pointer;border:1px solid transparent;transition:opacity .15s ease,background .15s ease;white-space:nowrap}
+.pill--filled{background:var(--ink);color:var(--paper);border-color:var(--ink)}.pill--filled:hover{opacity:.88}
+.pill--ghost{background:transparent;color:var(--ink);border-color:var(--ink)}.pill--ghost:hover{background:var(--mist)}
+.pill--mist{background:var(--mist);color:var(--ink);border-color:var(--hairline)}.pill--mist:hover{background:#ededee}
+.pill--sm{padding:9px 18px;font-size:14px}.pill:disabled{opacity:.35;cursor:not-allowed}.pill svg{width:14px;height:14px}
+.pill:focus-visible,.seg-btn:focus-visible,.split-root:focus-visible,.pillar:focus-visible,.engine-line:focus-visible,.engine-replay:focus-visible,.modal-close:focus-visible,.upzone:focus-visible,.cal-btn:focus-visible,.backlink:focus-visible,.faq-q:focus-visible,.copy-btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.textlink{display:inline-block;padding:4px 0;font-size:16px;color:var(--ink)}.textlink:hover{text-decoration:underline;text-underline-offset:4px;text-decoration-thickness:1px}
+.nav-wrap{position:fixed;inset:0 0 auto 0;z-index:50;background:rgba(255,255,255,.9);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border-bottom:1px solid var(--hairline)}
+.nav{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:16px 24px;max-width:var(--max-w);margin:0 auto}
+.logo{font-family:var(--serif);font-weight:400;font-size:21px;letter-spacing:-.01em}.logo sup{font-size:10px}
+.nav-links{display:flex;gap:28px;font-size:12.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--slate)}
+.nav-links a{transition:color .15s ease}.nav-links a:hover{color:var(--ink)}
+.nav-cta{display:flex;align-items:center;justify-content:flex-end}
+@media (max-width:940px){.nav{grid-template-columns:auto 1fr}.nav-links{display:none}}
+.hero{padding:160px 0 104px}@media (max-width:640px){.hero{padding:128px 0 72px}}
+.hero-head{max-width:920px;margin-bottom:48px}
+.hero-ctas{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:16px}
+.nda{display:flex;align-items:flex-start;gap:10px;max-width:640px;margin-bottom:64px;font-size:13.5px;line-height:1.55;color:var(--slate)}
+.nda-dot{width:8px;height:8px;border-radius:9999px;background:var(--ink);margin-top:6px;flex-shrink:0}
+.pillars{display:grid;gap:32px;grid-template-columns:1fr;padding-bottom:56px;border-bottom:1px solid var(--hairline);margin-bottom:40px}
+@media (min-width:640px){.pillars{grid-template-columns:1fr 1fr}}@media (min-width:1024px){.pillars{grid-template-columns:repeat(4,1fr);gap:28px}}
+.pillar{display:block;border-left:2px solid var(--hairline);padding-left:16px;transition:border-color .2s ease}
+.pillar--ink,.pillar:hover{border-left-color:var(--ink)}
+.pillar-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.pillar h3{font-size:20px;font-weight:500;letter-spacing:-.009em;color:var(--ink)}
+.pillar .up{width:16px;height:16px;color:var(--ink);opacity:0;transform:translate(-4px,4px);transition:opacity .2s ease,transform .2s ease;flex-shrink:0}
+.pillar:hover .up,.pillar:focus-visible .up{opacity:1;transform:none}
+.pillar p{margin-top:8px;font-size:14px;line-height:1.55;color:var(--slate)}
+.chip-row{display:flex;flex-wrap:wrap;gap:10px}
+.chip{display:inline-flex;align-items:center;gap:8px;background:var(--mist);border-radius:9999px;padding:9px 16px;font-size:13.5px;color:var(--ink);transition:background .15s ease;cursor:default}
+.chip:hover{background:#ededee}.chip svg{width:15px;height:15px;color:var(--ink);opacity:.75;flex-shrink:0}
+.strip{margin-top:64px}.strip-tag{font-size:14px;color:var(--ash);margin-bottom:20px}
+.strip-grid{display:grid;gap:20px;grid-template-columns:1fr}
+@media (min-width:640px){.strip-grid{grid-template-columns:1fr 1fr}}@media (min-width:1024px){.strip-grid{grid-template-columns:repeat(4,1fr)}}
+.artifact{background:var(--paper);border-radius:20px;box-shadow:var(--shadow-artifact);padding:20px;text-align:left}
+.artifact-label{font-size:11px;font-weight:450;letter-spacing:.08em;text-transform:uppercase;color:var(--ash)}
+.artifact-title{margin-top:8px;font-size:14px;font-weight:500}
+.artifact-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:7px 0;font-size:12.5px;color:var(--slate)}
+.artifact-row b{font-weight:480;color:var(--ink);font-variant-numeric:tabular-nums}
+.artifact-code{margin-top:4px;font-size:12px;color:var(--slate)}.artifact-foot{margin-top:12px;font-size:12px;color:var(--ash)}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.replay{font-size:11px;color:var(--slate);background:none;border:none;cursor:pointer;padding:2px 0;font-family:var(--sans)}
+.replay:hover{color:var(--ink);text-decoration:underline;text-underline-offset:3px}
+.rfq-progress{height:2px;border-radius:9999px;background:var(--hairline);margin-top:12px;overflow:hidden}
+.rfq-fill{height:100%;width:0%;background:var(--ink);border-radius:9999px}
+.split-chip{cursor:pointer}
+.peach-card{background:var(--peach);color:var(--sienna);border-radius:24px;padding:20px;text-align:left}
+.peach-card .artifact-label{color:rgba(93,42,26,.65)}
+.peach-note{margin-top:8px;font-size:13px;line-height:1.45}
+.peach-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding-top:12px;border-top:1px solid rgba(93,42,26,.15);font-size:13px;font-weight:480}
+.peach-range{-webkit-appearance:none;appearance:none;width:100%;height:2px;margin-top:14px;border-radius:9999px;background:rgba(93,42,26,.25);outline:none;cursor:pointer}
+.peach-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;border-radius:9999px;background:var(--sienna);border:3px solid var(--peach);box-shadow:0 0 0 1px rgba(93,42,26,.25);cursor:pointer}
+.peach-range::-moz-range-thumb{width:16px;height:16px;border-radius:9999px;background:var(--sienna);border:3px solid var(--peach);box-shadow:0 0 0 1px rgba(93,42,26,.25);cursor:pointer}
+.peach-floor{display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:rgba(93,42,26,.6)}
+.peach-protect{font-variant-numeric:tabular-nums}
+.send-dot{position:relative;width:38px;height:38px;border-radius:9999px;background:var(--ink);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--paper);flex-shrink:0;transition:transform .15s ease}
+.send-dot:hover{transform:scale(1.06)}.send-dot:active{transform:scale(.94)}
+.send-dot svg{position:absolute;width:16px;height:16px;transition:transform .25s ease,opacity .2s ease}
+.s-check{transform:scale(.4);opacity:0}
+.disp-root.sent .s-arrow{transform:scale(.4) rotate(45deg);opacity:0}.disp-root.sent .s-check{transform:scale(1);opacity:1}
+@keyframes wig{25%{transform:translate(2px,-2px) rotate(10deg)}60%{transform:translate(-2px,1px) rotate(-8deg)}}
+.disp-root.sent .cursor{animation:wig .5s ease 2}
+.avatar-row{display:flex;align-items:center;justify-content:space-between;margin-top:16px}.avatars{display:flex}
+.avatar{width:36px;height:36px;border-radius:9999px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;border:1px solid var(--hairline);background:var(--mist);color:var(--ink);position:relative;flex-shrink:0}
+.avatar+.avatar{margin-left:-8px}.avatar--peach{background:#fdf0e7}
+.avatar .cursor{position:absolute;right:-6px;bottom:-6px;width:13px;height:13px;color:var(--ink)}
+.stat-num{margin-top:8px;font-size:20px;font-weight:500;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.stat-delta{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-top:4px}
+.stat-delta p{font-size:13px;color:var(--slate)}
+.spark{width:80px;height:24px;flex-shrink:0;overflow:visible}.spark path{stroke:var(--sienna);stroke-width:1.5;fill:none;stroke-linecap:round}
+section{padding:96px 0}.band-fog{background:var(--fog)}
+.section-head{max-width:680px;margin:0 auto 56px;text-align:center}
+.section-head h2{margin-top:12px}.section-head p{margin-top:16px;font-size:18px;font-weight:430;color:var(--slate)}
+.reveal-el{opacity:0;transform:translateY(16px);transition:opacity .65s ease,transform .65s ease}.reveal-el.in{opacity:1;transform:none}
+.model-grid{display:grid;gap:40px;grid-template-columns:1fr;align-items:start}
+@media (min-width:1000px){.model-grid{grid-template-columns:5fr 7fr;gap:64px}}
+.model-copy h2{margin-top:12px}.model-copy>p{margin-top:20px;font-size:17px;line-height:1.6;color:var(--slate)}
+.model-copy p b{font-weight:480;color:var(--ink)}
+.checklist{list-style:none;margin-top:28px;display:grid;gap:14px}
+.checklist li{display:flex;align-items:flex-start;gap:12px;font-size:15px;color:var(--slate)}
+.checklist li svg{width:16px;height:16px;color:var(--ink);flex-shrink:0;margin-top:2px}.checklist li b{font-weight:480;color:var(--ink)}
+.sim-card{background:var(--mist);border-radius:24px;padding:32px}
+.sim-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:28px}
+.sim-top>span{font-size:14px;color:var(--ash)}
+.seg{display:inline-flex;background:var(--paper);border:1px solid var(--hairline);border-radius:9999px;padding:3px}
+.seg-btn{border:none;background:transparent;border-radius:9999px;padding:7px 14px;font-family:var(--sans);font-size:13px;color:var(--slate);cursor:pointer;transition:background .15s,color .15s;white-space:nowrap}
+.seg-btn:hover{color:var(--ink)}.seg-btn.is-active{background:var(--ink);color:var(--paper)}
+.sim-sliders{display:grid;gap:28px}
+.slider-label{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.slider-label span:first-child{font-size:14px;color:var(--ash)}
+.slider-label output{font-size:15px;font-weight:500;font-variant-numeric:tabular-nums}
+input[type="range"].range{-webkit-appearance:none;appearance:none;width:100%;height:2px;margin-top:18px;border-radius:9999px;background:var(--hairline);outline:none;cursor:pointer}
+input[type="range"].range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;border-radius:9999px;background:var(--ink);border:3px solid var(--paper);box-shadow:0 0 0 1px rgba(4,23,43,.1);cursor:pointer}
+input[type="range"].range::-moz-range-thumb{width:16px;height:16px;border-radius:9999px;background:var(--ink);border:3px solid var(--paper);box-shadow:0 0 0 1px rgba(4,23,43,.1);cursor:pointer}
+input[type="range"].range::-moz-range-track{height:2px;background:transparent}
+.sim-outputs{margin-top:28px;padding-top:28px;border-top:1px solid var(--hairline);display:grid;gap:16px;grid-template-columns:1fr}
+@media (min-width:640px){.sim-outputs{grid-template-columns:repeat(3,1fr)}}
+.sim-outputs .artifact{padding:16px}
+.big-num{margin-top:6px;font-size:24px;font-weight:500;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.sim-note{margin-top:8px;font-size:12px;color:var(--slate);line-height:1.4}
+.chart-card{margin-top:40px}
+.chart-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:8px}
+.legend{display:flex;gap:18px;margin-top:10px;flex-wrap:wrap}
+.legend span{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--slate)}
+.sw{width:18px;height:2px;border-radius:9999px;display:inline-block}.sw--sienna{background:var(--sienna)}.sw--ink{background:var(--ink)}
+.defend-stat{text-align:right}.defend-stat b{display:block;margin-top:4px;font-size:20px;font-weight:500;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.chart-wrap{position:relative}.chart-wrap svg{width:100%;height:auto;touch-action:pan-y}
+.chart-months{display:flex;justify-content:space-between;padding:6px 4px 0;font-size:11px;color:var(--ash)}
+.chart-tip{position:absolute;top:10px;background:var(--paper);border:1px solid var(--hairline);border-radius:12px;box-shadow:var(--shadow-pop);padding:10px 12px;pointer-events:none;opacity:0;transition:opacity .15s ease;min-width:200px}
+.chart-tip.show{opacity:1}
+.tip-month{font-size:11px;color:var(--ash);margin-bottom:6px}
+.tip-row{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--slate);padding:2px 0}
+.tip-row b{margin-left:auto;font-weight:480;color:var(--ink);font-variant-numeric:tabular-nums;padding-left:14px}
+.dot{width:8px;height:8px;border-radius:9999px;flex-shrink:0}.dot--sienna{background:var(--sienna)}.dot--ink{background:var(--ink)}
+.tip-defend{margin-top:6px;padding-top:6px;border-top:1px solid var(--hairline);font-size:12.5px;color:var(--slate)}
+.tip-defend b{color:var(--ink);font-weight:480;font-variant-numeric:tabular-nums}
+.engine-grid{display:grid;gap:20px;grid-template-columns:1fr;align-items:start}
+@media (min-width:1000px){.engine-grid{grid-template-columns:1fr 1fr;gap:24px}}
+.engine-pdf-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:16px;border-bottom:1px solid var(--hairline);margin-bottom:16px;flex-wrap:wrap}
+.engine-file{display:inline-flex;align-items:center;gap:8px;font-size:13.5px;font-weight:500}
+.engine-file svg{width:15px;height:15px;color:var(--slate);flex-shrink:0}
+.engine-replay{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--hairline);background:var(--paper);border-radius:9999px;padding:7px 14px;font-size:13px;color:var(--ink);cursor:pointer;transition:background .15s ease;white-space:nowrap}
+.engine-replay:hover:not(:disabled){background:var(--mist)}.engine-replay:disabled{opacity:.45;cursor:default}
+.engine-replay svg{width:13px;height:13px}
+@keyframes spin360{to{transform:rotate(360deg)}}
+.engine-replay.is-spinning svg{animation:spin360 .9s linear infinite}
+.engine-pdf-label{font-size:11px;font-weight:450;letter-spacing:.08em;text-transform:uppercase;color:var(--ash);margin-bottom:12px}
+.engine-lines{display:grid;gap:12px}
+.engine-line{display:block;width:100%;text-align:left;background:var(--mist);border:1px solid transparent;border-radius:16px;padding:16px;cursor:pointer;transition:border-color .2s ease,background .2s ease}
+.engine-line:hover{border-color:#d9dadd}
+.engine-line.is-active{background:var(--paper);border-color:var(--ink);box-shadow:var(--shadow-pop)}
+.engine-line-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.engine-line-top b{font-size:14px;font-weight:500;color:var(--ink);line-height:1.4}
+.engine-line .qty{flex-shrink:0;font-size:11px;font-weight:500;color:var(--ink);background:var(--paper);border:1px solid var(--hairline);border-radius:9999px;padding:3px 10px;font-variant-numeric:tabular-nums}
+.engine-line.is-active .qty{background:var(--mist);border-color:transparent}
+.engine-line-bottom{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px;font-size:11.5px;color:var(--ash);font-variant-numeric:tabular-nums}
+.engine-prov{display:inline-flex;align-items:center;gap:5px;color:var(--slate);transition:color .15s ease}
+.engine-prov svg{width:12px;height:12px}.engine-line.is-active .engine-prov{color:var(--ink)}
+.engine-right{display:grid;gap:20px}
+.engine-inspect-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.status-pill{display:inline-flex;align-items:center;gap:6px;border-radius:9999px;padding:5px 12px;font-size:11px;font-weight:500;letter-spacing:.02em;white-space:nowrap}
+.status-pill svg{width:11px;height:11px}
+.status-pill--alert{background:var(--ink);color:var(--paper)}
+.status-pill--ok{background:var(--paper);color:var(--ink);border:1px solid var(--hairline)}
+.inspect-part{margin-bottom:14px}.inspect-part p{margin-top:6px;font-size:17px;font-weight:500;letter-spacing:-.009em;line-height:1.35}
+.inspect-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--hairline);border:1px solid var(--hairline);border-radius:16px;overflow:hidden;margin-bottom:14px}
+.inspect-cell{background:var(--mist);padding:14px}
+.inspect-price{margin-top:6px;font-size:19px;font-weight:500;letter-spacing:-.01em;font-variant-numeric:tabular-nums;color:var(--ink)}
+.inspect-price.is-cut{text-decoration:line-through;text-decoration-thickness:1px;color:var(--slate);font-weight:400}
+.inspect-note{margin-top:3px;font-size:11.5px;color:var(--slate)}
+.inspect-detail{border:1px solid var(--hairline);border-radius:16px;padding:14px;font-size:13.5px;line-height:1.6;color:var(--slate)}
+.inspect-detail b{font-weight:480;color:var(--ink)}
+.engine-dispatch-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+.engine-dispatch-title{display:inline-flex;align-items:center;gap:8px;font-size:13.5px;font-weight:500}
+.engine-dispatch-title svg{width:15px;height:15px;color:var(--slate);flex-shrink:0}
+.chip-mini{font-size:11px;font-weight:500;color:var(--ink);background:var(--mist);border-radius:9999px;padding:4px 10px;font-variant-numeric:tabular-nums;white-space:normal;max-width:100%;text-align:left}
+.chip-mini b{font-weight:500}.engine-dispatch p{font-size:13.5px;line-height:1.6;color:var(--slate)}
+.guarantee{margin:0 auto;max-width:620px;background:var(--mist);border-radius:24px;padding:32px;text-align:left}
+.guarantee h3{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:480}.guarantee h3 svg{width:20px;height:20px}
+.guarantee p{margin-top:12px;font-size:15px;line-height:1.6;color:var(--slate)}.guarantee p b{font-weight:480;color:var(--ink)}
+.audit-ctas{margin-top:40px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.legal{background:var(--fog);border-top:1px solid var(--hairline);padding:40px 0}
+.legal-grid{display:grid;gap:24px;grid-template-columns:1fr}
+@media (min-width:768px){.legal-grid{grid-template-columns:1fr 1fr;gap:48px}}
+.legal p{font-size:13px;line-height:1.65;color:var(--slate)}.legal b{display:block;margin-bottom:4px;font-weight:480;color:var(--ink)}
+.modal-overlay{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(23,25,28,.32);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);opacity:0;transition:opacity .18s ease}
+.modal-overlay.open{opacity:1}
+.modal-card{background:var(--paper);border-radius:24px;box-shadow:var(--shadow-modal);width:100%;max-width:680px;max-height:88vh;overflow:auto;padding:32px;transform:translateY(12px);transition:transform .18s ease}
+.modal-overlay.open .modal-card{transform:none}
+.modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding-bottom:20px;border-bottom:1px solid var(--hairline)}
+.modal-head h3{margin-top:6px;font-family:var(--serif);font-weight:400;font-size:26px;letter-spacing:-.015em;line-height:1.18}
+.modal-close{width:36px;height:36px;flex-shrink:0;border:1px solid var(--hairline);background:var(--paper);border-radius:9999px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--slate);transition:background .15s ease,color .15s ease}
+.modal-close:hover{background:var(--mist);color:var(--ink)}.modal-close svg{width:14px;height:14px}
+.report-meta{margin-top:16px;font-size:13px;color:var(--slate)}
+.report-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--hairline);border:1px solid var(--hairline);border-radius:16px;overflow:hidden;margin-top:20px}
+@media (min-width:560px){.report-grid{grid-template-columns:repeat(4,1fr)}}
+.report-cell{background:var(--mist);padding:14px}
+.report-cell b{display:block;margin-top:5px;font-size:19px;font-weight:500;letter-spacing:-.01em;font-variant-numeric:tabular-nums;color:var(--ink)}
+.report-table{width:100%;border-collapse:collapse;margin-top:20px;font-size:13px}
+.report-table th{text-align:left;font-weight:450;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ash);padding:8px 12px;border-bottom:1px solid var(--hairline)}
+.report-table td{padding:12px;border-bottom:1px solid var(--hairline);color:var(--slate);vertical-align:top}
+.report-table td:first-child{font-weight:500;color:var(--ink)}
+.report-table td.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;color:var(--ink);font-weight:480}
+.report-table tr:last-child td{border-bottom:none}
+.report-foot{margin-top:20px;padding-top:16px;border-top:1px solid var(--hairline);font-size:12.5px;line-height:1.6;color:var(--ash)}
+@media print{body.print-report>*:not(#reportModal){display:none!important}body.print-report #reportModal{position:static;display:flex;opacity:1;background:none;padding:0;transition:none}body.print-report .modal-card{box-shadow:none;max-width:none;max-height:none;transform:none;border-radius:0;padding:0;width:100%;transition:none}body.print-report .modal-close,body.print-report .no-print{display:none!important}}
+.portal-root{position:fixed;inset:0;z-index:90;background:var(--fog);overflow-y:auto;opacity:0;transform:translateY(10px);transition:opacity .22s ease,transform .22s ease}
+.portal-root.open{opacity:1;transform:none}.portal-root:focus{outline:none}
+.portal-top{position:sticky;top:0;z-index:5;background:rgba(255,255,255,.92);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border-bottom:1px solid var(--hairline)}
+.portal-top-inner{max-width:1200px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.backlink{display:inline-flex;align-items:center;gap:10px;font-size:14px;color:var(--slate);background:none;border:none;cursor:pointer;transition:color .15s ease;padding:0}
+.backlink:hover{color:var(--ink)}.backlink svg{width:14px;height:14px}.backlink .logo{font-size:17px}
+.enclave-top{display:flex;align-items:center;gap:10px;row-gap:4px;flex-wrap:wrap;justify-content:flex-end;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--slate)}
+.enclave-top svg{width:12px;height:12px;color:var(--ink)}.enclave-sep{width:1px;height:14px;background:var(--hairline)}
+.pulse-dot{width:7px;height:7px;border-radius:9999px;background:var(--ink);animation:pulse 1.6s ease infinite;flex-shrink:0}
+@keyframes pulse{50%{opacity:.3}}
+@media (max-width:600px){.enclave-top{display:none}}
+.portal-main{padding:48px 0 64px}.portal-wrap{max-width:880px;margin:0 auto;padding:0 24px}
+.steps{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-bottom:32px}
+.step-tag{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--smoke);padding:7px 14px;border-radius:9999px;border:1px solid transparent}
+.step-tag .n{font-variant-numeric:tabular-nums}.step-tag.is-done{color:var(--slate)}
+.step-tag.is-active{color:var(--ink);border-color:var(--hairline);background:var(--paper)}
+.step-sep{align-self:center;width:16px;height:1px;background:var(--hairline)}
+.wizard-step{display:none;background:var(--paper);border-radius:24px;box-shadow:var(--shadow-artifact);padding:40px}
+.wizard-step.is-current{display:block}
+.wizard-step--bare{background:transparent;border-radius:0;box-shadow:none;padding:0}
+@media (max-width:640px){.wizard-step{padding:28px 20px}}
+.step-body{margin-top:12px;font-size:15px;line-height:1.6;color:var(--slate)}.step-body b{font-weight:480;color:var(--ink)}
+.btn-row{margin-top:28px;display:flex;gap:12px;flex-wrap:wrap}.btn-row .spacer{flex:1}.pill--full{width:100%}
+.screen-head-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.step-badge{display:inline-block;font-size:11px;font-weight:450;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);background:var(--mist);border-radius:9999px;padding:6px 14px}
+.step-kicker-plain{font-size:11px;font-weight:450;letter-spacing:.08em;text-transform:uppercase;color:var(--ash)}
+.step-eta{font-size:13px;color:var(--ash)}
+.step-title-lg{margin-top:14px;font-family:var(--serif);font-weight:400;font-size:clamp(26px,3.2vw,34px);line-height:1.2;letter-spacing:-.015em}
+.step-title-lg+.step-body{margin-top:12px}
+.fields{margin-top:24px;display:grid;gap:20px;grid-template-columns:1fr 1fr}
+@media (max-width:560px){.fields{grid-template-columns:1fr}}
+.field{display:grid;gap:7px}.field label{font-size:13px;color:var(--ash)}
+.field input,.field select{font-family:var(--sans);font-size:15px;color:var(--ink);background:var(--paper);border:1px solid var(--hairline);border-radius:12px;padding:12px 14px;width:100%;transition:border-color .15s ease}
+.field input::placeholder{color:var(--smoke)}
+.field input:hover,.field select:hover{border-color:#d4d6da}
+.field input:focus,.field select:focus{border-color:var(--ink);outline:none}
+.field .err{font-size:12px;color:var(--sienna);display:none}
+.field.is-bad input{border-color:var(--sienna)}.field.is-bad .err{display:block}
+.vol-display{display:flex;justify-content:space-between;align-items:center;gap:12px;border:1px solid var(--hairline);border-radius:12px;padding:12px 14px;font-size:15px;font-weight:500;font-variant-numeric:tabular-nums}
+.vol-hint{font-size:11px;color:var(--smoke);font-weight:400}
+.sim-box{margin-top:20px;background:var(--mist);border-radius:16px;padding:20px}
+.sim-box-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.sim-box-title{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:480}.sim-box-title svg{width:14px;height:14px}
+.vol-scale{display:flex;justify-content:space-between;margin-top:8px;font-size:11px;color:var(--smoke)}
+.scope-grid{display:grid;gap:12px;grid-template-columns:1fr;margin-top:20px}
+@media (min-width:560px){.scope-grid{grid-template-columns:1fr 1fr}}
+.scope-card{background:var(--mist);border-radius:16px;padding:16px}
+.scope-card b{display:block;font-size:13.5px;font-weight:500;color:var(--ink);margin-bottom:4px}
+.scope-card p{font-size:13px;line-height:1.55;color:var(--slate)}
+.brief-card{margin-top:20px;background:var(--mist);border-radius:16px;padding:18px;display:flex;gap:14px;align-items:flex-start}
+.brief-name{font-size:13px;font-weight:500;margin-bottom:4px}.brief-quote{font-size:13.5px;line-height:1.6;color:var(--slate)}
+.notice-card{margin-top:16px;border:1px solid var(--hairline);border-radius:16px;padding:16px;display:flex;gap:12px;align-items:flex-start}
+.notice-card svg{width:20px;height:20px;color:var(--ink);flex-shrink:0;margin-top:1px}
+.notice-card p{font-size:13px;line-height:1.6;color:var(--slate)}.notice-card b{font-weight:480;color:var(--ink)}
+.price-row{margin-top:24px;padding-top:20px;border-top:1px solid var(--hairline);display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap}
+.price-row>span{font-size:14px;color:var(--slate)}
+.price-row b{font-size:22px;font-weight:500;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.price-row em{font-style:normal;font-size:12px;color:var(--slate);font-weight:400}
+.btn-duo{display:flex;gap:12px;flex-wrap:wrap;margin-top:24px}.btn-duo .pill{flex:1 1 260px}
+.center-head{text-align:center}
+.cal-grid{display:grid;gap:12px;grid-template-columns:1fr;margin-top:28px}
+@media (min-width:640px){.cal-grid{grid-template-columns:repeat(3,1fr)}}
+.cal-btn{border:1px solid var(--hairline);background:var(--paper);border-radius:16px;padding:18px 12px;font-size:14px;color:var(--ink);cursor:pointer;transition:background .15s ease,color .15s ease,border-color .15s ease;font-variant-numeric:tabular-nums}
+.cal-btn:hover{border-color:#d4d6da}
+.cal-btn.is-active{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.success{text-align:center}
+.ring{width:60px;height:60px;border-radius:9999px;background:var(--mist);display:flex;align-items:center;justify-content:center;margin:0 auto 20px}
+.ring svg{width:26px;height:26px;color:var(--ink)}.success .step-body{max-width:480px;margin-left:auto;margin-right:auto}
+.enclave-card{padding:28px}
+.enclave-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;padding-bottom:20px;border-bottom:1px solid var(--hairline)}
+.pulse-line{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:450;letter-spacing:.08em;text-transform:uppercase;color:var(--ink)}
+.pulse-line svg{width:13px;height:13px}
+.enclave-company{margin-top:8px;font-family:var(--serif);font-weight:400;font-size:clamp(22px,2.6vw,28px);line-height:1.2;letter-spacing:-.015em}
+.enclave-card .brief-card{margin-top:20px}
+.locked-zone{margin-top:20px;border:1px solid var(--hairline);border-radius:16px;padding:36px 24px;text-align:center;background:var(--paper)}
+.lock-badge{width:48px;height:48px;border-radius:9999px;background:var(--peach);color:var(--sienna);display:flex;align-items:center;justify-content:center;margin:0 auto 14px}
+.lock-badge svg{width:22px;height:22px}
+.lock-status{font-size:11px;font-weight:450;letter-spacing:.1em;text-transform:uppercase;color:var(--ink)}
+.locked-zone h3{margin-top:8px;font-size:14px;font-weight:450;letter-spacing:.07em;text-transform:uppercase}
+.locked-zone p{margin:8px auto 0;max-width:440px;font-size:13.5px;line-height:1.6;color:var(--slate)}
+.locked-cta{margin-top:20px}
+.pref-card{margin-top:20px;background:var(--mist);border-radius:16px;padding:20px}
+.pref-head{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:450;letter-spacing:.08em;text-transform:uppercase;color:var(--ink)}
+.pref-head svg{width:14px;height:14px}
+.pref-card p{margin-top:10px;font-size:13.5px;line-height:1.6;color:var(--slate)}.pref-card p b{font-weight:480;color:var(--ink)}
+.pref-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.ingest-grid{display:grid;gap:16px;grid-template-columns:1fr;margin-top:20px;align-items:stretch}
+@media (min-width:720px){.ingest-grid{grid-template-columns:7fr 5fr}}
+.upzone{display:block;border:1.5px dashed #d4d6da;border-radius:16px;padding:36px 20px;text-align:center;cursor:pointer;transition:border-color .2s ease,background .2s ease;background:var(--paper)}
+.upzone:hover,.upzone.is-drag{border-color:var(--ink);background:var(--fog)}
+.upzone input[type="file"]{display:none}
+.upzone>svg{width:30px;height:30px;margin:0 auto 12px;color:var(--slate)}
+.up-main{display:block;font-size:13px;font-weight:450;letter-spacing:.06em;text-transform:uppercase}
+.up-sub{display:block;margin-top:6px;font-size:12px;color:var(--ash)}
+.queue-card{border:1px solid var(--hairline);border-radius:16px;padding:20px;display:flex;flex-direction:column}
+.queue-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-size:11.5px;font-weight:450;letter-spacing:.07em;text-transform:uppercase}
+.queue-head b{font-variant-numeric:tabular-nums}.queue-ready{font-size:10px;letter-spacing:.05em;color:var(--ash)}
+.queue-list{margin-top:12px;display:grid;gap:8px;max-height:180px;overflow-y:auto;padding-right:4px}
+.queue-empty{font-size:13px;font-style:italic;color:var(--smoke);text-align:center;padding:18px 0}
+.q-chip{display:flex;align-items:center;gap:10px;background:var(--mist);border-radius:10px;padding:8px 12px;font-size:12px}
+.q-chip>span:first-child{display:flex;flex-shrink:0}.q-chip>span:first-child svg{width:13px;height:13px;color:var(--slate)}
+.q-chip .qname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);font-weight:480}
+.q-chip .qsize{color:var(--ash);font-variant-numeric:tabular-nums;flex-shrink:0;font-size:11px}
+.q-chip button{border:none;background:none;cursor:pointer;color:var(--smoke);display:flex;padding:2px;transition:color .15s ease}
+.q-chip button:hover{color:var(--ink)}.q-chip button svg{width:13px;height:13px}
+.file-warn{margin-top:12px;font-size:12.5px;line-height:1.5;color:var(--sienna);background:var(--peach);border-radius:10px;padding:9px 12px}
+.queue-submit{margin-top:16px;width:100%}
+.emailbox{margin-top:16px;border:1px solid var(--hairline);border-radius:16px;padding:16px 20px;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px 16px;background:var(--paper)}
+.emailbox>svg{width:20px;height:20px;color:var(--slate);flex-shrink:0}
+.email-label{font-size:13px;font-weight:450;letter-spacing:.06em;text-transform:uppercase}
+.email-chip{font-size:14px;font-weight:480;color:var(--ink);background:var(--mist);border-radius:9999px;padding:8px 16px;user-select:all}
+.copy-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--hairline);background:var(--paper);border-radius:9999px;padding:7px 14px;font-size:12.5px;color:var(--ink);cursor:pointer;transition:background .15s ease}
+.copy-btn:hover{background:var(--mist)}.copy-btn svg{width:12px;height:12px}
+.email-sub{flex-basis:100%;text-align:center;font-size:12px;color:var(--ash);line-height:1.5;margin:0}
+.ticker{display:flex;align-items:center;gap:14px;background:var(--mist);border-radius:16px;padding:14px 18px;flex-shrink:0}
+.ticker>svg{width:26px;height:26px;color:var(--ink);flex-shrink:0}
+.ticker-time{margin-top:2px;font-size:27px;font-weight:500;letter-spacing:.02em;font-variant-numeric:tabular-nums;line-height:1.1}
+.pipeline{display:grid;gap:10px;grid-template-columns:repeat(2,1fr);margin-top:20px}
+@media (min-width:720px){.pipeline{grid-template-columns:repeat(4,1fr)}}
+.pipe-stage{display:flex;align-items:center;gap:8px;border-radius:12px;padding:12px 14px;font-size:12px;font-weight:450;background:var(--mist);color:var(--smoke);transition:background .35s ease,color .35s ease,box-shadow .35s ease}
+.pipe-stage svg{width:14px;height:14px;flex-shrink:0}
+.pipe-stage .pdot{width:7px;height:7px;border-radius:9999px;background:currentColor;flex-shrink:0}
+.pipe-stage.is-done{background:var(--ink);color:var(--paper)}
+.pipe-stage.is-active{background:var(--paper);color:var(--ink);box-shadow:var(--shadow-pop)}
+.pipe-stage.is-active .pdot{animation:pulse 1.6s ease infinite}
+.commitment-card{margin-top:20px;padding:28px}
+.commit-head{padding-bottom:16px;border-bottom:1px solid var(--hairline)}
+.commit-head h3{margin-top:8px;font-family:var(--serif);font-weight:400;font-size:24px;letter-spacing:-.015em}
+.commit-grid{display:grid;gap:14px;grid-template-columns:1fr;margin-top:20px}
+@media (min-width:720px){.commit-grid{grid-template-columns:repeat(3,1fr)}}
+.commit-card{background:var(--mist);border-radius:16px;padding:18px}
+.commit-card b{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;margin-bottom:8px}
+.commit-card b svg{width:14px;height:14px;flex-shrink:0}
+.commit-card p{font-size:13px;line-height:1.6;color:var(--slate)}
+.faq{margin-top:24px;padding-top:20px;border-top:1px solid var(--hairline)}
+.faq-label{font-size:11px;font-weight:450;letter-spacing:.08em;text-transform:uppercase;color:var(--ash);margin-bottom:12px}
+.faq-item{background:var(--mist);border-radius:14px;overflow:hidden}.faq-item+.faq-item{margin-top:10px}
+.faq-q{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;background:none;border:none;cursor:pointer;text-align:left;font-size:13.5px;font-weight:480;color:var(--ink);transition:background .15s ease}
+.faq-q:hover{background:#ededee}
+.faq-q svg{width:15px;height:15px;color:var(--slate);flex-shrink:0;transition:transform .25s ease,color .25s ease}
+.faq-item.open .faq-q svg{transform:rotate(180deg);color:var(--ink)}
+.faq-a{display:grid;grid-template-rows:0fr;transition:grid-template-rows .3s ease}
+.faq-item.open .faq-a{grid-template-rows:1fr}
+.faq-a-inner{overflow:hidden}
+.faq-a-inner p{padding:12px 16px 16px;border-top:1px solid var(--hairline);font-size:13px;line-height:1.65;color:var(--slate)}
+.portal-foot{border-top:1px solid var(--hairline);padding:28px 0;text-align:center;font-size:12.5px;color:var(--ash)}
+.portal-foot .logo{font-size:15px}
+footer{border-top:1px solid var(--hairline);padding:48px 0;text-align:center}
+.footer-line{font-size:14px;color:var(--slate)}.footer-line .logo{font-size:16px}
+.footer-sub{margin-top:8px;font-size:12px;color:var(--ash)}
+/* ===== Phase 12 · onboarding roadmap + contract gate ===== */
+.roadmap{display:grid;gap:8px;grid-template-columns:1fr;margin-top:20px}
+@media (min-width:720px){.roadmap{grid-template-columns:repeat(5,1fr)}}
+.roadmap .pipe-stage{font-size:11px;padding:10px 12px}
+.roadmap .pipe-stage span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.contract-card{margin-top:20px;background:var(--mist);border-radius:16px;padding:20px}
+.contract-head{margin-bottom:10px}
+.contract-sum{margin-top:4px;font-size:13.5px;color:var(--slate)}
+.contract-card .terms{margin-top:10px}
+.terms{display:grid;gap:10px}
+.terms li{list-style:none;display:flex;gap:10px;font-size:14px;line-height:1.55;color:var(--slate)}
+.terms li svg{width:15px;height:15px;color:var(--ink);flex-shrink:0;margin-top:2px}
+.terms li b{font-weight:480;color:var(--ink)}
+.sig-check{display:flex;align-items:flex-start;gap:10px;margin-top:12px;font-size:13px;color:var(--slate);cursor:pointer}
+.sig-check input{width:15px;height:15px;margin-top:2px;accent-color:var(--ink)}
+#acceptContract{margin-top:14px;width:100%}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{transition-duration:.01ms!important;animation-duration:.01ms!important}}
+</style>
+</head>
+<body>
+
+<div class="nav-wrap">
+  <nav class="nav">
+    <a href="#problem" class="logo">syntropic<sup>®</sup></a>
+    <div class="nav-links">
+      <a href="#problem">Problem</a><a href="#profit-share">Profit-Share Model</a>
+      <a href="#engine">Zero-UI Engine</a><a href="#audit">Calculate Split</a>
+    </div>
+    <div class="nav-cta">
+      <button class="pill pill--filled pill--sm" type="button" data-open-portal>
+        <span>Get Audit</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>
+      </button>
+    </div>
+  </nav>
+</div>
+
+<main>
+<!-- ============================ SHEET 01 ============================ -->
+<section id="problem" class="hero">
+  <div class="container">
+    <div class="hero-head reveal-el">
+      <h1 class="display">
+        <span class="display-line"><span class="hw hw--ink">We</span><span class="hw hw--ink">don’t</span><span class="hw hw--ink">sell</span><span class="hw hw--ink">software.</span></span>
+        <span class="display-sub"><span class="hw hw--slate">We</span><span class="hw hw--slate">take</span><span class="hw hw--slate">a</span><span class="hw hw--slate">cut</span><span class="hw hw--slate">of</span><span class="hw hw--slate">the</span><span class="hw hw--slate">margin</span><span class="hw hw--slate">you’re</span><span class="hw hw--slate">already</span><span class="hw hw--slate">losing.</span></span>
+      </h1>
+    </div>
+    <div class="hero-ctas reveal-el">
+      <button class="pill pill--filled" type="button" data-open-portal>
+        <span>Execute 48-Hour Diagnostic Audit</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+      </button>
+      <button class="pill pill--mist" id="sampleReportBtn" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+        <span>View Sample Audit Report</span>
+      </button>
+    </div>
+    <p class="nda reveal-el"><span class="nda-dot" aria-hidden="true"></span>Protected by 1-click mutual NDA &amp; zero-trust AST tenant isolation. Your supplier cost sheets never train public models.</p>
+
+    <div class="pillars reveal-el">
+      <a href="#problem" class="pillar pillar--ink"><div class="pillar-head"><h3>Problem</h3><svg class="up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg></div><p>Outdated vendor cost sheets and manual PDF lookups bleed 2–4% off every quote.</p></a>
+      <a href="#profit-share" class="pillar"><div class="pillar-head"><h3>Profit-Share Model</h3><svg class="up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg></div><p>Zero subscription fees. We only take a 20% cut of verified margin dollars saved.</p></a>
+      <a href="#engine" class="pillar"><div class="pillar-head"><h3>Zero-UI Engine</h3><svg class="up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg></div><p>No new software or logins. Completed quotes drop straight into Outlook Drafts in &lt;90s.</p></a>
+      <a href="#audit" class="pillar"><div class="pillar-head"><h3>Calculate Split</h3><svg class="up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg></div><p>Run our 48-hour diagnostic audit on 20 past quotes to see your exact dollar leakage.</p></a>
+    </div>
+
+    <div class="chip-row reveal-el">
+      <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>&lt;90s Turnaround</span>
+      <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>8%–12% Margin Floor</span>
+      <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>Spatial Docling OCR</span>
+      <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/></svg>MS Graph Outlook Native</span>
+      <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>Real-Time ROI Portal</span>
+      <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>AST Tenant Isolation</span>
+      <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.83z"/><path d="M7 7h.01"/></svg>SPA Rebate Watchdog</span>
+      <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m22 4-10 10.01-3-3"/></svg>$10k Audit Guarantee</span>
+    </div>
+
+    <div class="strip reveal-el">
+      <p class="strip-tag">The engine at work — interactive preview</p>
+      <div class="strip-grid">
+        <div class="artifact rfq-root">
+          <div class="card-head"><span class="artifact-label">Inbound RFQ</span><button class="replay rfq-replay" type="button">Replay →</button></div>
+          <p class="artifact-title">Customer_RFQ_Spec_882.pdf</p>
+          <div style="margin-top:12px;border-top:1px solid var(--hairline);">
+            <div class="artifact-row"><span>Line items identified</span><b class="rfq-li">0</b></div>
+            <div class="artifact-row"><span>Spatial bounds</span><b class="rfq-bounds">—</b></div>
+            <div class="artifact-row"><span>First draft ready</span><b class="rfq-sec">0 sec</b></div>
+          </div>
+          <div class="rfq-progress"><div class="rfq-fill"></div></div>
+          <p class="artifact-foot rfq-status">Idle · waiting for inbound PDF</p>
+        </div>
+        <div class="peach-card peach-root">
+          <span class="artifact-label">Margin defender</span>
+          <p class="artifact-title">SKU · PVF-VALVE-316</p>
+          <label for="marginSlider" style="display:flex;justify-content:space-between;align-items:baseline;margin-top:12px;font-size:12px;"><span style="color:rgba(93,42,26,.65);">Quoted margin</span><output class="peach-margin" style="font-size:15px;font-weight:500;font-variant-numeric:tabular-nums;">5.8%</output></label>
+          <input id="marginSlider" class="peach-range" type="range" min="4" max="9.5" step="0.1" value="5.8" aria-label="Quoted margin percent" />
+          <div class="peach-floor"><span>4%</span><span>Floor · 8.0%</span><span>9.5%</span></div>
+          <div class="peach-foot">
+            <span class="peach-protect">+$142 protected</span>
+            <svg class="spark" style="width:64px;height:22px;" viewBox="0 0 96 28"><path class="spark-js peach-spark" data-dir="1" data-phase="1.8" data-freq="3.6" data-norm="0.33" d=""/></svg>
+          </div>
+        </div>
+        <div class="artifact disp-root">
+          <span class="artifact-label">Zero-UI dispatch</span>
+          <p class="artifact-title">Outlook draft injected</p>
+          <p class="artifact-code">POST /v1.0/users/estimator/messages</p>
+          <div class="avatar-row">
+            <div class="avatars">
+              <span class="avatar avatar--peach">EM<svg class="cursor" viewBox="0 0 24 24" fill="currentColor"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/></svg></span>
+              <span class="avatar">JB</span>
+            </div>
+            <button class="send-dot disp-send" type="button" aria-label="Inject draft to Outlook">
+              <svg class="s-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+              <svg class="s-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            </button>
+          </div>
+          <p class="artifact-foot disp-foot">Ready for estimator 1-click send</p>
+        </div>
+        <div class="artifact split-chip split-root" role="button" tabindex="0" title="Click to cycle example accounts">
+          <div class="card-head"><span class="artifact-label">Performance split</span><span class="replay" aria-hidden="true">⟳</span></div>
+          <p class="artifact-title split-name">Example account 01</p>
+          <p class="stat-num split-keep">$0</p>
+          <div class="stat-delta">
+            <p class="split-fee">Kept by you this month</p>
+            <svg class="spark" viewBox="0 0 96 28"><path class="spark-js" data-dir="1" data-phase="0.6" data-freq="4.4" data-norm="0.78" d=""/></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SHEET 02 ============================ -->
+<section id="profit-share" class="band-fog">
+  <div class="container">
+    <div class="model-grid">
+      <div class="model-copy reveal-el">
+        <div class="eyebrow-rule"><p class="eyebrow">Sheet 02 of 04 · Commercial alignment</p></div>
+        <h2 class="heading">Why revenue share beats retainers</h2>
+        <p>Traditional software vendors demand fixed monthly retainers regardless of results. Syntropic aligns our upside directly with your bottom line. We capture <b>20% of net profit dollars successfully defended</b> by our automated Margin Defender gate — if we defend nothing, you pay nothing.</p>
+        <ul class="checklist">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span><b>Zero upfront software license cost</b> — no seats, no onboarding retainer.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span><b>$3,500 diagnostic audit</b> ingests your first 20 historical quote PDFs.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span><b>Transparent real-time ROI ledger</b> — every defended dollar itemized in the portal.</span></li>
+        </ul>
+      </div>
+      <div class="sim-card reveal-el">
+        <div class="sim-top">
+          <span>Interactive value simulator</span>
+          <div class="seg" role="group" aria-label="Leakage assumption">
+            <button class="seg-btn" type="button" data-rate="0.02" aria-pressed="false">2.0% Low</button>
+            <button class="seg-btn is-active" type="button" data-rate="0.025" aria-pressed="true">2.5% Typical</button>
+            <button class="seg-btn" type="button" data-rate="0.04" aria-pressed="false">4.0% Severe</button>
+          </div>
+        </div>
+        <div class="sim-sliders">
+          <div><div class="slider-label"><span><label for="rfqs">Monthly RFQ volume</label></span><output id="val-rfqs">400 quotes</output></div>
+            <input class="range" type="range" id="rfqs" min="100" max="1500" step="50" value="400" aria-label="Monthly RFQ volume" /></div>
+          <div><div class="slider-label"><span><label for="quoteSize">Average quote size</label></span><output id="val-quoteSize">$7,500</output></div>
+            <input class="range" type="range" id="quoteSize" min="2000" max="25000" step="500" value="7500" aria-label="Average quote size in dollars" /></div>
+        </div>
+        <div class="sim-outputs" aria-live="polite">
+          <div class="artifact"><span class="artifact-label">Est. monthly leakage</span><p class="big-num" id="out-leak">$0</p><p class="sim-note" id="leak-note">At the 2.5% cost-sheet lag</p></div>
+          <div class="artifact"><span class="artifact-label">Syntropic 20% split</span><p class="big-num" id="out-fee">$0</p><p class="sim-note">Performance-only · no license fees</p></div>
+          <div class="artifact"><span class="artifact-label">Your net recovery</span><p class="big-num" id="out-keep">$0</p><p class="sim-note">80% of defended margin stays yours</p></div>
+        </div>
+      </div>
+    </div>
+    <div class="artifact chart-card reveal-el">
+      <div class="chart-head">
+        <div><span class="artifact-label">Cumulative margin loss · 12-month projection</span>
+          <div class="legend"><span><i class="sw sw--sienna"></i>Status quo</span><span><i class="sw sw--ink"></i>With Syntropic</span></div></div>
+        <div class="defend-stat"><span class="artifact-label">You keep / yr</span><b id="chart-keep">$0</b></div>
+      </div>
+      <div class="chart-wrap">
+        <svg id="chartSvg" viewBox="0 0 560 200" role="img" aria-label="Line chart comparing cumulative margin loss with and without Syntropic over twelve months">
+          <line x1="10" y1="188" x2="550" y2="188" stroke="#ececec" stroke-width="1" />
+          <path id="areaL" fill="rgba(93,42,26,0.05)" d="" />
+          <path id="leakPath" fill="none" stroke="#5d2a1a" stroke-width="1.75" stroke-linecap="round" d="" />
+          <path id="synPath" fill="none" stroke="#17191c" stroke-width="1.75" stroke-linecap="round" d="" />
+          <line id="vline" x1="0" y1="14" x2="0" y2="188" stroke="#a3a6af" stroke-width="1" stroke-dasharray="3 3" opacity="0" />
+          <circle id="dotL" r="4" fill="#ffffff" stroke="#5d2a1a" stroke-width="1.75" opacity="0" />
+          <circle id="dotS" r="4" fill="#ffffff" stroke="#17191c" stroke-width="1.75" opacity="0" />
+          <rect id="chartHit" x="0" y="0" width="560" height="200" fill="transparent" />
+        </svg>
+        <div class="chart-tip" id="chartTip" hidden>
+          <p class="tip-month" id="tipMonth"></p>
+          <div class="tip-row"><i class="dot dot--sienna"></i><span>Status quo loss</span><b id="tipLeak"></b></div>
+          <div class="tip-row"><i class="dot dot--ink"></i><span>With Syntropic</span><b id="tipSyn"></b></div>
+          <div class="tip-defend">You keep <b id="tipKeep"></b> · fee <b id="tipFee"></b></div>
+        </div>
+        <div class="chart-months" id="chartMonths"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SHEET 03 ============================ -->
+<section id="engine">
+  <div class="container">
+    <div class="section-head reveal-el">
+      <p class="eyebrow">Sheet 03 of 04 · Transparent execution architecture</p>
+      <h2 class="heading">The engine at work: inbound PDF to Outlook draft in 82 seconds</h2>
+      <p>Select any extracted line item below to see how Docling OCR parses unstructured PDF engineering files, checks net-margin guardrails, and prepares a verified response in Outlook.</p>
+    </div>
+    <div class="engine-grid reveal-el">
+      <div class="artifact">
+        <div class="engine-pdf-head">
+          <span class="engine-file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>Customer_RFQ_Spec_882.pdf</span>
+          <button class="engine-replay" id="engineReplay" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg><span>Replay scan</span></button>
+        </div>
+        <p class="engine-pdf-label">Docling spatial OCR extraction · bounding boxes</p>
+        <div class="engine-lines">
+          <button class="engine-line is-active" type="button" data-idx="0"><span class="engine-line-top"><b>1/2" 316 Stainless Steel Ball Valve</b><span class="qty">50 EA</span></span><span class="engine-line-bottom"><span>Spatial coord · [x:120, y:340]</span><span class="engine-prov"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>View provenance</span></span></button>
+          <button class="engine-line" type="button" data-idx="1"><span class="engine-line-top"><b>2" Sch 40 Seamless Carbon Steel Pipe</b><span class="qty">120 FT</span></span><span class="engine-line-bottom"><span>Spatial coord · [x:200, y:340]</span><span class="engine-prov"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>View provenance</span></span></button>
+          <button class="engine-line" type="button" data-idx="2"><span class="engine-line-top"><b>150# Flanged Flex Connector 3"</b><span class="qty">12 EA</span></span><span class="engine-line-bottom"><span>Spatial coord · [x:280, y:340]</span><span class="engine-prov"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>View provenance</span></span></button>
+        </div>
+      </div>
+      <div class="engine-right">
+        <div class="artifact">
+          <div class="engine-inspect-head">
+            <span class="artifact-label" id="inspectLabel">Automated audit inspection</span>
+            <span class="status-pill status-pill--alert" id="pillAlert"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>Margin leak intercepted</span>
+            <span class="status-pill status-pill--ok" id="pillOk" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Margin compliant</span>
+          </div>
+          <div class="inspect-part"><span class="artifact-label">Part match</span><p id="inspectPart">1/2" 316 Stainless Steel Ball Valve</p></div>
+          <div class="inspect-grid">
+            <div class="inspect-cell"><span class="artifact-label">Original quote</span><p class="inspect-price is-cut" id="inspectOrig">$310.00</p><p class="inspect-note" id="inspectOrigNote">6.2% margin</p></div>
+            <div class="inspect-cell"><span class="artifact-label">Margin defender</span><p class="inspect-price" id="inspectAdj">$342.50</p><p class="inspect-note" id="inspectAdjNote">8.0% floor met</p></div>
+          </div>
+          <div class="inspect-detail"><b>Execution detail:</b> <span id="inspectReason">Priced below the 8.0% net-margin floor. Adjusted to protect +$1,625 of margin.</span></div>
+        </div>
+        <div class="artifact engine-dispatch">
+          <div class="engine-dispatch-head">
+            <span class="engine-dispatch-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/></svg>Outlook draft dispatch</span>
+            <span class="chip-mini">82s total turnaround</span>
+          </div>
+          <p>Syntropic injects this complete, formatted quote table directly into your estimator’s native Outlook Drafts folder. The estimator reviews and clicks send in one second.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SHEET 04 ============================ -->
+<section id="audit" class="band-fog">
+  <div class="container">
+    <div class="section-head reveal-el">
+      <p class="eyebrow">Sheet 04 of 04 · Calculate your split</p>
+      <h2 class="heading">Run the 48-hour diagnostic audit</h2>
+      <p>Send 20 historical quote PDFs from last quarter. Our engine runs them through spatial parsing and returns a one-page executive margin-leakage report — your exact dollar loss, and the split we’d take to defend it.</p>
+    </div>
+    <div class="guarantee reveal-el">
+      <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>The $10,000 recoverable-profit guarantee</h3>
+      <p>If the audit does not identify at least <b>$10,000 in recoverable profit leakage</b>, the $3,500 deposit is refunded instantly. Deploy Syntropic and the $3,500 credits 100% toward onboarding — after that, we only ever take the 20% performance split.</p>
+    </div>
+    <div class="audit-ctas reveal-el">
+      <button class="pill pill--filled" type="button" data-open-portal>Execute the diagnostic audit</button>
+      <a class="pill pill--ghost" href="#profit-share">See the profit-share model</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<div class="legal">
+  <div class="container"><div class="legal-grid">
+    <p><b>Human-in-the-loop architecture:</b> Syntropic injects verified draft responses directly into authorized estimator Outlook mailboxes via the Microsoft Graph API. Final review and email dispatch remain under 100% client control.</p>
+    <p><b>Performance fee guarantee:</b> The 20% revenue share applies exclusively to verified margin dollars defended above established client floors. The $3,500 Diagnostic Audit is backed by a full $10,000 recovery guarantee.</p>
+  </div></div>
+</div>
+
+<footer>
+  <div class="container">
+    <p class="footer-line"><span class="logo">syntropic<sup style="font-size:9px;">®</sup></span> — Autonomous Quotation &amp; Margin Infrastructure for Industrial Wholesale.</p>
+    <p class="footer-sub">© 2026 Syntropic Corporation · Built for industrial corridors.</p>
+  </div>
+</footer>
+
+<!-- ====================== SAMPLE REPORT MODAL ====================== -->
+<div class="modal-overlay" id="reportModal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="reportTitle">
+    <div class="modal-head">
+      <div><span class="artifact-label">Sample · WeasyPrint-rendered PDF preview</span><h3 id="reportTitle">Executive Margin Leakage Report</h3></div>
+      <button class="modal-close" id="modalClose" type="button" aria-label="Close sample report"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <p class="report-meta">Prepared for · Industrial wholesale distributor · Diagnostic batch of 20 historical quote PDFs · 48-hour turnaround</p>
+    <div class="report-grid">
+      <div class="report-cell"><span class="artifact-label">Quotes analyzed</span><b>20</b></div>
+      <div class="report-cell"><span class="artifact-label">Lines below floor</span><b>6</b></div>
+      <div class="report-cell"><span class="artifact-label">Leakage identified</span><b>$41,280</b></div>
+      <div class="report-cell"><span class="artifact-label">Guaranteed minimum</span><b>$10,000+</b></div>
+    </div>
+    <table class="report-table">
+      <thead><tr><th>Line item</th><th style="text-align:right;">Quoted margin</th><th>Defender action</th><th style="text-align:right;">Protected</th></tr></thead>
+      <tbody>
+        <tr><td>1/2" 316 Stainless Steel Ball Valve</td><td class="num">6.2%</td><td>Price adjusted to $342.50 — 8.0% floor met</td><td class="num">+$1,625</td></tr>
+        <tr><td>2" Sch 40 Seamless Carbon Steel Pipe</td><td class="num">11.4%</td><td>Approved — SPA-NIBCO-Q4-2026 rebate applied (3%)</td><td class="num">+$0</td></tr>
+        <tr><td>150# Flanged Flex Connector 3"</td><td class="num">9.1%</td><td>Approved — catalog verified (Qdrant RRF 99.4%)</td><td class="num">+$0</td></tr>
+      </tbody>
+    </table>
+    <p class="report-foot">Sample figures shown for illustration. Your report is generated from your own quote PDFs — every defended dollar carries Docling bounding-box provenance back to the source page. $3,500 deposit credits 100% toward onboarding; thereafter the 20% split applies to verified defended margin only.</p>
+    <div class="no-print" style="margin-top:16px;">
+      <button class="pill pill--filled pill--sm" id="savePdfBtn" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg><span>Save as PDF</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== EXECUTIVE AUDIT PORTAL ====================== -->
+<div class="portal-root" id="portalRoot" hidden tabindex="-1" role="dialog" aria-modal="true" aria-label="Executive audit portal">
+  <div class="portal-top"><div class="portal-top-inner">
+    <button class="backlink" id="portalClose" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+      <span class="logo">syntropic<sup>®</sup></span><span>executive portal</span>
+    </button>
+    <div class="enclave-top">
+      <span class="pulse-dot" aria-hidden="true"></span><span>Secure enclave</span>
+      <span class="enclave-sep" aria-hidden="true"></span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span>256-bit AST isolation</span>
+      <span class="enclave-sep" aria-hidden="true"></span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg><span>Mutual NDA active</span>
+    </div>
+  </div></div>
+  <main class="portal-main"><div class="portal-wrap">
+    <div class="steps" id="stepRail" aria-hidden="true">
+      <span class="step-tag is-active" data-step="1"><span class="n">01</span> Intake</span><span class="step-sep"></span>
+      <span class="step-tag" data-step="2"><span class="n">02</span> Scope</span><span class="step-sep"></span>
+      <span class="step-tag" data-step="3"><span class="n">03</span> Schedule</span><span class="step-sep"></span>
+      <span class="step-tag" data-step="4"><span class="n">04</span> Enclave</span>
+    </div>
+
+    <!-- SCREEN 1 · INTAKE -->
+    <section class="wizard-step is-current" data-step="1">
+      <div class="screen-head-row"><span class="step-badge">Step 01 of 04 · Diagnostic scope intake</span><span class="step-eta">Takes 45 seconds</span></div>
+      <h2 class="step-title-lg">Initiate margin leakage audit</h2>
+      <p class="step-body">Provide your operational parameters below. We analyze 20 historical RFQ files to quantify your exact profit leakage, backed by our <b>$10,000 recovery guarantee</b>.</p>
+      <form id="intakeForm" novalidate>
+        <div class="fields">
+          <div class="field" id="f-email"><label for="cemail">Work email address</label><input id="cemail" type="email" autocomplete="email" placeholder="c.matara@distributor.com" /><span class="err">Enter a valid email address</span></div>
+          <div class="field" id="f-company"><label for="company">Company / distributor name</label><input id="company" type="text" autocomplete="organization" placeholder="Apex Piping &amp; Supply" /><span class="err">Enter your company name</span></div>
+          <div class="field"><label for="erp">Primary ERP / quote stack</label>
+            <select id="erp">
+              <option value="Epicor Prophet 21 (P21)">Epicor Prophet 21 (P21)</option>
+              <option value="Infor SX.e / CloudSuite">Infor SX.e / CloudSuite</option>
+              <option value="Distributor ONE / Eclipse">Distributor ONE / Eclipse</option>
+              <option value="SAP / Oracle Wholesale">SAP / Oracle Wholesale</option>
+              <option value="Custom ERP / Outlook Native">Custom ERP / Outlook Native</option>
+            </select></div>
+          <div class="field"><label for="rfqOut">Estimated monthly RFQ volume</label>
+            <div class="vol-display" id="rfqOut"><span id="rfqVolLabel">350 quotes / mo</span><span class="vol-hint">Adjust below ↓</span></div></div>
+        </div>
+        <div class="sim-box">
+          <div class="sim-box-head">
+            <span class="sim-box-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8"/><path d="M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01M8 19h.01M12 19h.01M16 19h.01"/></svg>Interactive volume simulator</span>
+            <span class="chip-mini" id="leakChip">Est. leakage +$63,000/mo</span>
+          </div>
+          <input class="range" type="range" id="intakeVol" min="50" max="1500" step="25" value="350" aria-label="Monthly RFQ volume" />
+          <div class="vol-scale"><span>50 quotes</span><span>750 quotes</span><span>1,500 quotes</span></div>
+        </div>
+        <div class="btn-row"><button class="pill pill--filled pill--full" type="submit"><span>Proceed to audit scope</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></button></div>
+      </form>
+    </section>
+
+    <!-- SCREEN 2 · SCOPE -->
+    <section class="wizard-step" data-step="2">
+      <div class="screen-head-row">
+        <div><span class="step-kicker-plain">Step 02 of 04 · Scope &amp; execution path</span><h2 class="step-title-lg" id="scopeCompany" style="margin-top:8px;">Your company</h2></div>
+        <span class="chip-mini" id="scopeMeta" style="margin-top:6px;">350 RFQs/mo</span>
+      </div>
+      <div class="brief-card"><span class="avatar avatar--peach" aria-hidden="true">J</span>
+        <div><div class="brief-name">Josias · Enterprise execution lead</div>
+        <p class="brief-quote">“We take 20 historical quote PDFs from last quarter, run them through Docling OCR spatial parsing, and deliver a 1-page Executive Margin Leakage Report in 48 hours flat.”</p></div>
+      </div>
+      <div class="scope-grid">
+        <div class="scope-card"><b>01. Spatial PDF ingest</b><p>Full bounding-box coordinate extraction across 20 historical RFQ files.</p></div>
+        <div class="scope-card"><b>02. SPA &amp; cost audit</b><p>Identifies unapplied Special Pricing Agreements and outdated vendor cost sheets.</p></div>
+      </div>
+      <div class="notice-card"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+        <p><b>100% money-back guarantee + mutual NDA:</b> if our audit fails to identify at least $10,000 in recoverable profit loss, your $3,500 deposit is refunded in full.</p></div>
+      <div class="price-row"><span>Diagnostic audit deposit</span><b>$3,500 USD <em>· credited to setup</em></b></div>
+      <div class="btn-duo">
+        <button class="pill pill--filled" type="button" id="payBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><path d="M1 10h22"/></svg>
+          <span id="payLabel">Pay $3,500 &amp; schedule closing call</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        </button>
+        <button class="pill pill--ghost" type="button" id="discoveryBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+          Book 15-min discovery call first
+        </button>
+      </div>
+      <p class="file-warn" id="payErr" hidden></p>
+      <div class="btn-row"><button class="pill pill--ghost" type="button" data-to="1">Back</button></div>
+    </section>
+
+    <!-- SCREEN 3 · SCHEDULING -->
+    <section class="wizard-step" data-step="3">
+      <div class="center-head">
+        <span class="step-badge">Step 03 of 04 · Executive scheduling</span>
+        <h2 class="step-title-lg" id="calTitle">Schedule your 48-hour audit briefing</h2>
+        <p class="step-body" id="calHint" style="margin-top:10px;">Slots generated live from today’s date — weekends skipped.</p>
+      </div>
+      <div class="cal-grid" id="calGrid" role="group" aria-label="Select an appointment slot"></div>
+      <div class="btn-row">
+        <button class="pill pill--ghost" type="button" data-to="2">Back</button><span class="spacer"></span>
+        <button class="pill pill--filled" type="button" id="confirmCal"><span id="confirmCalLabel">Confirm deposit &amp; closing call appointment</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></button>
+      </div>
+    </section>
+
+    <!-- SCREEN 4 · CONFIRMED -->
+    <section class="wizard-step success" data-step="4">
+      <div class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+      <h2 class="step-title-lg" id="confirmTitle">Session &amp; audit enclave active.</h2>
+      <p class="step-body" id="confirmCopy"></p>
+      <div class="btn-row" style="justify-content:center;">
+        <button class="pill pill--ghost" type="button" data-to="3">Back</button>
+        <button class="pill pill--filled" type="button" id="enterPortal">Enter live executive portal<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg></button>
+      </div>
+    </section>
+
+    <!-- SCREEN 5 · DYNAMIC ENCLAVE -->
+    <section class="wizard-step wizard-step--bare" data-step="5">
+
+      <!-- PATH A · DISCOVERY (LOCKED) -->
+      <div class="artifact enclave-card" id="discoveryEnclave" hidden>
+        <div class="enclave-head">
+          <div><span class="pulse-line"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>Discovery track · technical validation session</span>
+          <h2 class="enclave-company"><span class="co-name">Your company</span> — Discovery Enclave</h2></div>
+          <span class="chip-mini">Call set · <b id="discDate">—</b></span>
+        </div>
+        <div class="brief-card"><span class="avatar avatar--peach" aria-hidden="true">J</span>
+          <div><div class="brief-name">Josias · Enterprise execution lead</div><p class="brief-quote" id="discNote"></p></div>
+        </div>
+        <div class="locked-zone">
+          <div class="lock-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+          <p class="lock-status">Locked · paid diagnostic audit required</p>
+          <h3>PDF spatial ingest enclave</h3>
+          <p>Automatic 48-hour margin leakage audits require an active $3,500 Diagnostic Audit deposit.</p>
+          <div class="locked-cta">
+            <button class="pill pill--filled" type="button" id="unlockAudit">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+              <span id="unlockLabel">Unlock $3,500 diagnostic audit &amp; upload PDFs</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+            </button>
+            <p class="file-warn" id="unlockErr" hidden style="text-align:left;"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- PATH B · PAID ENCLAVE (ONBOARDING HUB) -->
+      <div class="artifact enclave-card" id="paidEnclave" hidden>
+        <div id="preAudit">
+          <div class="enclave-head">
+            <div><span class="pulse-line"><span class="pulse-dot" aria-hidden="true"></span>Unlocked · upload historical quote PDFs</span>
+            <h2 class="enclave-company"><span class="co-name">Your company</span> — Enclave</h2></div>
+            <span class="chip-mini">Briefing call · <b id="preDate">—</b><span id="preDateExtra"></span></span>
+          </div>
+
+          <!-- PHASE 12 · Onboarding roadmap -->
+          <div class="roadmap" id="roadmap" aria-label="Onboarding roadmap">
+            <div class="pipe-stage rm-1 is-done"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>1 · Deposit confirmed</span></div>
+            <div class="pipe-stage rm-2 is-active"><span class="pdot" aria-hidden="true"></span><span>2 · Agreement accepted</span></div>
+            <div class="pipe-stage rm-3"><span>3 · Files ingested</span></div>
+            <div class="pipe-stage rm-4"><span>4 · 48-hr briefing</span></div>
+            <div class="pipe-stage rm-5"><span>5 · Setup &amp; dispatch</span></div>
+          </div>
+
+          <!-- Contract acceptance gate -->
+          <div class="contract-card" id="contractCard">
+            <div class="contract-head">
+              <span class="artifact-label">Diagnostic Audit Agreement</span>
+              <p class="contract-sum">One acceptance unlocks ingestion. The essentials:</p>
+            </div>
+            <ul class="terms">
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span><b>Mutual NDA</b> covers all uploaded cost sheets — zero-trust AST tenant, 30-day auto-shred.</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span><b>20% performance share</b> applies only to margin dollars defended above your floors. No defense, no fee.</span></li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span><b>$10,000 guarantee</b> — below the floor, the $3,500 deposit is refunded in full.</span></li>
+            </ul>
+            <div class="field" id="f-sig" style="margin-top:14px;">
+              <label for="sigName">Type your full legal name to sign</label>
+              <input id="sigName" type="text" autocomplete="name" placeholder="Jordan Blake" />
+              <span class="err">Enter your full name to accept</span>
+            </div>
+            <label class="sig-check">
+              <input type="checkbox" id="sigAuth" />
+              <span>I am authorized to bind this company to the Diagnostic Audit Agreement.</span>
+            </label>
+            <p class="file-warn" id="sigErr" hidden></p>
+            <button class="pill pill--filled" id="acceptContract" type="button" disabled>Accept &amp; unlock ingestion</button>
+          </div>
+
+          <div class="pref-card" id="prefCard" hidden>
+            <div class="pref-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>Audit unlocked · discovery call preference</div>
+            <p>You have successfully unlocked the $3,500 Diagnostic Audit! Would you still like to keep your scheduled discovery call on <b id="prefDate">—</b> for further technical Q&amp;A?</p>
+            <div class="pref-actions">
+              <button class="pill pill--filled pill--sm" type="button" id="keepCall">Yes, keep discovery call</button>
+              <button class="pill pill--ghost pill--sm" type="button" id="convertCall">Convert to 48-hr briefing call</button>
+            </div>
+          </div>
+
+          <div class="ingest-grid">
+            <label class="upzone" id="upzone">
+              <input type="file" id="upInput" accept=".pdf,.xlsx,.csv" multiple />
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
+              <span class="up-main">Click or drag 20 quote PDFs here</span>
+              <span class="up-sub">Native digital PDFs beat scans · include vendor cost sheets · don’t redact pricing — every low-confidence line slows your 48 hours</span>
+            </label>
+            <div class="queue-card">
+              <div class="queue-head"><span>Queue · <b id="qCount">0</b> / 20</span><span class="queue-ready">Ready for ingest</span></div>
+              <div class="queue-list" id="queueList"><p class="queue-empty">No files added yet.</p></div>
+              <p class="file-warn" id="qWarn" hidden></p>
+              <button class="pill pill--filled queue-submit" type="button" id="submitAudit" disabled>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg><span>Submit &amp; start 48-hr audit</span>
+              </button>
+            </div>
+          </div>
+          <div class="emailbox">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/></svg>
+            <span class="email-label">Or forward via email</span>
+            <span class="email-chip">audit@syntropic.ai</span>
+            <button class="copy-btn" id="copyEmail" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span id="copyEmailLabel">Copy address</span>
+            </button>
+            <p class="email-sub">Our ingestion worker matches incoming forwards to your company domain automatically — no manual prep required.</p>
+          </div>
+        </div>
+
+        <div id="postAudit" hidden>
+          <div class="enclave-head">
+            <div><span class="pulse-line"><span class="pulse-dot" aria-hidden="true"></span><span id="engineStatus">Audit engine active · Docling OCR running</span></span>
+            <h2 class="enclave-company"><span class="co-name">Your company</span> — Enclave</h2></div>
+            <div class="ticker">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+              <div><span class="artifact-label">Audit time remaining</span><div class="ticker-time" id="ticker">48:00:00</div></div>
+            </div>
+          </div>
+
+          <!-- Roadmap (live stages 3–5) -->
+          <div class="roadmap" aria-label="Onboarding roadmap">
+            <div class="pipe-stage rm-1 is-done"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>1 · Deposit confirmed</span></div>
+            <div class="pipe-stage rm-2 is-done"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>2 · Agreement accepted</span></div>
+            <div class="pipe-stage rm-3 is-active"><span class="pdot" aria-hidden="true"></span><span>3 · Files ingested</span></div>
+            <div class="pipe-stage rm-4"><span>4 · 48-hr briefing</span></div>
+            <div class="pipe-stage rm-5"><span>5 · Setup &amp; dispatch</span></div>
+          </div>
+
+          <div class="pipeline" id="pipeline">
+            <div class="pipe-stage is-done"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span>1. Spatial PDF ingest</span></div>
+            <div class="pipe-stage is-active"><span class="pdot" aria-hidden="true"></span><span>2. Catalog RRF matching</span></div>
+            <div class="pipe-stage"><span>3. SPA &amp; margin floor audit</span></div>
+            <div class="pipe-stage"><span>4. Briefing PDF ready</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Commitment + FAQ (both tracks) -->
+      <div class="artifact commitment-card">
+        <div class="commit-head"><span class="artifact-label">[ What to expect next ]</span><h3>Syntropic executive commitment</h3></div>
+        <div class="commit-grid">
+          <div class="commit-card"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>01. Zero data leakage</b><p>All supplier cost sheets and SPA rebate files are stored inside your isolated AST tenant boundary. Files are automatically shredded 30 days post-audit.</p></div>
+          <div class="commit-card"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>02. $10,000 guarantee</b><p>If our audit uncovers less than $10,000 in annualized margin leakage across your 20 quotes, your $3,500 deposit is refunded instantly.</p></div>
+          <div class="commit-card"><b><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>03. Direct founder line</b><p>Need to add specific vendor pricing parameters before your briefing? Text or call Josias directly on your assigned line.</p></div>
+        </div>
+        <div class="faq">
+          <p class="faq-label">Frequently asked operational questions</p>
+          <div class="faq-item open"><button class="faq-q" type="button" aria-expanded="true"><span>How does Syntropic handle unstructured, handwritten or dirty trade PDFs?</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+            <div class="faq-a"><div class="faq-a-inner"><p>Syntropic uses Spatial Docling OCR to parse bounding-box coordinates directly off raw trade PDFs, extracting SKU shorthands and quantities with 99.4% confidence.</p></div></div></div>
+          <div class="faq-item"><button class="faq-q" type="button" aria-expanded="false"><span>Will my inside estimators be forced to learn a new software interface?</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+            <div class="faq-a"><div class="faq-a-inner"><p>No. Syntropic is 100% Zero-UI. Completed, margin-checked quote drafts drop directly into your estimators’ existing Microsoft Outlook Drafts folder in under 90 seconds.</p></div></div></div>
+          <div class="faq-item"><button class="faq-q" type="button" aria-expanded="false"><span>How is our 20% performance revenue share calculated?</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+            <div class="faq-a"><div class="faq-a-inner"><p>Fees apply exclusively to verified net margin dollars defended above your mandatory margin floor or recovered via active Special Pricing Agreements.</p></div></div></div>
+        </div>
+      </div>
+    </section>
+  </div></main>
+  <div class="portal-foot"><span class="logo">syntropic<sup style="font-size:8px;">®</sup></span> — Executive Portal · Secure enclave · 256-bit AST tenant isolation · Mutual NDA · Your cost sheets never train public models.</div>
+</div>
+
+<script>
+(() => {
+'use strict';
+/* ============ RUNTIME CONFIG — the single integration switch ============
+   Standalone/demo: all empty (fully functional, simulated).
+   Behind the Next.js Backbone: set the three paths — live mode activates. */
+const CONFIG = {
+  checkoutEndpoint: '',   // e.g. '/api/v1/checkout'
+  ingestEndpoint:   '',   // e.g. '/api/v1/ingest'
+  intakeEndpoint:   '',   // e.g. '/api/v1/intake'
+  demoStageSeconds: 45,
+};
+const AUDIT_MS = 48 * 3600 * 1000;
+
+/* ================================ utils ================================ */
+const $  = (s, r=document) => r.querySelector(s);
+const $$ = (s, r=document) => [...r.querySelectorAll(s)];
+const clamp = (v,a,b) => Math.min(b, Math.max(a, v));
+const lerp  = (a,b,t) => a + (b-a)*t;
+const easeOut = t => 1 - Math.pow(1-t, 3);
+const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const money = n => '$' + Math.round(n).toLocaleString('en-US');
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/* ============ telemetry: attribution + dataLayer + server relay ============ */
+const K_ATTR = 'syntropic.attribution.v1';
+function captureAttribution() {
+  try { const s = sessionStorage.getItem(K_ATTR); if (s) return JSON.parse(s); } catch (e) {}
+  const q = new URLSearchParams(location.search);
+  const attr = { utm_source: q.get('utm_source') || '', utm_medium: q.get('utm_medium') || '',
+    utm_campaign: q.get('utm_campaign') || '', utm_content: q.get('utm_content') || '', utm_term: q.get('utm_term') || '',
+    referrer: document.referrer || 'direct', landing_path: location.pathname + location.search,
+    captured_at: new Date().toISOString() };
+  try { sessionStorage.setItem(K_ATTR, JSON.stringify(attr)); } catch (e) {}
+  return attr;
+}
+const ATTRIBUTION = captureAttribution();
+const SESSION_ID = (() => {
+  try { let s = sessionStorage.getItem('syntropic.sid');
+    if (!s) { s = crypto.randomUUID(); sessionStorage.setItem('syntropic.sid', s); } return s;
+  } catch { return 'no-session'; }
+})();
+function track(event, props = {}) {
+  const payload = { event, funnel: 'q4_diagnostic_audit', ts: new Date().toISOString(), ...ATTRIBUTION, ...props };
+  (window.dataLayer = window.dataLayer || []).push(payload);
+  if (typeof window.SYNTROPIC_TELEMETRY === 'function') { try { window.SYNTROPIC_TELEMETRY(payload); } catch (e) {} }
+  try {
+    const MAP = { page_view:['LANDING','PAGE_VIEW'], portal_opened:['PORTAL','PAGE_VIEW'],
+      intake_submitted:['LANDING','INTAKE_SUBMITTED'], deposit_clicked:['LANDING','DEPOSIT_CLICKED'],
+      payment_success:['ENGINE','PAYMENT_SUCCESS'], call_booked:['LANDING','CALL_BOOKED'],
+      enclave_entered:['PORTAL','PORTAL_LOGIN'], files_uploaded:['PORTAL','FILE_UPLOAD'],
+      audit_submitted:['PORTAL','AUDIT_SUBMITTED'], volume_selected:['LANDING','SLIDER_CHANGE'],
+      sample_report_opened:['LANDING','CTA_CLICK'] };
+    const m = MAP[event];
+    if (m) fetch('/api/v1/telemetry/event', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ sessionId: SESSION_ID, layer:m[0], eventType:m[1], metadata: props }), keepalive:true }).catch(()=>{});
+  } catch (e) {}
+}
+
+/* ============ session persistence (refresh survival) ============ */
+const K_STATE = 'syntropic.portal.v1';
+let pState = { email:'', company:'', erp:'Epicor Prophet 21 (P21)', rfqVolume:350,
+  path:'paid_audit', keepDiscovery:null, upgradePending:false, date:'', lastScreen:1,
+  auditSubmitted:false, auditComplete:false, auditStartedAt:null, tenantId:null, assignedTo:null,
+  contractAccepted:false };
+let queue = []; // {name, size, file?} — File refs are session-only
+function persist() {
+  try { sessionStorage.setItem(K_STATE, JSON.stringify({ ...pState, queue: queue.map(({name,size}) => ({name,size})) })); } catch (e) {}
+}
+function hydrate() {
+  try { const raw = sessionStorage.getItem(K_STATE); if (!raw) return;
+    const saved = JSON.parse(raw); const { queue: q, ...rest } = saved;
+    Object.assign(pState, rest);
+    pState.upgradePending = !!pState.upgradePending; pState.contractAccepted = !!pState.contractAccepted;
+    if (Array.isArray(q)) queue = q.map(f => ({ name: f.name, size: f.size }));
+  } catch (e) {}
+}
+
+/* ============ tween / smooth / spark ============ */
+const tw = new Map();
+function tween(el, to, fmt, dur=550) {
+  if (RM) { el.textContent = fmt(to); tw.set(el, { val: to, raf: null }); return; }
+  const prev = tw.get(el); const from = prev ? prev.val : 0;
+  if (prev && prev.raf) cancelAnimationFrame(prev.raf);
+  const t0 = performance.now();
+  const step = t => { const p = clamp((t - t0) / dur, 0, 1); const val = lerp(from, to, easeOut(p));
+    el.textContent = fmt(val); tw.set(el, { val, raf: p < 1 ? requestAnimationFrame(step) : null }); };
+  tw.set(el, { val: from, raf: requestAnimationFrame(step) });
+}
+function smooth(pts) {
+  if (pts.length < 2) return '';
+  let d = `M ${pts[0].x.toFixed(2)} ${pts[0].y.toFixed(2)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(0, i-1)], p1 = pts[i], p2 = pts[i+1], p3 = pts[Math.min(pts.length-1, i+2)];
+    d += ` C ${(p1.x+(p2.x-p0.x)/6).toFixed(2)} ${(p1.y+(p2.y-p0.y)/6).toFixed(2)}, ${(p2.x-(p3.x-p1.x)/6).toFixed(2)} ${(p2.y-(p3.y-p1.y)/6).toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
+  }
+  return d;
+}
+const SPARK_W = 96, SPARK_H = 28, N = 14;
+class Spark {
+  constructor(path) {
+    this.p = path; this.dir = Number(path.dataset.dir || 1);
+    this.phase = Number(path.dataset.phase || 0); this.freq = Number(path.dataset.freq || 4.2);
+    this.cur = Array.from({ length: N }, (_, i) => this.pt(i / (N-1), Number(path.dataset.norm || .5)));
+    this.raf = null; this.render();
+  }
+  hAt(x, v) {
+    const base = this.dir > 0 ? lerp(0.30 + 0.30*v, 0.25 + 0.65*v, x) : lerp(0.80 - 0.15*v, 0.30 + 0.30*v, x);
+    const wave = 0.14 * Math.sin(x * this.freq + this.phase + v * 2.6) * (0.35 + 0.65*x);
+    return clamp(base + wave, 0.06, 0.96);
+  }
+  pt(x, v) { const h = this.hAt(x, v); return { x: 3 + x * (SPARK_W - 6), y: SPARK_H - 4 - h * (SPARK_H - 9) }; }
+  pts(a) { return a.map((h, i) => ({ x: 3 + (i/(N-1))*(SPARK_W-6), y: SPARK_H - 4 - h*(SPARK_H-9) })); }
+  render() { this.p.setAttribute('d', smooth(this.pts(this.cur))); }
+  setTarget(v, dur = 420) {
+    const target = Array.from({ length: N }, (_, i) => this.hAt(i/(N-1), v));
+    if (RM) { this.cur = target; this.render(); return; }
+    const from = this.cur.slice(), t0 = performance.now();
+    if (this.raf) cancelAnimationFrame(this.raf);
+    const step = t => { const p = clamp((t - t0)/dur, 0, 1), e = easeOut(p);
+      this.cur = target.map((h, i) => lerp(from[i], h, e)); this.render();
+      this.raf = p < 1 ? requestAnimationFrame(step) : null; };
+    this.raf = requestAnimationFrame(step);
+  }
+  drawIn() {
+    const L = this.p.getTotalLength(); if (!L || RM) return;
+    this.p.style.strokeDasharray = L; this.p.style.strokeDashoffset = L;
+    this.p.getBoundingClientRect(); this.p.style.transition = 'stroke-dashoffset 1s ease';
+    this.p.style.strokeDashoffset = '0';
+    setTimeout(() => { this.p.style.strokeDasharray = 'none'; this.p.style.transition = ''; }, 1100);
+  }
+}
+
+/* ============ slider fill + site simulator + chart ============ */
+function fillTrack(input) {
+  const pct = (input.value - input.min) / (input.max - input.min) * 100;
+  input.style.background = `linear-gradient(90deg, var(--ink) ${pct}%, var(--hairline) ${pct}%)`;
+}
+ $$('.range').forEach(fillTrack);
+
+const state = { rfqs: 400, quoteSize: 7500, rate: 0.025 };
+const SPLIT = 0.20;
+function renderSim() {
+  const mv = state.rfqs * state.quoteSize, ml = mv * state.rate;
+  $('#val-rfqs').textContent = `${state.rfqs} quotes`;
+  $('#val-quoteSize').textContent = `$${state.quoteSize.toLocaleString('en-US')}`;
+  $('#leak-note').textContent = `At the ${(state.rate*100).toFixed(1)}% cost-sheet lag`;
+  tween($('#out-leak'), ml, v => money(v) + '/mo');
+  tween($('#out-fee'),  ml * SPLIT, v => money(v) + '/mo');
+  tween($('#out-keep'), ml * (1 - SPLIT), v => money(v) + '/mo');
+  updateChart(ml);
+}
+ $$('.range').forEach(inp => inp.addEventListener('input', e => {
+  const id = e.target.id === 'rfqs' ? 'rfqs' : 'quoteSize';
+  state[id] = Number(e.target.value); fillTrack(e.target); renderSim();
+}));
+ $$('.seg-btn').forEach(btn => btn.addEventListener('click', () => {
+  $$('.seg-btn').forEach(b => { b.classList.remove('is-active'); b.setAttribute('aria-pressed', 'false'); });
+  btn.classList.add('is-active'); btn.setAttribute('aria-pressed', 'true');
+  state.rate = Number(btn.dataset.rate); renderSim();
+}));
+
+const CH = { w: 560, h: 200, pl: 10, pr: 10, pt: 16, base: 186 };
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+ $('#chartMonths').innerHTML = MONTHS.map(m => `<span>${m}</span>`).join('');
+const chart = { leak: Array(12).fill(0), syn: Array(12).fill(0), target: { leak: [], syn: [], keep: [], fee: [] }, raf: null };
+function chartSeries(ml) {
+  const leak = [], syn = [], keep = [], fee = []; let cum = 0;
+  for (let i = 0; i < 12; i++) {
+    const L = ml * (1 + 0.05 * Math.sin(i * 0.9 + 1));
+    const adopted = 0.9 * (1 - Math.exp(-(i + 1) / 3.2));
+    cum += L * adopted;
+    leak.push(ml * (i + 1)); syn.push(ml * (i + 1) - cum);
+    keep.push(cum * (1 - SPLIT)); fee.push(cum * SPLIT);
+  }
+  return { leak, syn, keep, fee };
+}
+function chartPts(a, max) {
+  const span = CH.w - CH.pl - CH.pr;
+  return a.map((v, i) => ({ x: CH.pl + (i/11)*span, y: CH.base - (max ? v/max : 0) * (CH.base - CH.pt) }));
+}
+function renderChart() {
+  const max = Math.max(...chart.target.leak, 1);
+  const pl = chartPts(chart.leak, max), ps = chartPts(chart.syn, max);
+  $('#leakPath').setAttribute('d', smooth(pl));
+  $('#synPath').setAttribute('d', smooth(ps));
+  $('#areaL').setAttribute('d', smooth(pl) + ` L ${pl[11].x.toFixed(2)} ${CH.base} L ${pl[0].x.toFixed(2)} ${CH.base} Z`);
+}
+function updateChart(ml) {
+  const s = chartSeries(ml); chart.target = s;
+  tween($('#chart-keep'), s.keep[11], money, 650);
+  if (RM) { chart.leak = s.leak.slice(); chart.syn = s.syn.slice(); renderChart(); return; }
+  const fl = chart.leak.slice(), fs = chart.syn.slice(), t0 = performance.now();
+  if (chart.raf) cancelAnimationFrame(chart.raf);
+  const step = t => { const p = clamp((t - t0)/550, 0, 1), e = easeOut(p);
+    chart.leak = s.leak.map((v, i) => lerp(fl[i], v, e));
+    chart.syn = s.syn.map((v, i) => lerp(fs[i], v, e));
+    renderChart(); chart.raf = p < 1 ? requestAnimationFrame(step) : null; };
+  chart.raf = requestAnimationFrame(step);
+}
+const svg = $('#chartSvg'), hit = $('#chartHit'), vline = $('#vline'), dotL = $('#dotL'), dotS = $('#dotS'), tip = $('#chartTip');
+function scrub(cx) {
+  const rect = svg.getBoundingClientRect();
+  const sx = (cx - rect.left) / rect.width * CH.w;
+  const span = CH.w - CH.pl - CH.pr;
+  const i = clamp(Math.round((sx - CH.pl) / span * 11), 0, 11);
+  const max = Math.max(...chart.target.leak, 1);
+  const x = CH.pl + (i/11)*span;
+  const yL = CH.base - (chart.target.leak[i]/max)*(CH.base-CH.pt);
+  const yS = CH.base - (chart.target.syn[i]/max)*(CH.base-CH.pt);
+  vline.setAttribute('x1', x); vline.setAttribute('x2', x); vline.setAttribute('opacity', '1');
+  dotL.setAttribute('cx', x); dotL.setAttribute('cy', yL); dotL.setAttribute('opacity', '1');
+  dotS.setAttribute('cx', x); dotS.setAttribute('cy', yS); dotS.setAttribute('opacity', '1');
+  $('#tipMonth').textContent = `${MONTHS[i]} · month ${i+1}`;
+  $('#tipLeak').textContent = money(chart.target.leak[i]);
+  $('#tipSyn').textContent = money(chart.target.syn[i]);
+  $('#tipKeep').textContent = money(chart.target.keep[i]);
+  $('#tipFee').textContent = money(chart.target.fee[i]);
+  tip.hidden = false;
+  const wrap = svg.parentElement.getBoundingClientRect(), tw2 = tip.offsetWidth;
+  const px = (x / CH.w) * rect.width + (wrap.width - rect.width) / 2;
+  tip.style.left = clamp(px - tw2/2, 4, wrap.width - tw2 - 4) + 'px';
+  tip.classList.add('show');
+}
+function unscrub() { vline.setAttribute('opacity','0'); dotL.setAttribute('opacity','0'); dotS.setAttribute('opacity','0'); tip.classList.remove('show'); }
+hit.addEventListener('pointermove', e => scrub(e.clientX));
+hit.addEventListener('pointerleave', unscrub);
+
+/* ============ artifacts ============ */
+ $$('.rfq-root').forEach(card => {
+  const li = $('.rfq-li', card), bounds = $('.rfq-bounds', card), sec = $('.rfq-sec', card),
+        fill = $('.rfq-fill', card), status = $('.rfq-status', card);
+  let token = 0;
+  card.run = () => {
+    const tk = ++token;
+    const at = (ms, fn) => setTimeout(() => { if (tk === token) fn(); }, ms);
+    status.textContent = 'Parsing PDF with spatial OCR…';
+    fill.style.transition = 'none'; fill.style.width = '0%';
+    requestAnimationFrame(() => { fill.style.transition = 'width 1.4s cubic-bezier(.22,.61,.36,1)'; fill.style.width = '100%'; });
+    tween(li, 18, v => String(Math.round(v)), 1200);
+    at(300, () => bounds.textContent = 'Mapping…');
+    at(1000, () => bounds.textContent = 'Docling OCR');
+    tween(sec, 92, v => `${Math.round(v)} sec`, 1300);
+    at(1500, () => status.textContent = 'Ready · first draft in 92 seconds');
+  };
+  $('.rfq-replay', card).addEventListener('click', card.run);
+});
+const peachSparks = $$('.peach-spark').map(p => new Spark(p));
+ $$('.peach-root').forEach(card => {
+  const slider = $('.peach-range', card), out = $('.peach-margin', card), protect = $('.peach-protect', card);
+  const update = () => {
+    const m = Number(slider.value);
+    out.textContent = m.toFixed(1) + '%';
+    const saved = Math.round(6450 * (0.08 - m / 100));
+    protect.textContent = saved > 0 ? `+$${saved.toLocaleString('en-US')} protected` : 'Within floor — no adjustment';
+    const norm = clamp((m - 4) / 5.5, 0, 1);
+    peachSparks.forEach(s => s.setTarget(norm, 260));
+  };
+  slider.addEventListener('input', update); card.update = update;
+});
+ $$('.disp-root').forEach(card => {
+  const btn = $('.disp-send', card), foot = $('.disp-foot', card);
+  let busy = false;
+  btn.addEventListener('click', () => {
+    if (busy) return; busy = true; card.classList.add('sent');
+    foot.textContent = 'Draft delivered to estimator inbox ✓';
+    setTimeout(() => { card.classList.remove('sent'); foot.textContent = 'Ready for estimator 1-click send'; busy = false; }, 2400);
+  });
+});
+const splitSets = [
+  { keep: 60000, fee: 15000, n: 0.80, name: 'Example account 01' },
+  { keep: 28800, fee: 7200,  n: 0.50, name: 'Example account 02' },
+  { keep: 94500, fee: 23625, n: 0.95, name: 'Example account 03' },
+];
+const splitSparks = $$('.split-root .spark-js').map(p => new Spark(p));
+let splitIdx = 0;
+function cycleSplit(a = true) {
+  const s = splitSets[splitIdx];
+  $$('.split-keep').forEach(el => tween(el, s.keep, money, a ? 700 : 900));
+  $$('.split-fee').forEach(el => el.textContent = `Syntropic fee ${money(s.fee)} · 20%`);
+  $$('.split-name').forEach(el => el.textContent = s.name);
+  splitSparks.forEach(sp => sp.setTarget(s.n, 500));
+}
+ $$('.split-root').forEach(card => {
+  const go = () => { splitIdx = (splitIdx + 1) % splitSets.length; cycleSplit(); };
+  card.addEventListener('click', go);
+  card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+});
+
+/* ============ engine split-screen ============ */
+const ENGINE = [
+  { part: '1/2" 316 Stainless Steel Ball Valve', orig: '$310.00', origNote: '6.2% margin', adj: '$342.50', adjNote: '8.0% floor met',
+    status: 'ADJUSTED', reason: 'Priced below the 8.0% net-margin floor. Adjusted to protect +$1,625 of margin.' },
+  { part: '2" Sch 40 Seamless Carbon Steel Pipe', orig: '$18.40/ft', origNote: '11.4% margin', adj: '$18.40/ft', adjNote: 'SPA rebate applied',
+    status: 'APPROVED', reason: 'Margin compliant (11.4%). Special Pricing Agreement rebate applied — SPA-NIBCO-Q4-2026 (3% vendor rebate).' },
+  { part: '150# Flanged Flex Connector 3"', orig: '$145.00', origNote: '9.1% margin', adj: '$145.00', adjNote: 'Catalog verified · 99.4%',
+    status: 'APPROVED', reason: 'Catalog match verified (Qdrant RRF 99.4% confidence). Margin compliant.' },
+];
+const engineRows = $$('.engine-line');
+const eng = { part: $('#inspectPart'), orig: $('#inspectOrig'), origNote: $('#inspectOrigNote'),
+  adj: $('#inspectAdj'), adjNote: $('#inspectAdjNote'), reason: $('#inspectReason'), label: $('#inspectLabel'),
+  pillAlert: $('#pillAlert'), pillOk: $('#pillOk') };
+let engineScanning = false;
+function setEngineLine(i) {
+  const d = ENGINE[i];
+  engineRows.forEach((r, j) => r.classList.toggle('is-active', j === i));
+  eng.part.textContent = d.part; eng.orig.textContent = d.orig;
+  eng.orig.classList.toggle('is-cut', d.status === 'ADJUSTED');
+  eng.origNote.textContent = d.origNote; eng.adj.textContent = d.adj; eng.adjNote.textContent = d.adjNote;
+  eng.reason.textContent = d.reason;
+  eng.pillAlert.hidden = d.status !== 'ADJUSTED'; eng.pillOk.hidden = d.status === 'ADJUSTED';
+}
+function startEngineScan() {
+  if (engineScanning) return;
+  const btn = $('#engineReplay'); engineScanning = true;
+  btn.disabled = true; btn.classList.add('is-spinning');
+  eng.label.textContent = 'Automated audit inspection · scanning…';
+  let step = 0; setEngineLine(0);
+  const iv = setInterval(() => {
+    step++;
+    if (step < ENGINE.length) setEngineLine(step);
+    else { clearInterval(iv); engineScanning = false; btn.disabled = false; btn.classList.remove('is-spinning'); eng.label.textContent = 'Automated audit inspection'; }
+  }, 1000);
+}
+engineRows.forEach(r => r.addEventListener('click', () => setEngineLine(Number(r.dataset.idx))));
+ $('#engineReplay').addEventListener('click', startEngineScan);
+
+/* ============ sample report modal ============ */
+const modal = $('#reportModal'), modalClose = $('#modalClose'), modalTrigger = $('#sampleReportBtn');
+let lastFocus = null;
+function openModal() {
+  lastFocus = document.activeElement;
+  modal.hidden = false;
+  requestAnimationFrame(() => modal.classList.add('open'));
+  document.body.style.overflow = 'hidden'; modalClose.focus();
+  track('sample_report_opened');
+}
+function closeModal() {
+  modal.classList.remove('open'); document.body.style.overflow = '';
+  const done = () => { modal.hidden = true; }; if (RM) done(); else setTimeout(done, 180);
+  if (lastFocus && lastFocus.focus) lastFocus.focus();
+}
+modalTrigger.addEventListener('click', openModal);
+modalClose.addEventListener('click', closeModal);
+modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+ $('#savePdfBtn').addEventListener('click', () => {
+  track('sample_report_pdf');
+  document.body.classList.add('print-report'); window.print();
+});
+window.addEventListener('afterprint', () => document.body.classList.remove('print-report'));
+
+/* ============ portal open/close + traps ============ */
+const portalRoot = $('#portalRoot');
+let portalReturnFocus = null;
+function openPortal(trigger) {
+  portalReturnFocus = trigger || document.activeElement;
+  refreshSlots(); restorePortalUI();
+  portalRoot.hidden = false;
+  requestAnimationFrame(() => portalRoot.classList.add('open'));
+  document.body.style.overflow = 'hidden'; portalRoot.scrollTop = 0; portalRoot.focus();
+  track('portal_opened', { path: pState.path, resumed: (pState.lastScreen || 1) > 1 });
+}
+function closePortal() {
+  portalRoot.classList.remove('open'); document.body.style.overflow = '';
+  const done = () => { portalRoot.hidden = true; }; if (RM) done(); else setTimeout(done, 220);
+  persist();
+  if (portalReturnFocus && portalReturnFocus.focus) portalReturnFocus.focus();
+}
+ $$('[data-open-portal]').forEach(btn => btn.addEventListener('click', () => openPortal(btn)));
+ $('#portalClose').addEventListener('click', closePortal);
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+function trapTab(e, root) {
+  const items = $$(FOCUSABLE, root).filter(el => el.getClientRects().length > 0);
+  if (!items.length) return;
+  const first = items[0], last = items[items.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (!portalRoot.hidden) { closePortal(); return; }
+    if (!modal.hidden) { closeModal(); return; }
+  }
+  if (e.key === 'Tab') {
+    if (!portalRoot.hidden) trapTab(e, portalRoot);
+    else if (!modal.hidden) trapTab(e, $('.modal-card', modal));
+  }
+});
+
+/* ============ portal steps ============ */
+const rail = $$('#stepRail .step-tag');
+function goScreen(n, instant = false) {
+  pState.lastScreen = n;
+  const active = Math.min(n, 4);
+  $$('.wizard-step', portalRoot).forEach(s => s.classList.toggle('is-current', Number(s.dataset.step) === n));
+  rail.forEach(t => { const s = Number(t.dataset.step);
+    t.classList.toggle('is-active', s === active); t.classList.toggle('is-done', s < active); });
+  portalRoot.scrollTo({ top: 0, behavior: (!instant && !RM) ? 'smooth' : 'auto' });
+  persist();
+}
+ $$('[data-to]', portalRoot).forEach(b => b.addEventListener('click', () => goScreen(Number(b.dataset.to))));
+
+const intakeVol = $('#intakeVol');
+function renderLeak() {
+  pState.rfqVolume = Number(intakeVol.value);
+  $('#rfqVolLabel').textContent = `${pState.rfqVolume} quotes / mo`;
+  tween($('#leakChip'), Math.round(pState.rfqVolume * 7500 * 0.024), v => `Est. leakage +${money(v)}/mo`, 420);
+}
+intakeVol.addEventListener('input', () => { fillTrack(intakeVol); renderLeak(); });
+intakeVol.addEventListener('change', () => track('volume_selected', { value: pState.rfqVolume }));
+
+function mark(id, bad) { $(id).classList.toggle('is-bad', bad); return !bad; }
+ $('#cemail').addEventListener('blur', () => { const v = $('#cemail').value.trim(); if (v) mark('#f-email', !EMAIL_RE.test(v)); });
+ $('#company').addEventListener('blur', () => { if ($('#company').value.trim()) mark('#f-company', false); });
+['cemail','company'].forEach(id => $('#' + id).addEventListener('input', () =>
+  $(id === 'cemail' ? '#f-email' : '#f-company').classList.remove('is-bad')));
+
+ $('#intakeForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const okEmail   = mark('#f-email', !EMAIL_RE.test($('#cemail').value.trim()));
+  const okCompany = mark('#f-company', !$('#company').value.trim());
+  if (!(okEmail && okCompany)) return;
+  pState.email = $('#cemail').value.trim(); pState.company = $('#company').value.trim(); pState.erp = $('#erp').value;
+  $('#scopeCompany').textContent = pState.company;
+  $('#scopeMeta').textContent = `${pState.rfqVolume} RFQs/mo · ${pState.erp}`;
+  track('intake_submitted', { email_domain: pState.email.split('@')[1] || '', erp: pState.erp, rfq_volume: pState.rfqVolume });
+  goScreen(2); track('scope_reached');
+  // Pipeline A — Backbone sync (silent in demo / standalone)
+  if (CONFIG.intakeEndpoint) {
+    try {
+      const res = await fetch(CONFIG.intakeEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company: pState.company, contactName: '', email: pState.email,
+          erp: pState.erp, rfqVolume: pState.rfqVolume, attribution: ATTRIBUTION, sessionId: SESSION_ID }) });
+      if (res.ok) { const d = await res.json(); pState.tenantId = d.tenantId; pState.assignedTo = d.assignedTo; persist(); }
+    } catch (e2) { /* demo mode — funnel continues */ }
+  }
+});
+
+/* ---- single deposit path (Stripe intent) ---- */
+async function requestCheckout(source) {
+  track('deposit_clicked', { value: 3500, currency: 'USD', path: pState.path, source });
+  if (CONFIG.checkoutEndpoint) {
+    const res = await fetch(CONFIG.checkoutEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company: pState.company, email: pState.email, source, attribution: ATTRIBUTION }) });
+    if (!res.ok) throw new Error('checkout_unavailable');
+    const data = await res.json();
+    if (!data.url) throw new Error('checkout_malformed');
+    track('checkout_redirect');
+    location.href = data.url;
+    return { redirected: true };
+  }
+  await new Promise(r => setTimeout(r, RM ? 0 : 900));
+  return { demo: true };
+}
+const payBtn = $('#payBtn'), payLabel = $('#payLabel');
+payBtn.addEventListener('click', async () => {
+  if (payBtn.disabled) return;
+  payBtn.disabled = true; payLabel.textContent = 'Contacting secure checkout…'; $('#payErr').hidden = true;
+  try {
+    const result = await requestCheckout('scope_screen');
+    pState.path = 'paid_audit'; persist();
+    if (result.redirected) return;
+    track('payment_success', { mode: 'demo', source: 'scope_screen' });
+    syncCalendar(); goScreen(3);
+  } catch (err) {
+    track('payment_failed', { source: 'scope_screen', reason: String(err && err.message || err) });
+    $('#payErr').textContent = 'Checkout is temporarily unavailable. Please retry — or book a discovery call and we’ll send a secure payment link.';
+    $('#payErr').hidden = false;
+  } finally { payBtn.disabled = false; payLabel.textContent = 'Pay $3,500 & schedule closing call'; }
+});
+ $('#discoveryBtn').addEventListener('click', () => {
+  pState.path = 'discovery_call'; persist(); syncCalendar(); goScreen(3);
+  // Pipeline A — announce the track choice (Diff 4)
+  if (CONFIG.intakeEndpoint && (pState.tenantId || pState.email)) {
+    fetch(CONFIG.intakeEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company: pState.company, email: pState.email, erp: pState.erp,
+        rfqVolume: pState.rfqVolume, track: 'STRATEGY_SESSION', attribution: ATTRIBUTION, sessionId: SESSION_ID }),
+    }).catch(() => {});
+  }
+});
+
+/* ---- dynamic business-day calendar ---- */
+const SLOT_TIMES = ['10:00 AM', '2:00 PM', '11:30 AM'];
+const SLOTS = [];
+function buildBusinessDaySlots() {
+  const slots = []; const today = new Date(); let d = 0;
+  while (slots.length < 3) {
+    d++;
+    const dt = new Date(today); dt.setDate(today.getDate() + d);
+    const dow = dt.getDay(); if (dow === 0 || dow === 6) continue;
+    slots.push(`${dt.toLocaleDateString('en-US', { weekday: 'short' })} ${dt.toLocaleDateString('en-US', { day: 'numeric' })} ${dt.toLocaleDateString('en-US', { month: 'short' })} · ${SLOT_TIMES[slots.length]}`);
+  }
+  return slots;
+}
+function renderCalendar() {
+  const grid = $('#calGrid'); grid.innerHTML = '';
+  SLOTS.forEach(slot => {
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'cal-btn' + (slot === pState.date ? ' is-active' : '');
+    btn.textContent = slot;
+    btn.addEventListener('click', () => {
+      $$('#calGrid .cal-btn').forEach(x => x.classList.remove('is-active'));
+      btn.classList.add('is-active'); pState.date = slot; persist();
+    });
+    grid.appendChild(btn);
+  });
+}
+function refreshSlots() {
+  SLOTS.length = 0; SLOTS.push(...buildBusinessDaySlots());
+  if (!SLOTS.includes(pState.date)) { pState.date = SLOTS[0]; persist(); }
+  renderCalendar();
+}
+function syncCalendar() {
+  const paid = pState.path === 'paid_audit';
+  $('#calTitle').textContent = paid ? 'Schedule your 48-hour audit briefing' : 'Schedule your technical discovery call';
+  $('#confirmCalLabel').textContent = paid ? 'Confirm deposit & closing call appointment' : 'Confirm discovery appointment';
+  renderCalendar();
+}
+ $('#confirmCal').addEventListener('click', () => {
+  const paid = pState.path === 'paid_audit';
+  $('#confirmTitle').textContent = paid ? 'Session & audit enclave active.' : 'Technical discovery session booked.';
+  $('#confirmCopy').textContent = paid
+    ? 'Your $3,500 Diagnostic Audit deposit is locked in. Access your live executive portal below to upload your 20 historical quote PDFs.'
+    : `Calendar invite dispatched for ${pState.date}. Access your preparation enclave below to review integration parameters prior to your call with Josias.`;
+  track('call_booked', { slot: pState.date, path: pState.path, tenantId: pState.tenantId || null });
+  goScreen(4);
+});
+
+/* ============ screen 5 renderer + restore ============ */
+const discEnclave = $('#discoveryEnclave'), paidEnclave = $('#paidEnclave');
+function renderScreen5() {
+  const paid = pState.path === 'paid_audit';
+  discEnclave.hidden = paid; paidEnclave.hidden = !paid;
+  $('#discDate').textContent = pState.date;
+  $('#discNote').textContent = `“Looking forward to our discovery call on ${pState.date}. We will walk through a live demonstration of our Outlook Native Draft Injection and review your ${pState.erp} cost sheet architecture.”`;
+  $('#preDate').textContent = pState.date;
+  $('#preDateExtra').textContent = pState.keepDiscovery === true ? ' · discovery call kept' : '';
+  $('#prefDate').textContent = pState.date;
+  $('#prefCard').hidden = !pState.upgradePending;
+}
+const preAudit = $('#preAudit'), postAudit = $('#postAudit');
+
+/* ============ Phase 12 · onboarding roadmap + contract gate ============ */
+let contractAccepted = false;
+function renderRoadmap(r) {
+  // r: { depositPaid, contractSigned, ingested, briefed, dispatchLive }
+  const stages = [r.depositPaid, r.contractSigned, r.ingested, r.briefed, r.dispatchLive];
+  const active = stages.findIndex(v => !v);
+  $$('.roadmap').forEach(rm => $$('.pipe-stage', rm).forEach((el, i) => {
+    el.classList.toggle('is-done', stages[i] || (active === -1 && i === 4));
+    el.classList.toggle('is-active', i === active);
+  }));
+}
+function currentRoadmap() {
+  return { depositPaid: pState.path === 'paid_audit', contractSigned: contractAccepted,
+           ingested: !!pState.auditSubmitted, briefed: !!pState.briefedAt, dispatchLive: false };
+}
+async function loadOnboarding() {
+  renderRoadmap(currentRoadmap());
+  $('#contractCard').hidden = contractAccepted;
+  if (!CONFIG.ingestEndpoint || !pState.tenantId) return;
+  try {
+    const r = await fetch('/api/v1/enclave/status');
+    if (!r.ok) return;
+    const d = await r.json();
+    contractAccepted = d.roadmap.contractSigned;
+    renderRoadmap(d.roadmap);
+    $('#contractCard').hidden = contractAccepted;
+    updateSubmitGate();
+  } catch (e) { /* offline → local gating stands */ }
+}
+function restoreEnclave() {
+  const submitted = !!pState.auditSubmitted;
+  preAudit.hidden = submitted; postAudit.hidden = !submitted;
+  if (submitted) startAuditClock(); else { stopAuditClock(); renderQueue(); loadOnboarding(); }
+}
+function restorePortalUI() {
+  $('#cemail').value = pState.email; $('#company').value = pState.company;
+  const erpSel = $('#erp'); if ([...erpSel.options].some(o => o.value === pState.erp)) erpSel.value = pState.erp;
+  intakeVol.value = pState.rfqVolume; fillTrack(intakeVol); renderLeak();
+  if (pState.company) { $('#scopeCompany').textContent = pState.company; $('#scopeMeta').textContent = `${pState.rfqVolume} RFQs/mo · ${pState.erp}`; }
+  $$('.co-name', portalRoot).forEach(el => el.textContent = pState.company || 'Your company');
+  renderScreen5(); restoreEnclave(); goScreen(pState.lastScreen || 1, true);
+}
+ $('#enterPortal').addEventListener('click', () => {
+  $$('.co-name', portalRoot).forEach(el => el.textContent = pState.company || 'Your company');
+  renderScreen5(); track('enclave_entered', { path: pState.path }); goScreen(5);
+});
+
+/* ---- in-portal upgrade ---- */
+const unlockBtn = $('#unlockAudit'), unlockLabel = $('#unlockLabel');
+unlockBtn.addEventListener('click', async () => {
+  if (unlockBtn.disabled) return;
+  unlockBtn.disabled = true; unlockLabel.textContent = 'Contacting secure checkout…'; $('#unlockErr').hidden = true;
+  track('upgrade_started', { from: 'discovery_call' });
+  try {
+    const result = await requestCheckout('in_portal_upgrade');
+    pState.path = 'paid_audit'; pState.keepDiscovery = null; pState.upgradePending = true; persist();
+    if (result.redirected) return;
+    track('payment_success', { mode: 'demo', source: 'in_portal_upgrade' });
+    renderScreen5(); loadOnboarding();
+    portalRoot.scrollTo({ top: 0, behavior: RM ? 'auto' : 'smooth' });
+  } catch (err) {
+    track('payment_failed', { source: 'in_portal_upgrade', reason: String(err && err.message || err) });
+    $('#unlockErr').textContent = 'Checkout is temporarily unavailable. Please retry in a moment.';
+    $('#unlockErr').hidden = false;
+  } finally { unlockBtn.disabled = false; unlockLabel.textContent = 'Unlock $3,500 diagnostic audit & upload PDFs'; }
+});
+ $('#keepCall').addEventListener('click', () => { pState.keepDiscovery = true; pState.upgradePending = false; persist(); renderScreen5(); });
+ $('#convertCall').addEventListener('click', () => { pState.keepDiscovery = false; pState.upgradePending = false; persist(); renderScreen5(); });
+
+/* ---- queue (DOM-constructed — XSS-safe) + submit gate ---- */
+const MAXQ = 20, MAXSZ = 50 * 1048576;
+const fmtSize = b => b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
+const FILE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';
+const TRASH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+const qList = $('#queueList'), qCount = $('#qCount'), qWarn = $('#qWarn'), submitBtn = $('#submitAudit'), tickerEl = $('#ticker');
+function updateSubmitGate() {
+  // Ingest is legally gated on acceptance — demo and live alike.
+  submitBtn.disabled = queue.length === 0 || !contractAccepted;
+  if (!contractAccepted && queue.length && !$('#contractCard').hidden) {
+    qWarn.textContent = 'Accept the Diagnostic Audit Agreement above to unlock ingestion.';
+    qWarn.hidden = false;
+  }
+}
+function renderQueue() {
+  qCount.textContent = queue.length; qList.innerHTML = '';
+  if (!queue.length) {
+    const e = document.createElement('p'); e.className = 'queue-empty'; e.textContent = 'No files added yet.'; qList.appendChild(e);
+  } else queue.forEach((f, i) => {
+    const chip = document.createElement('div'); chip.className = 'q-chip';
+    const ic = document.createElement('span'); ic.innerHTML = FILE_SVG; chip.appendChild(ic);
+    const nm = document.createElement('span'); nm.className = 'qname'; nm.textContent = f.name; nm.title = f.name; chip.appendChild(nm);
+    const sz = document.createElement('span'); sz.className = 'qsize'; sz.textContent = fmtSize(f.size); chip.appendChild(sz);
+    const rm = document.createElement('button'); rm.type = 'button';
+    rm.setAttribute('aria-label', 'Remove ' + f.name); rm.innerHTML = TRASH_SVG;
+    rm.addEventListener('click', () => { queue.splice(i, 1); persist(); renderQueue(); });
+    chip.appendChild(rm); qList.appendChild(chip);
+  });
+  updateSubmitGate();
+}
+function addFiles(list) {
+  qWarn.hidden = true; let skipped = 0, added = 0;
+  for (const f of list) {
+    if (!/\.(pdf|xlsx|csv)$/i.test(f.name) || f.size > MAXSZ) { skipped++; continue; }
+    if (queue.length >= MAXQ) { skipped++; continue; }
+    queue.push({ name: f.name, size: f.size, file: f }); added++;
+  }
+  if (skipped) {
+    qWarn.textContent = queue.length >= MAXQ ? 'Queue limit reached — 20 files maximum.'
+      : `${skipped} file(s) skipped — PDF, XLSX or CSV under 50MB only.`;
+    qWarn.hidden = false;
+  }
+  if (added) track('files_uploaded', { added, queue_count: queue.length });
+  persist(); renderQueue();
+}
+const upzone = $('#upzone'), upInput = $('#upInput');
+upzone.addEventListener('dragover', e => { e.preventDefault(); upzone.classList.add('is-drag'); });
+upzone.addEventListener('dragleave', () => upzone.classList.remove('is-drag'));
+upzone.addEventListener('drop', e => { e.preventDefault(); upzone.classList.remove('is-drag'); addFiles(e.dataTransfer.files); });
+upInput.addEventListener('change', e => { addFiles(e.target.files); upInput.value = ''; });
+
+/* ---- contract acceptance handlers ---- */
+const sigName = $('#sigName'), sigAuth = $('#sigAuth'), acceptBtn = $('#acceptContract');
+function syncAcceptBtn() {
+  $('#f-sig').classList.remove('is-bad');
+  acceptBtn.disabled = !(sigName.value.trim().length >= 2 && sigAuth.checked);
+}
+sigName.addEventListener('input', syncAcceptBtn);
+sigAuth.addEventListener('change', syncAcceptBtn);
+acceptBtn.addEventListener('click', async () => {
+  const name = sigName.value.trim();
+  if (name.length < 2) { $('#f-sig').classList.add('is-bad'); return; }
+  if (!sigAuth.checked) return;
+  acceptBtn.disabled = true;
+  try {
+    if (pState.tenantId && CONFIG.ingestEndpoint) {
+      const r = await fetch('/api/v1/contract/accept', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ signedName: name }) });
+      if (!r.ok) throw new Error('accept_failed');
+    }
+    contractAccepted = true; persist();
+    $('#contractCard').hidden = true;
+    renderRoadmap(currentRoadmap());
+    updateSubmitGate();
+    if (qWarn.textContent.startsWith('Accept')) qWarn.hidden = true;
+  } catch (e) {
+    $('#sigErr').textContent = 'Could not record acceptance — check your connection and retry.';
+    $('#sigErr').hidden = false;
+    acceptBtn.disabled = false;
+  }
+});
+
+/* ---- email ingest fallback ---- */
+const copyBtn = $('#copyEmail'), copyLabel = $('#copyEmailLabel');
+let copyTimer = null;
+copyBtn.addEventListener('click', async () => {
+  const addr = 'audit@syntropic.ai'; let ok = false;
+  try { await navigator.clipboard.writeText(addr); ok = true; }
+  catch (e) {
+    try { const ta = document.createElement('textarea'); ta.value = addr; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select(); ok = document.execCommand('copy'); ta.remove(); } catch (e2) {}
+  }
+  if (ok) { track('email_ingest_copied'); copyLabel.textContent = 'Copied ✓'; }
+  else copyLabel.textContent = 'Select & copy';
+  clearTimeout(copyTimer);
+  copyTimer = setTimeout(() => { copyLabel.textContent = 'Copy address'; }, 1600);
+});
+
+/* ---- 48h clock (epoch-derived, refresh-proof) + pipeline ---- */
+const stages = $$('#pipeline .pipe-stage');
+const USE_REAL_CLOCK = !!(CONFIG.checkoutEndpoint || CONFIG.ingestEndpoint);
+const STAGE_REAL = [2 * 3600e3, 24 * 3600e3, 47.5 * 3600e3];
+function computeStage(elapsed) {
+  const marks = USE_REAL_CLOCK ? STAGE_REAL : [1, 2, 3].map(i => i * CONFIG.demoStageSeconds * 1000);
+  let c = 1; for (const m of marks) if (elapsed >= m) c++;
+  return Math.min(c, 4);
+}
+function setStage(done) {
+  stages.forEach((el, i) => {
+    el.classList.toggle('is-done', done === 4 || i < done);
+    el.classList.toggle('is-active', i === done && done < 4);
+  });
+}
+let auditTimer = null;
+function stopAuditClock() { if (auditTimer) { clearInterval(auditTimer); auditTimer = null; } }
+const fmtTime = s => `${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor((s%3600)/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+tickerEl.textContent = fmtTime(AUDIT_MS / 1000);
+function tickAudit() {
+  const elapsed = Date.now() - pState.auditStartedAt;
+  const remaining = Math.max(0, AUDIT_MS - elapsed);
+  tickerEl.textContent = fmtTime(Math.ceil(remaining / 1000));
+  setStage(computeStage(elapsed));
+  if (remaining <= 0) {
+    stopAuditClock(); pState.auditComplete = true;
+    $('#engineStatus').textContent = 'Audit engine complete · briefing PDF ready';
+    renderRoadmap({ depositPaid: true, contractSigned: true, ingested: true, briefed: false, dispatchLive: false });
+    persist();
+  }
+}
+function startAuditClock() {
+  if (!pState.auditStartedAt) pState.auditStartedAt = Date.now();
+  tickAudit();
+  if (auditTimer || pState.auditComplete) return;
+  auditTimer = setInterval(() => { if (pState.auditComplete) { stopAuditClock(); return; } tickAudit(); }, 1000);
+}
+
+ $('#submitAudit').addEventListener('click', async () => {
+  if (!queue.length) {
+    qWarn.textContent = 'Add at least 1 PDF or XLSX quote file before starting the audit.';
+    qWarn.hidden = false; return;
+  }
+  if (!contractAccepted) {
+    qWarn.textContent = 'Accept the Diagnostic Audit Agreement above to unlock ingestion.';
+    qWarn.hidden = false; return;
+  }
+  const useReal = !!(CONFIG.ingestEndpoint && pState.tenantId);
+  if (useReal) {
+    submitBtn.disabled = true;
+    try {
+      const fd = new FormData();
+      queue.forEach(f => { if (f.file) fd.append('files', f.file, f.name); });
+      if (!queue.some(f => f.file)) fd.append('namesOnly', queue.map(f => f.name).join('|'));
+      const r = await fetch(CONFIG.ingestEndpoint, { method: 'POST', body: fd });
+      if (r.status === 401 || r.status === 402) {
+        qWarn.textContent = 'This enclave isn’t activated yet — open the secure link from your audit email, then re-submit.';
+        qWarn.hidden = false; return;
+      }
+      if (r.status === 422) {
+        qWarn.textContent = 'A page refresh cleared your file contents — please re-add the files, then submit.';
+        qWarn.hidden = false; return;
+      }
+      if (!r.ok) throw new Error('ingest_unreachable');
+    } catch {
+      qWarn.textContent = 'Ingest service unreachable — your files remain queued. Check your connection and retry.';
+      qWarn.hidden = false; return;
+    } finally { submitBtn.disabled = false; }
+  }
+  qWarn.hidden = true;
+  pState.auditSubmitted = true; pState.auditStartedAt = Date.now(); pState.auditComplete = false;
+  persist();
+  preAudit.hidden = true; postAudit.hidden = false;
+  startAuditClock();
+  renderRoadmap({ depositPaid: true, contractSigned: true, ingested: true, briefed: false, dispatchLive: false });
+  track('audit_submitted', { file_count: queue.length, mode: useReal ? 'live' : 'demo' });
+});
+
+/* ---- FAQ accordion ---- */
+ $$('.faq-item').forEach(item => {
+  $('.faq-q', item).addEventListener('click', () => {
+    const wasOpen = item.classList.contains('open');
+    $$('.faq-item').forEach(x => { x.classList.remove('open'); $('.faq-q', x).setAttribute('aria-expanded', 'false'); });
+    if (!wasOpen) { item.classList.add('open'); $('.faq-q', item).setAttribute('aria-expanded', 'true'); }
+  });
+});
+
+/* ---- scroll reveals ---- */
+const io = new IntersectionObserver(entries => {
+  entries.forEach(en => {
+    if (!en.isIntersecting) return;
+    const el = en.target;
+    if (el.classList.contains('rfq-root')) el.run();
+    if (el.classList.contains('split-root')) { cycleSplit(true); splitSparks.forEach(s => s.drawIn()); }
+    if (el.classList.contains('chart-card')) {
+      chart.leak = Array(12).fill(0); chart.syn = Array(12).fill(0);
+      updateChart(state.rfqs * state.quoteSize * state.rate);
+    }
+    if (el.classList.contains('peach-root')) {
+      el.update();
+      $$('.peach-spark').forEach(s => { const sp = peachSparks.find(x => x.p === s); sp && sp.drawIn(); });
+    }
+    if (el.classList.contains('engine-grid')) startEngineScan();
+    if (el.classList.contains('reveal-el')) el.classList.add('in');
+    io.unobserve(el);
+  });
+}, { threshold: 0.3 });
+ $$('.rfq-root, .split-root, .chart-card, .peach-root, .engine-grid, .reveal-el').forEach(el => io.observe(el));
+
+/* ---- boot ---- */
+hydrate();
+// hydrate contract acceptance from session before the first render
+fillTrack($('#intakeVol')); renderLeak();
+// deep links: ?open=portal · ?tenant=… (tenant-callback redirect) · ?auth=tenant-expired
+const qs = new URLSearchParams(location.search);
+const tParam = qs.get('tenant');
+if (tParam && pState.tenantId !== tParam) { pState.tenantId = tParam; persist(); }
+if (qs.has('open-portal')) openPortal(null);
+track('page_view', { path_type: pState.path, returning: (pState.lastScreen || 1) > 1 });
+renderSim();
+})();
+</script>
+</body>
+</html>
