@@ -90,7 +90,7 @@ export default function SyntropicDashboard() {
             href="/"
             className="text-[16px] hover:underline underline-offset-4 decoration-1"
           >
-            Workstation →
+            ← Audit Workstation
           </a>
         </div>
       </nav>

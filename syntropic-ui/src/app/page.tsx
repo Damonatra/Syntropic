@@ -318,6 +318,13 @@ export default function Home() {
       });
       if (!response.ok) throw new Error(await readError(response));
       updateResult((await response.json()) as WorkflowResult);
+      const queueRes = await fetch(`${API_BASE}/rfq/reviews`, {
+        headers: authHeaders(token),
+        cache: "no-store",
+      });
+      if (queueRes.ok) {
+        setQueue((await queueRes.json()) as ReviewQueueItem[]);
+      }
       return true;
     } catch (requestError) {
       setError(
