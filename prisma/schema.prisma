@@ -1,0 +1,124 @@
+// Vertebra Console — operational store for the lead & intelligence engine.
+// SQLite for the sandbox console; the Python engine mirrors these contracts
+// on Neon Postgres (see vertebra/db/migrations.sql).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Prospect {
+  id                 String   @id @default(cuid())
+  source             String   @default("console")
+  sourceUrl          String   @default("console://manual-entry")
+  name               String
+  domainKey          String // dedupe key: domain || normalised name
+  domain             String?
+  website            String?
+  vertical           String?
+  region             String?
+  city               String?
+  stateProvince      String?
+  country            String?
+  postalCode         String?
+  employeeCount      Int?
+  revenueEstimateUsd Int?
+  revenueConfidence  String   @default("unknown")
+  detectedErp        String?
+  rawExcerpt         String?
+  ingestion          String   @default("pending") // pending | ingested | filtered | failed
+  filterReason       String?
+  caslScope          Boolean  @default(false)
+  caslReason         String?
+  bestEmail          String?
+  emailPattern       String?
+  contacts           Contact[]
+  scores             Score[]
+  dispatches         Dispatch[]
+  highTouch          HighTouchQueueItem?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([source, domainKey])
+  @@index([ingestion])
+}
+
+model Contact {
+  id         String   @id @default(cuid())
+  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  prospectId String
+  firstName  String
+  lastName   String
+  role       String   @default("unknown")
+  titleRaw   String?
+  createdAt  DateTime @default(now())
+
+  @@index([prospectId])
+}
+
+model Score {
+  id           String   @id @default(cuid())
+  prospect     Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  prospectId   String
+  qlvScore     Int
+  band         String
+  factorsJson  String
+  hooksJson    String
+  rationale    String
+  model        String
+  fingerprint  String   @unique
+  createdAt    DateTime @default(now())
+
+  @@index([prospectId])
+}
+
+model Dispatch {
+  id            String   @id @default(cuid())
+  prospect      Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  prospectId    String
+  channel       String // channel_a_automated_email | channel_b_josias_high_touch
+  status        String   @default("queued")
+  caslScope     Boolean  @default(false)
+  subject       String?
+  body          String?
+  fromDomain    String?
+  provider      String?
+  providerMsgId String?
+  footerApplied String?
+  error         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status])
+}
+
+model OutboxEvent {
+  id            String    @id @default(cuid())
+  aggregateType String
+  aggregateId   String
+  eventType     String
+  payload       String
+  attempts      Int       @default(0)
+  lastError     String?
+  publishedAt   DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([publishedAt])
+}
+
+model HighTouchQueueItem {
+  id              String    @id @default(cuid())
+  prospect        Prospect  @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  prospectId      String    @unique
+  qlvScore        Int
+  qlvBand         String
+  topHook         String
+  rationale       String
+  calendarEventId String?
+  exportedAt      DateTime?
+  createdAt       DateTime  @default(now())
+}
