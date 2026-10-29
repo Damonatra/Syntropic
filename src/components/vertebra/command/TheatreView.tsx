@@ -6,10 +6,15 @@
  * for the continent. Zero network beyond the enclave's own static assets.
  *
  * Depth ladder:
- *   L0 continent — every territory shaded by prospect concentration
+ *   L0 continent — every territory shaded by the active lens
  *   L1 territory — click a state/province: camera glides to its bounds,
  *                  readout arms, pins outside the focus dim
  *   L2 account   — click a pin: the dossier drawer opens
+ *
+ * Map-3: all six lenses live — CONCENTRATION / MOMENTUM / EXPOSURE / CADENCE /
+ * COMPLIANCE / MAIL, one metric per board state, luminance never chroma. The
+ * whole board state is deep-linkable: lens, focused territory, cluster and
+ * camera ride the URL (?tl= &tt= &tc= &tk/tx/ty=) and survive a reload.
  *
  * Honest ledger: leads with no coordinates land in the uncharted tray,
  * leads outside the US+CA frame (East Africa expansion accounts) land in
@@ -37,12 +42,17 @@ import {
   LENSES,
   buildBoardGeometry,
   censusBoard,
+  encodeBoardState,
   lensFill,
+  lensLeader,
+  lensMetricLabel,
   loadGeoBundle,
   makeTerritoryResolver,
+  parseBoardState,
   type BoardCensus,
   type BoardGeometry,
   type GeoBundle,
+  type LensExtremes,
   type LensId,
   type TerritoryStat,
 } from "@/lib/vertebra/theatre";
@@ -140,13 +150,20 @@ export function TheatreView({
   }, [census]);
 
   // ---------------------------------------------------------------- state
-  const [selectedCluster, setSelectedCluster] = useState<string | null>(null);
-  const [focusedCode, setFocusedCode] = useState<string | null>(null);
+  // Deep-linked boot — lens/territory/cluster/camera hydrate from the URL
+  // before first paint; the geometry gate below keeps SSR and client in sync.
+  const [boot] = useState(() => parseBoardState(typeof window === "undefined" ? null : window.location.search));
+  const [selectedCluster, setSelectedCluster] = useState<string | null>(boot.cluster);
+  const [focusedCode, setFocusedCode] = useState<string | null>(boot.territory);
   const [hoverCode, setHoverCode] = useState<string | null>(null);
-  const [view, setView] = useState<View>(IDENTITY);
+  const [view, setView] = useState<View>(boot.view ?? IDENTITY);
   const [dragging, setDragging] = useState(false);
-  const [lens, setLens] = useState<LensId>("concentration");
+  const [lens, setLens] = useState<LensId>(boot.lens);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // camera-restore bookkeeping: skip the glide when the URL already carried
+  // one, or when there is no territory to restore
+  const bootRestoreRef = useRef(boot.territory == null || boot.view != null);
 
   const viewRef = useRef(view);
   // sync after render — the drag/glide/zoom handlers already keep ref and
@@ -334,6 +351,25 @@ export function TheatreView({
 
   useEffect(() => cancelGlide, [cancelGlide]);
 
+  // deep link — camera restore: once geometry exists, glide to the URL's
+  // territory unless the URL already restored the exact camera
+  useEffect(() => {
+    if (bootRestoreRef.current || !geometry) return;
+    bootRestoreRef.current = true;
+    const t = geometry.territoryDrawables.find((d) => d.code === boot.territory);
+    if (t) glideToBounds(t.bounds);
+  }, [geometry, glideToBounds, boot.territory]);
+
+  // deep link — write the board state back to the URL. Debounced: the timer
+  // keeps resetting during glides/drags and settles once they end.
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      const q = encodeBoardState({ lens, territory: focusedCode, cluster: selectedCluster, view });
+      window.history.replaceState(null, "", `${window.location.pathname}${q}${window.location.hash}`);
+    }, 350);
+    return () => window.clearTimeout(id);
+  }, [lens, focusedCode, selectedCluster, view]);
+
   // ---------------------------------------------------------------- derived
   const plottedLeakage = census.totalPlottedLeakageUsd;
   const focusedMemberLeads = focusedStat ? focusedStat.leads : [];
@@ -347,6 +383,22 @@ export function TheatreView({
     : null;
 
   const nowMs = snap.generatedAtMs;
+
+  const lensExt: LensExtremes = useMemo(
+    () => ({
+      maxCount: census.maxTerritoryCount,
+      maxLeakageUsd: census.maxLeakageUsd,
+      maxMomentum48h: census.maxMomentum48h,
+      maxMailVolume: census.maxMailVolume,
+      nowMs,
+    }),
+    [census, nowMs],
+  );
+  const leader = useMemo(
+    () => lensLeader(lens, Array.from(census.territoryStats.values()), nowMs),
+    [lens, census, nowMs],
+  );
+  const activeLens = LENSES.find((l) => l.id === lens) ?? null;
 
   // ---------------------------------------------------------------- render
   if (geoFailed) {
@@ -456,33 +508,32 @@ export function TheatreView({
         })}
       </div>
 
-      {/* lens switcher — one metric per board state; planned lenses stay inert until Map-3 */}
+      {/* lens switcher — one metric per board state; all six read real data */}
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <span className="mr-1 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#3F433F]">lens</span>
         {LENSES.map((l) => {
           const active = lens === l.id;
-          const planned = l.status === "planned";
           return (
             <button
               key={l.id}
-              onClick={() => !planned && setLens(l.id)}
-              disabled={planned}
+              onClick={() => setLens(l.id)}
               aria-pressed={active}
-              title={planned ? `${l.hint} — arms in Map-3` : `${l.hint}`}
+              title={l.hint}
               className={`h-8 rounded-full px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-all ${
                 active
                   ? "bg-[#F4F5F2] text-[#0B0C0B]"
-                  : planned
-                    ? "cursor-not-allowed border border-white/[0.06] bg-[#101210] text-[#3F433F]"
-                    : "border border-white/[0.12] bg-[#131513] text-[#8E9194] hover:text-[#F4F5F2]"
+                  : "border border-white/[0.12] bg-[#131513] text-[#8E9194] hover:text-[#F4F5F2]"
               }`}
             >
               {l.label}
-              {planned && <span className="ml-1.5 text-[8.5px] text-[#333732]">m3</span>}
             </button>
           );
         })}
       </div>
+      <p className="mt-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#5F6460]">
+        {activeLens ? `${activeLens.id} // ${activeLens.hint}` : ""}
+        {leader ? ` — leader: ${leader.name} (${leader.readout})` : ""}
+      </p>
 
       {/* the board */}
       <SoftCard className="relative mt-4 shrink-0 overflow-hidden p-2.5">
@@ -521,8 +572,16 @@ export function TheatreView({
                 <path
                   key={t.code}
                   d={t.d}
-                  fill={lensFill(lens, stat, census.maxTerritoryCount, focused, hovered)}
-                  stroke={focused ? "#8E9194" : hovered ? "#4B514D" : "#2A2D2A"}
+                  fill={lensFill(lens, stat, lensExt, focused, hovered)}
+                  stroke={
+                    focused
+                      ? "#8E9194"
+                      : lens === "mail" && stat != null && stat.mailFailed > 0
+                        ? "#B9BDB9"
+                        : hovered
+                          ? "#4B514D"
+                          : "#2A2D2A"
+                  }
                   strokeWidth={sw(focused ? 1.4 : 0.8)}
                   opacity={dimmed ? 0.45 : 1}
                   className="cursor-pointer"
@@ -590,28 +649,37 @@ export function TheatreView({
               );
             })}
 
-            {/* territory labels — codes at L0, full names past NAME_ZOOM */}
+            {/* territory labels — scale-aware: codes while territories are
+                small on screen, full names once the zoom earns the room,
+                active lens metric as the suffix either way */}
             {geometry.territoryDrawables.map((t) => {
               const stat = census.territoryStats.get(t.code);
               const has = stat != null && stat.count > 0;
               const focused = focusedCode === t.code;
-              const visible = has || (k >= NAME_ZOOM && intersectsViewport(t.bounds, view));
+              const hovered = hoverCode === t.code;
+              const nameMode = k >= NAME_ZOOM;
+              const screenW = (t.bounds[1][0] - t.bounds[0][0]) * k;
+              const screenH = (t.bounds[1][1] - t.bounds[0][1]) * k;
+              const fits = screenW >= (nameMode ? 110 : 34) && screenH >= 16;
+              const visible =
+                (has || nameMode || focused || hovered) && (fits || focused) && intersectsViewport(t.bounds, view);
               if (!visible) return null;
               const dimmed = focusedCode != null && !focused;
+              const metric = lensMetricLabel(lens, stat, nowMs);
               return (
                 <text
                   key={t.code}
                   x={t.label[0]}
                   y={t.label[1]}
                   fill={focused ? "#F4F5F2" : has ? "#8E9194" : "#3F433F"}
-                  fontSize={fs(k >= NAME_ZOOM ? 10 : 9.5)}
+                  fontSize={fs(nameMode ? 10 : 9.5)}
                   fontFamily="JetBrains Mono, monospace"
                   letterSpacing={fs(1)}
                   textAnchor="middle"
                   pointerEvents="none"
                   opacity={dimmed ? 0.4 : 1}
                 >
-                  {focused || k >= NAME_ZOOM ? t.name.toUpperCase() : `${t.code.split("-")[1]}${has ? ` ·${stat!.count}` : ""}`}
+                  {focused || nameMode ? `${t.name.toUpperCase()}${metric}` : `${t.code.split("-")[1]}${metric}`}
                 </text>
               );
             })}
@@ -666,7 +734,9 @@ export function TheatreView({
         {/* overlay — breadcrumb */}
         <div className="pointer-events-none absolute left-5 top-4 flex flex-col gap-1">
           <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#8E9194]">
-            {focusedCode ? `TERRITORY // ${focusedCode} · ${focusedMeta?.name ?? ""}` : "CONTINENT // US + CANADA"}
+            {focusedCode
+              ? `TERRITORY // ${focusedCode} · ${focusedMeta?.name ?? ""} — ${lens.toUpperCase()} LENS`
+              : `CONTINENT // US + CANADA — ${lens.toUpperCase()} LENS`}
           </span>
           <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#3F433F]">
             {k > 1.02 ? `×${k.toFixed(1)} — ESC resets` : "wheel zooms · drag pans · click a territory"}

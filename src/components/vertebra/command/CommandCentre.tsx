@@ -106,6 +106,15 @@ const SNAPSHOT_CACHE_KEY = "vertebra:last-snapshot";
 export function CommandCentre() {
   const [snap, setSnap] = useState<CommandSnapshot | null>(null);
   const [view, setView] = useState<ViewKey>("radar");
+  // Deep link — a URL carrying theatre board params (tl/tt/tc/tk) means the
+  // operator followed a board link: land on the Theatre, not the Radar. Runs
+  // post-mount (SSR-safe); never yanks an operator who already switched views.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    if (p.has("tl") || p.has("tt") || p.has("tc") || p.has("tk")) {
+      setView((v) => (v === "radar" ? "theatre" : v));
+    }
+  }, []);
   const [persona, setPersona] = useState<PersonaId>("coo");
   const [dossier, setDossier] = useState<CommandLead | null>(null);
   const [dossierOpen, setDossierOpen] = useState(false);

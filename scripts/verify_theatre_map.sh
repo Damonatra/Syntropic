@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Theatre map verification — Map-1 spine: geo bundle, normalizer, census, gate posture.
+# Theatre map verification — Map-1 spine · Map-2 drawer · Map-3 lens set + deep link:
+# geo bundle, normalizer, census, six lens ramps, URL codec, gate posture.
 # Usage: bash scripts/verify_theatre_map.sh
 set -u
 BASE="http://localhost:81"
@@ -113,26 +114,59 @@ echo "== 7. Gate posture — unauthenticated fetch of the bundle (expect redirec
 code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/geo/us-ca-territories.json")
 if [ "$code" = "307" ] || [ "$code" = "302" ]; then ok "geometry stays behind the enclave gate ($code)"; else bad "bundle reachable unauthenticated ($code)"; fi
 
-echo "== 8. Map-2 — lens registry, concentration ramp, funnel counters, census honesty"
+echo "== 8. Map-3 — six live lenses, monotonic luminance, honest base fills"
 bun -e "
-import { censusBoard, lensFill, LENSES, type BoardCensus } from './src/lib/vertebra/theatre';
+import { censusBoard, lensFill, lensLeader, lensMetricLabel, LENSES, type BoardCensus, type LensExtremes } from './src/lib/vertebra/theatre';
 import type { CommandLead } from './src/lib/vertebra/command';
 let bad = 0;
-const fail = (m: string) => { console.log('  FAIL:', m); bad++; };
+const fail = (m: string) => { console.log('  FAIL:', m); bad++ };
+const alpha = (fill: string) => (fill.startsWith('rgba') ? parseFloat(fill.slice(0, -1).split(',')[3]) : 0);
+const DAY = 86400000;
 
-// 8a — exactly one live lens (concentration), five planned shells
-const live = LENSES.filter((l) => l.status === 'live');
+// 8a — every lens armed
 if (LENSES.length !== 6) fail('six lenses expected');
-if (live.length !== 1 || live[0].id !== 'concentration') fail('concentration must be the only live lens');
+for (const l of LENSES) if (l.status !== 'live') fail(l.id + ' must be live in Map-3');
 
-// 8b — concentration ramp is monotonic in count; planned lenses stay inert
-const stat = (n: number) => ({ count: n } as never);
-const a = parseFloat(lensFill('concentration', stat(1), 9, false, false).match(/([\d.]+)\)$/)![1]);
-const b = parseFloat(lensFill('concentration', stat(9), 9, false, false).match(/([\d.]+)\)$/)![1]);
-if (!(b > a)) fail('concentration ramp not monotonic');
-if (lensFill('momentum', stat(9), 9, false, false) !== '#161816') fail('planned lens must stay inert');
+const ext: LensExtremes = { maxCount: 9, maxLeakageUsd: 900000, maxMomentum48h: 20, maxMailVolume: 9, nowMs: 1700000000000 };
+const stat = (over: Record<string, unknown>) => ({
+  code: 'US-TX', name: 'Texas', country: 'US', type: 'State', count: 0, critical: 0, leakageUsd: 0,
+  avgQlv: null, caslTrue: 0, inSequence: 0, lastTouchMs: null, mailQueued: 0, mailStaged: 0,
+  mailSent: 0, mailFailed: 0, telemetryEvents48h: 0, lastTelemetryMs: null, leads: [], ...over,
+}) as never;
 
-// 8c — censusBoard: funnel counters + honest trays on synthetic leads
+// 8b — empty territories stay on the honest base fill under every lens
+for (const l of LENSES) if (lensFill(l.id, undefined, ext, false, false) !== '#161816') fail(l.id + ' base fill');
+
+// 8c — luminance monotonic in each lens metric; failure accent on mail
+const inc = (a: number, b: number, m: string) => { if (!(b > a)) fail(m); };
+inc(alpha(lensFill('concentration', stat({ count: 1 }), ext, false, false)),
+    alpha(lensFill('concentration', stat({ count: 9 }), ext, false, false)), 'concentration ramp');
+inc(alpha(lensFill('momentum', stat({ count: 2, telemetryEvents48h: 2 }), ext, false, false)),
+    alpha(lensFill('momentum', stat({ count: 2, telemetryEvents48h: 20 }), ext, false, false)), 'momentum ramp');
+if (lensFill('momentum', stat({ telemetryEvents48h: 7 }), ext, false, false) !== '#161816') fail('momentum must refuse empty territories');
+inc(alpha(lensFill('exposure', stat({ count: 1, leakageUsd: 5000 }), ext, false, false)),
+    alpha(lensFill('exposure', stat({ count: 1, leakageUsd: 900000 }), ext, false, false)), 'exposure ramp');
+inc(alpha(lensFill('cadence', stat({ count: 1, lastTouchMs: ext.nowMs - 200 * DAY }), ext, false, false)),
+    alpha(lensFill('cadence', stat({ count: 1, lastTouchMs: ext.nowMs - 2 * DAY }), ext, false, false)), 'cadence ramp');
+inc(alpha(lensFill('compliance', stat({ count: 3, caslTrue: 3, country: 'CA' }), ext, false, false)),
+    alpha(lensFill('compliance', stat({ count: 3, caslTrue: 0, country: 'CA' }), ext, false, false)), 'compliance ramp');
+const mailClean = alpha(lensFill('mail', stat({ count: 2, mailSent: 2 }), ext, false, false));
+const mailFail = alpha(lensFill('mail', stat({ count: 2, mailSent: 1, mailFailed: 1 }), ext, false, false));
+if (!(mailFail > mailClean)) fail('mail failure accent');
+
+// 8d — label ink + caption leaders
+if (lensMetricLabel('concentration', stat({ count: 4 }), ext.nowMs) !== '·4') fail('concentration label');
+if (lensMetricLabel('momentum', stat({ count: 2, telemetryEvents48h: 7 }), ext.nowMs) !== '·7ev') fail('momentum label');
+if (lensMetricLabel('exposure', stat({ count: 2, leakageUsd: 48000 }), ext.nowMs) !== '·\$48K') fail('exposure label');
+if (lensMetricLabel('cadence', stat({ count: 1, lastTouchMs: ext.nowMs - 5 * DAY }), ext.nowMs) !== '·5d') fail('cadence label');
+if (lensMetricLabel('compliance', stat({ count: 3, caslTrue: 1, country: 'CA', code: 'CA-BC' }), ext.nowMs) !== '·1/3') fail('compliance label');
+if (lensMetricLabel('mail', stat({ count: 2, mailStaged: 1, mailSent: 1 }), ext.nowMs) !== '·1s/1x/0f') fail('mail label');
+if (lensMetricLabel('mail', stat({ count: 1, mailQueued: 2 }), ext.nowMs) !== '·2q') fail('mail queued-only label');
+if (lensMetricLabel('mail', stat({ count: 1, mailQueued: 1, mailStaged: 1 }), ext.nowMs) !== '·1s/0x/0f+1q') fail('mail queued suffix');
+const leadA = lensLeader('momentum', [stat({ code: 'US-TX', name: 'Texas', count: 2, telemetryEvents48h: 7 }), stat({ code: 'CA-ON', name: 'Ontario', count: 5, telemetryEvents48h: 3 })], ext.nowMs);
+if (!leadA || leadA.code !== 'US-TX' || leadA.readout.indexOf('7') !== 0) fail('momentum leader');
+
+// 8e — censusBoard: funnel counters, telemetry sums, maxima, honest trays
 const mk = (over: Partial<CommandLead>): CommandLead => ({
   id: 'x', name: 'X', domain: null, vertical: null, city: null, stateProvince: null,
   country: null, region: null, revenueEstimateUsd: null, employeeCount: null, ingestion: 'ingested',
@@ -152,6 +186,7 @@ const leads = [
   mk({ id: 'a', name: 'Gulf', country: 'United States', stateProvince: 'TX', latitude: 29.76, longitude: -95.37,
        caslScope: false, dispatch: { channel: 'channel_a_automated_email', status: 'staged', scheduledAtMs: null, steps: 1 },
        score: { qlvScore: 91, band: 'critical', factors: [], hooks: [], rationale: '', model: '', createdAt: '' } as never,
+       telemetry: { lastEventAtMs: 1699999200000, lastEventType: 'pricing_repeat_view', events48h: 5 } as never,
        leakageUsd: 48000 }),
   mk({ id: 'b', name: 'Bayou', country: 'United States', stateProvince: 'TX', latitude: 30.45, longitude: -91.19,
        dispatch: { channel: 'channel_a_automated_email', status: 'sent', scheduledAtMs: null, steps: 1 }, leakageUsd: 12000 }),
@@ -166,16 +201,45 @@ if (tx.count !== 2) fail('US-TX count');
 if (tx.critical !== 1) fail('US-TX critical band');
 if (tx.mailStaged !== 1 || tx.mailSent !== 1 || tx.mailQueued !== 0 || tx.mailFailed !== 0) fail('US-TX funnel');
 if (tx.leakageUsd !== 60000) fail('US-TX leakage');
+if (tx.telemetryEvents48h !== 5) fail('US-TX telemetry sum');
+if (census.maxMomentum48h !== 5) fail('momentum maximum');
+if (census.maxMailVolume !== 2) fail('mail volume maximum');
+if (census.maxLeakageUsd !== 60000) fail('leakage maximum');
 if (census.territoryStats.get('CA-BC')!.caslTrue !== 1) fail('CA-BC consent-true');
 if (census.uncharted.length !== 1 || census.uncharted[0].name !== 'NoGeo') fail('uncharted tray');
 if (census.offBoard.length !== 1 || census.offBoard[0].name !== 'LAPPSET') fail('off-board tray');
 if (census.plotted.length !== 3) fail('plotted pool');
+const leadB = lensLeader('momentum', Array.from(census.territoryStats.values()), 1700000000000);
+if (!leadB || leadB.code !== 'US-TX') fail('census momentum leader');
+const leadC = lensLeader('cadence', Array.from(census.territoryStats.values()), 1700000000000);
+if (!leadC || leadC.code !== 'US-TX' || leadC.readout.indexOf('touched') !== 0) fail('census cadence leader');
 
-// 8d — M1 binding math: filtering to critical leaves only the 91-QLV row on the board
+// 8f — M1 binding math: filtering to critical leaves only the 91-QLV row on the board
 const criticalBoard = censusBoard(leads.filter((l) => (l.score?.qlvScore ?? 0) >= 85), resolve);
 if (criticalBoard.territoryStats.get('US-TX')!.count !== 1) fail('M1 filter does not bind the census');
 
-if (bad === 0) console.log('  PASS: lenses + funnel + trays + M1 binding all resolve');
+if (bad === 0) console.log('  PASS: six lenses · ramps · labels · leaders · trays · M1 binding all resolve');
+process.exit(bad ? 1 : 0);
+"
+[ $? -eq 0 ] && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
+
+echo "== 9. Map-3 deep link — board state survives the URL round-trip"
+bun -e "
+import { encodeBoardState, parseBoardState } from './src/lib/vertebra/theatre';
+let bad = 0;
+const fail = (m: string) => { console.log('  FAIL:', m); bad++ };
+const q = encodeBoardState({ lens: 'momentum', territory: 'US-TX', cluster: 'cl1', view: { k: 3.234, x: -123.4, y: 45.6 } });
+const p = parseBoardState(q);
+if (p.lens !== 'momentum') fail('lens round-trip');
+if (p.territory !== 'US-TX' || p.cluster !== 'cl1') fail('territory/cluster round-trip');
+if (!p.view || Math.abs(p.view.k - 3.23) > 0.001 || p.view.x !== -123 || p.view.y !== 46) fail('camera round-trip (integer-pan precision)');
+if (encodeBoardState({ lens: 'concentration', territory: null, cluster: null, view: null }) !== '') fail('identity must encode to empty query');
+const d = parseBoardState(null);
+if (d.lens !== 'concentration' || d.territory !== null || d.view !== null) fail('defaults');
+const h = parseBoardState('?tl=evil&tk=99&tx=abc&ty=-40');
+if (h.lens !== 'concentration') fail('invalid lens rejected');
+if (!h.view || h.view.k !== 18 || h.view.x !== 0 || h.view.y !== -40) fail('camera clamped/sanitized');
+if (bad === 0) console.log('  PASS: lens, territory, cluster and camera all survive the URL');
 process.exit(bad ? 1 : 0);
 "
 [ $? -eq 0 ] && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
