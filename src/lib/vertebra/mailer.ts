@@ -7,7 +7,7 @@
  * send carries the identification footer + RFC 8058 one-click headers.
  */
 import { db } from "@/lib/db";
-import { buildCaslFooter, buildEmailHeaders } from "@/lib/vertebra/casl";
+import { buildCaslFooter, buildEmailHeaders, unsubscribeSecretStatus } from "@/lib/vertebra/casl";
 
 export interface SendEmailInput {
   to: string;
@@ -49,6 +49,29 @@ export async function isSuppressed(email: string | null | undefined, prospectId?
 }
 
 export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult> {
+  // --- Live-egress interlocks ---------------------------------------------- //
+  // Real mail only leaves a locked enclave with real unsubscribe signing.
+  // Staged mode (no RESEND key) is unaffected — the sandbox stays honest.
+  if (mailProvider() === "resend") {
+    const secretStatus = unsubscribeSecretStatus();
+    if (secretStatus !== "custom") {
+      return {
+        ok: false,
+        status: "failed",
+        reason: `unsubscribe_secret_required: SYNTROPIC_UNSUBSCRIBE_SECRET is ${secretStatus} — forgeable one-click links mean suppression-list poisoning`,
+        footerApplied: null,
+      };
+    }
+    if (!process.env.ENCLAVE_PASSWORD) {
+      return {
+        ok: false,
+        status: "failed",
+        reason: "enclave_gate_required: set ENCLAVE_PASSWORD before live egress — no real mail from an unlocked enclave",
+        footerApplied: null,
+      };
+    }
+  }
+
   const display = input.fromDisplayName ?? process.env.VERTEBRA_FROM_DISPLAY ?? "Syntropic Industrial Growth";
   const from = senderAddress(input.fromDomain, display);
   const footer = buildCaslFooter(input.prospectId ?? "anon", input.to, input.region);

@@ -1,0 +1,31 @@
+server up (waited ~2s)
+
+== 1. gate chain ==
+root ungated: 307 -> http://localhost:3000/gate
+api ungated: 401
+{"ok":true,"gated":true}
+login: [200]
+root with cookie: 200
+
+== 2. evidence ledger — GET (Gulf Coast seeded fixtures) ==
+{"signals":[{"id":"cmvtoba6h0003m37jlyg8c108","kind":"site_copy","verbatim":"our inside sales team will respond within 5-7 business days","context":"their own quote-request page","sourceUrl":null,"sourceNote":"seed fixture — prospect website copy","confidence":"high","status":"active","createdAtMs":1793286218826},{"id":"cmvtoba6g0001m37jnf6wm6ty","kind":"review_complaint","verbatim":"took four days just to get a quote back on valve packages","context":"Google review left by a mechanical contractor","sourceUrl":null,"sourceNote":"seed fixture — public review of quoting experience","confidence":"high","status":"active","createdAtMs":1793286218825}]}
+== 3. evidence ledger — POST add + PATCH veto/restore ==
+{"ok":true,"signal":{"id":"cmvtog3gq0001m3jw1yj8qar8"},"deduped":false}
+{"ok":true,"signal":{"id":"cmvtog3gq0001m3jw1yj8qar8","status":"vetoed"}} [veto 200]
+{"ok":true,"signal":{"id":"cmvtog3gq0001m3jw1yj8qar8","status":"active"}} [restore 200]
+
+== 4. draft route — brief → LLM → verify (may take up to 3 min) ==
+{"ok":false,"draft":{"subject":"Quote process at Gulf Coast","body":"Noted your team 'quotes pile up every Friday and someone hand-types them into QuickBooks.' Also saw a review mentioning it 'took four days just to get a quote back on valve packages.' Your site says responses take 5-7 business days. That's a tight window for contractors. How much time weekly goes into re-keying RFQs between fax, email and your system?","echoedSignalId":"cmvtog3gq0001m3jw1yj8qar8"},"briefHash":"d0827a4fe548749bd0827a4fe548749b","brief":{"companyName":"Gulf Coast Valve & Fitting","signalCount":3,"signals":[{"id":"cmvtog3gq0001m3jw1yj8qar8","kind":"operator_note","verbatim":"dispatcher said quotes pile up every Friday and someone hand-types them into QuickBooks","sourceNote":"e2e verify — operator note"},{"id":"cmvtoba6h0003m37jlyg8c108","kind":"site_copy","verbatim":"our inside sales team will respond within 5-7 business days","sourceNote":"seed fixture — prospect website copy"},{"id":"cmvtoba6g0001m37jnf6wm6ty","kind":"review_complaint","verbatim":"took four days just to get a quote back on valve packages","sourceNote":"seed fixture — public review of quoting experience"}]},"verify":{"ok":false,"hard":[{"code":"fact_trace_proper_noun","detail":"\"Gulf Coast\nNoted\" is not grounded in the evidence brief"},{"code":"fact_trace_proper_noun","detail":"\"Also\" is not grounded in the evidence brief"}],"soft":[],"stats":{"bodyWords":60,"subjectChars":27,"questions":1}},"attempts":2}
+[draft 200]
+
+== 5. integrity wall — fabricated send must be refused (expect 422) ==
+{"error":"verify_failed","violations":[{"code":"fact_trace_number","detail":"\"63\" has no basis in the evidence brief"}],"hint":"the integrity wall refused this send — every number and proper noun must be grounded in the evidence on file; edit the text, there is no override"}
+[fabricated 422]
+
+== 6. honest staged send — grounded text must pass (expect 200 staged + briefHash) ==
+{"ok":true,"send":{"status":"staged","reason":"no_provider","providerMsgId":null,"provider":"none"},"dispatch":{"id":"cmvtog5vp0003m3jw54o8vs80","channel":"operator_manual_email","status":"staged"},"prospect":{"id":"cmvtcxblv0005m3jea8z7y7n7","name":"Gulf Coast Valve & Fitting","email":"m.webb@gulfcoastvalve.com"},"evidence":{"signalCount":3,"briefHash":"d0827a4fe548749bd0827a4fe548749b"},"verify":{"ok":true,"soft":[]},"guard":{"caslScope":false,"cooldownOverride":true}}
+[grounded 200]
+
+== 7. dossier payload carries painSignals ==
+"painSignals":[{"id":"cmvtog3gq0001m3jw1yj8qar8","kind":"operator_note","verbatim":"dispatcher said quotes pile up every Friday and someone hand-types them into QuickBooks","context":null,"sourceUrl":null,"sourceNote":"e2e verify — operator note","confidence":"medium","status":"active","createdAtMs":1793286443403},{"id":"cmvtoba6h0003m37jlyg8c108","kind":"site_copy","verbatim":"our inside sales team will respond within 5-7 business days","context":"their own quote-request page","sourceUrl":null,"sourceNote":"seed fixture — prospect website copy","confidence":"high","status":"active","creat
+== done ==

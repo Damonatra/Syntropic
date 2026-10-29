@@ -12,6 +12,9 @@
 export const SESSION_COOKIE = "enclave_session";
 const SESSION_DOMAIN = "vertebra-enclave-v1";
 
+/** Minimum accepted ENCLAVE_PASSWORD length — weaker locks are refused loudly. */
+export const ENCLAVE_MIN_PASSWORD_LENGTH = 12;
+
 async function hmacHex(message: string, secret: string): Promise<string> {
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);

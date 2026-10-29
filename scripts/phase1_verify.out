@@ -1,0 +1,23 @@
+== tsc --noEmit (baseline 11 errors) ==
+src/components/vertebra/command/portal/AuditDropzone.tsx(289,31): error TS2322: Type '"sunken"' is not assignable to type '"default" | "outline" | "raised" | "inverted" | "well" | undefined'.
+src/lib/vertebra/mailer.ts(77,72): error TS2345: Argument of type 'string | null | undefined' is not assignable to parameter of type 'string | null'.
+  Type 'undefined' is not assignable to type 'string | null'.
+tsc error count: 11
+== wait for :3000 ==
+server up after ~2s
+== 1. root ungated (expect 307 -> /gate) ==
+307 -> http://localhost:3000/gate
+== 2. api ungated (expect 401) ==
+401
+== 3. wrong password (expect 401) ==
+{"error":"bad_password"} [401]
+== 4. correct password (expect ok:true gated:true) ==
+{"ok":true,"gated":true} [200]
+== 5. root with cookie (expect 200) ==
+200
+== 6. staged email still honest (expect send.status=staged, provider=none) ==
+{"ok":true,"send":{"status":"staged","reason":"no_provider","providerMsgId":null,"provider":"none"},"dispatch":{"id":"cmvtnmfaf0001m3nlhpxpa14e","channel":"operator_manual_email","status":"staged"},"prospect":{"id":"cmvtcxblv0005m3jea8z7y7n7","name":"Gulf Coast Valve & Fitting","email":"m.webb@gulfcoastvalve.com"},"guard":{"caslScope":false,"cooldownOverride":true}}
+[200]
+== 7. unsubscribe endpoint still public + valid token accepted ==
+unsub endpoint reachable: 400
+== done ==

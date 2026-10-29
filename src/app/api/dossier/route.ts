@@ -19,6 +19,7 @@ export async function GET(request: Request) {
         highTouch: true,
         dispatches: { orderBy: { createdAt: "desc" }, take: 8 },
         operatorActions: { orderBy: { createdAt: "desc" }, take: 6 },
+        painSignals: { orderBy: [{ status: "asc" }, { createdAt: "desc" }] },
       },
     });
     if (!prospect) return NextResponse.json({ error: "prospect_not_found" }, { status: 404 });
@@ -80,6 +81,17 @@ export async function GET(request: Request) {
         highTouch: prospect.highTouch
           ? { qlvScore: prospect.highTouch.qlvScore, exported: Boolean(prospect.highTouch.exportedAt) }
           : null,
+        painSignals: prospect.painSignals.map((s) => ({
+          id: s.id,
+          kind: s.kind,
+          verbatim: s.verbatim,
+          context: s.context,
+          sourceUrl: s.sourceUrl,
+          sourceNote: s.sourceNote,
+          confidence: s.confidence,
+          status: s.status,
+          createdAtMs: s.createdAt.getTime(),
+        })),
       },
       telemetry: telemetry.map((e) => ({
         id: e.id,

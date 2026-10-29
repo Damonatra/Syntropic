@@ -56,3 +56,6 @@ server.log
 /db/*.db
 /db/*.db-journal
 /tool-results/
+
+# secrets live on disk only
+.env

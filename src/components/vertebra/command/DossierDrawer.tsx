@@ -32,6 +32,7 @@ interface DossierData {
     score: { qlvScore: number; band: string; factors: Array<{ key: string; weight: number; points: number; evidence: string }>; hooks: Array<{ flavor: string; body: string }>; rationale: string; model: string } | null;
     contacts: Array<{ name: string; role: string; titleRaw: string | null; phone: string | null }>;
     highTouch: { qlvScore: number; exported: boolean } | null;
+    painSignals: Array<{ id: string; kind: string; verbatim: string; context: string | null; sourceUrl: string | null; sourceNote: string | null; confidence: string; status: string; createdAtMs: number }>;
   };
   telemetry: Array<{ id: string; eventType: string; url: string | null; city: string | null; country: string | null; device: string | null; durationMs: number | null; occurredAtMs: number }>;
   dispatches: Array<{ id: string; channel: string; status: string; subject: string | null; provider: string | null; scheduledAtMs: number | null; createdAtMs: number }>;
@@ -83,7 +84,28 @@ type SendResult =
   | { kind: "cooldown"; lastSend: { subject: string | null; atMs: number } | null }
   | { kind: "suppressed" }
   | { kind: "casl"; hint: string | null }
+  | { kind: "verify"; violations: Array<{ code: string; detail: string }> }
   | { kind: "error"; reason: string | null };
+
+interface DraftReport {
+  ok: boolean;
+  hard: Array<{ code: string; detail: string }>;
+  soft: Array<{ code: string; detail: string }>;
+  briefHash: string | null;
+  attempts: number;
+}
+
+const PAIN_KIND_LABELS: Record<string, string> = {
+  review_complaint: "review complaint",
+  site_copy: "their site",
+  job_posting: "job posting",
+  reply_language: "their reply",
+  telemetry: "telemetry",
+  audit_finding: "audit doc",
+  operator_note: "operator note",
+  research: "research",
+};
+const PAIN_KINDS = Object.keys(PAIN_KIND_LABELS);
 
 const FACTOR_LABELS: Record<string, string> = {
   rfq_latency: "RFQ latency",
@@ -128,6 +150,17 @@ export function DossierDrawer({
   const [triaging, setTriaging] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [acting, setActing] = useState(false);
+  // Personalization layer — evidence strip + AI draft + verify report
+  const [drafting, setDrafting] = useState(false);
+  const [draftReport, setDraftReport] = useState<DraftReport | null>(null);
+  const [draftNotice, setDraftNotice] = useState<string | null>(null);
+  const [evKind, setEvKind] = useState("review_complaint");
+  const [evVerbatim, setEvVerbatim] = useState("");
+  const [evSource, setEvSource] = useState("");
+  const [evBusy, setEvBusy] = useState(false);
+  const [extracting, setExtracting] = useState(false);
+  const [extractNote, setExtractNote] = useState<string | null>(null);
+  const [composerOpen, setComposerOpen] = useState(false);
   const seededForRef = useRef<string | null>(null);
   const composeInputRef = useRef<HTMLInputElement>(null);
 
@@ -266,7 +299,7 @@ export function DossierDrawer({
         }),
       });
       const j = (await res.json().catch(() => null)) as
-        | { ok?: boolean; send?: { status: string; reason: string | null; providerMsgId: string | null }; lastSend?: { subject: string | null; atMs: number }; error?: string; hint?: string; reason?: string }
+        | { ok?: boolean; send?: { status: string; reason: string | null; providerMsgId: string | null }; lastSend?: { subject: string | null; atMs: number }; error?: string; hint?: string; reason?: string; violations?: Array<{ code: string; detail: string }> }
         | null;
       if (res.ok && j?.ok && j.send) {
         if (j.send.status === "sent" || j.send.status === "staged") {
@@ -285,6 +318,8 @@ export function DossierDrawer({
         }
       } else if (res.status === 409) {
         setSendResult({ kind: "cooldown", lastSend: j?.lastSend ?? null });
+      } else if (res.status === 422 && j?.violations) {
+        setSendResult({ kind: "verify", violations: j.violations });
       } else if (res.status === 403 && j?.error === "suppressed") {
         setSendResult({ kind: "suppressed" });
       } else if (res.status === 403) {
@@ -301,7 +336,6 @@ export function DossierDrawer({
   }
 
   async function triageDraft(draftId: string, decision: "approved" | "discarded") {
-    setTriaging(draftId);
     try {
       await fetch("/api/replies", {
         method: "PATCH",
@@ -313,6 +347,124 @@ export function DossierDrawer({
     } finally {
       setTriaging(null);
       refetchDossier();
+    }
+  }
+
+  /** Add a verbatim pain signal from the inline composer. */
+  async function addSignal() {
+    if (!data || evVerbatim.trim().length < 8 || evBusy) return;
+    setEvBusy(true);
+    try {
+      const res = await fetch("/api/dossier/evidence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prospectId: data.prospect.id,
+          kind: evKind,
+          verbatim: evVerbatim.trim(),
+          ...(evSource.trim() ? { sourceNote: evSource.trim() } : {}),
+        }),
+      });
+      if (res.ok) {
+        setEvVerbatim("");
+        setEvSource("");
+        setComposerOpen(false);
+        refetchDossier();
+      }
+    } catch {
+      /* the refetch shows the truth */
+    } finally {
+      setEvBusy(false);
+    }
+  }
+
+  async function vetoSignal(id: string, status: "active" | "vetoed") {
+    try {
+      await fetch("/api/dossier/evidence", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status }),
+      });
+    } catch {
+      /* honest refetch below */
+    } finally {
+      refetchDossier();
+    }
+  }
+
+  /** Mine held material (ingest excerpt, replies, audit docs) for verbatim quotes. */
+  async function extractSignals() {
+    if (!data || extracting) return;
+    setExtracting(true);
+    setExtractNote(null);
+    try {
+      const res = await fetch("/api/dossier/evidence/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prospectId: data.prospect.id }),
+      });
+      const j = (await res.json().catch(() => null)) as
+        | { stored?: Array<unknown>; discarded?: Array<unknown>; error?: string; hint?: string }
+        | null;
+      if (res.ok && j) {
+        setExtractNote(`${j.stored?.length ?? 0} signal(s) stored · ${j.discarded?.length ?? 0} refused (not verbatim)`);
+        refetchDossier();
+      } else {
+        setExtractNote(
+          j?.error === "no_material"
+            ? "nothing held to extract from — paste the quote by hand"
+            : j?.error === "llm_unavailable"
+              ? "extraction needs the LLM — paste the quote by hand"
+              : "extraction failed",
+        );
+      }
+    } catch {
+      setExtractNote("extraction failed");
+    } finally {
+      setExtracting(false);
+    }
+  }
+
+  /** The 1:1 drafting pipeline: brief → LLM → verify → (one regen) → compose. */
+  async function draftWithAI() {
+    if (!data || drafting) return;
+    setDrafting(true);
+    setDraftNotice(null);
+    setDraftReport(null);
+    try {
+      const res = await fetch("/api/dossier/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prospectId: data.prospect.id }),
+      });
+      const j = (await res.json().catch(() => null)) as
+        | {
+            ok?: boolean;
+            draft?: { subject: string; body: string; echoedSignalId: string | null };
+            briefHash?: string;
+            verify?: { ok: boolean; hard: Array<{ code: string; detail: string }>; soft: Array<{ code: string; detail: string }> };
+            attempts?: number;
+            error?: string;
+            hint?: string;
+          }
+        | null;
+      if (res.ok && j?.draft) {
+        setComposeSubject(j.draft.subject);
+        setComposeBody(j.draft.body);
+        touchCompose({ subject: j.draft.subject, body: j.draft.body });
+        setSendResult(null);
+        setDraftReport({ ok: Boolean(j.verify?.ok), hard: j.verify?.hard ?? [], soft: j.verify?.soft ?? [], briefHash: j.briefHash ?? null, attempts: j.attempts ?? 1 });
+      } else if (res.status === 409) {
+        setDraftNotice("no evidence on file — add or extract pain signals first; the enclave does not draft from vibes");
+      } else if (res.status === 503) {
+        setDraftNotice("drafting needs the LLM — write it manually; the verify rails still apply at send");
+      } else {
+        setDraftNotice(res.status === 502 ? "the model could not produce a clean draft — try again or write it manually" : "draft failed");
+      }
+    } catch {
+      setDraftNotice("draft failed — network");
+    } finally {
+      setDrafting(false);
     }
   }
 
@@ -419,6 +571,101 @@ export function DossierDrawer({
               </SoftCard>
             </section>
 
+            {/* Pain evidence (personalization layer) — verbatim quotes from their world */}
+            <section>
+              <SectionLabel className="mb-2">Pain evidence · verbatim</SectionLabel>
+              <SoftCard className="px-5 py-4">
+                {(data.prospect.painSignals?.length ?? 0) === 0 ? (
+                  <EmptyHint>
+                    No pain signals on file. The AI draft refuses to run without evidence — every cold email must be grounded in their words, not vibes.
+                  </EmptyHint>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {data.prospect.painSignals.map((s) => (
+                      <div
+                        key={s.id}
+                        className={`rounded-md border px-3 py-2 ${s.status === "vetoed" ? "border-white/[0.06] opacity-45" : "border-white/[0.10]"}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[#8E9194]">
+                            {PAIN_KIND_LABELS[s.kind] ?? s.kind} · {s.confidence}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => void vetoSignal(s.id, s.status === "active" ? "vetoed" : "active")}
+                            className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#6E736E] transition-colors hover:text-[#F4F5F2]"
+                          >
+                            {s.status === "active" ? "veto" : "restore"}
+                          </button>
+                        </div>
+                        <p className="mt-1 text-[12px] leading-relaxed text-[#E9EBE7]">“{s.verbatim}”</p>
+                        {(s.sourceNote || s.context) && (
+                          <p className="mt-1 font-mono text-[9.5px] text-[#6E736E]">
+                            {s.sourceNote ?? ""}
+                            {s.sourceUrl ? (
+                              <a href={s.sourceUrl} target="_blank" rel="noreferrer" className="ml-1 underline decoration-white/20 underline-offset-2 hover:text-[#F4F5F2]">
+                                source ↗
+                              </a>
+                            ) : null}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {composerOpen ? (
+                  <div className="mt-3 rounded-md border border-white/[0.12] bg-[#131513] px-3 py-2.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        value={evKind}
+                        onChange={(e) => setEvKind(e.target.value)}
+                        className="h-7 rounded-md border border-white/[0.10] bg-[#0B0C0B] px-2 font-mono text-[10px] text-[#F4F5F2] focus:outline-none"
+                      >
+                        {PAIN_KINDS.map((k) => (
+                          <option key={k} value={k}>
+                            {PAIN_KIND_LABELS[k]}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        value={evSource}
+                        onChange={(e) => setEvSource(e.target.value)}
+                        placeholder="source note (optional)"
+                        maxLength={300}
+                        className="h-7 flex-1 rounded-md border border-white/[0.10] bg-[#0B0C0B] px-2 font-mono text-[10px] text-[#F4F5F2] placeholder:text-[#6E736E] focus:border-white/[0.28] focus:outline-none"
+                      />
+                    </div>
+                    <textarea
+                      value={evVerbatim}
+                      onChange={(e) => setEvVerbatim(e.target.value)}
+                      rows={3}
+                      maxLength={600}
+                      placeholder="paste the exact words — verbatim, never a summary"
+                      className="mt-2 w-full resize-y rounded-md border border-white/[0.10] bg-[#0B0C0B] px-2.5 py-2 font-mono text-[11px] leading-relaxed text-[#F4F5F2] placeholder:text-[#6E736E] focus:border-white/[0.28] focus:outline-none"
+                    />
+                    <div className="mt-2 flex items-center gap-3">
+                      <PillButton tone="dark" onClick={() => void addSignal()} disabled={evBusy || evVerbatim.trim().length < 8}>
+                        {evBusy ? "storing…" : "store signal"}
+                      </PillButton>
+                      <button type="button" onClick={() => setComposerOpen(false)} className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#6E736E] hover:text-[#F4F5F2]">
+                        cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-3 flex flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-[0.14em]">
+                    <button type="button" onClick={() => setComposerOpen(true)} className="text-[#8E9194] transition-colors hover:text-[#F4F5F2]">
+                      + add verbatim
+                    </button>
+                    <button type="button" onClick={() => void extractSignals()} disabled={extracting} className="text-[#8E9194] transition-colors hover:text-[#F4F5F2] disabled:opacity-40">
+                      {extracting ? "mining held material…" : "extract from held evidence"}
+                    </button>
+                    {extractNote && <span className="text-[#6E736E] normal-case tracking-normal">{extractNote}</span>}
+                  </div>
+                )}
+              </SoftCard>
+            </section>
+
             {/* Cold email desk (M3) — compose, angle seeds, honest send states */}
             <section>
               <SectionLabel className="mb-2">Cold email desk · channel A</SectionLabel>
@@ -458,6 +705,18 @@ export function DossierDrawer({
                     ))}
                   </div>
                 )}
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-[9.5px] uppercase tracking-[0.18em] text-[#6E736E]">1:1 draft</span>
+                  <button
+                    type="button"
+                    onClick={() => void draftWithAI()}
+                    disabled={drafting || (data.prospect.painSignals?.filter((s) => s.status === "active").length ?? 0) === 0}
+                    className="rounded-full border border-white/[0.12] px-2.5 py-1 font-mono text-[10px] text-[#8E9194] transition-colors hover:border-white/[0.3] hover:text-[#F4F5F2] disabled:opacity-40"
+                  >
+                    {drafting ? "drafting from evidence…" : "draft with AI"}
+                  </button>
+                  {draftNotice && <span className="font-mono text-[10px] text-[#8E9194] normal-case tracking-normal">{draftNotice}</span>}
+                </div>
                 <input
                   ref={composeInputRef}
                   value={composeSubject}
@@ -483,6 +742,30 @@ export function DossierDrawer({
                   className="mt-2 w-full resize-y rounded-md border border-white/[0.10] bg-[#131513] px-3 py-2.5 font-mono text-[12px] leading-relaxed text-[#F4F5F2] placeholder:text-[#6E736E] focus:border-white/[0.28] focus:outline-none disabled:opacity-40"
                 />
                 <div className="mt-1 text-right font-mono text-[9.5px] tabular-nums text-[#6E736E]">{composeBody.length} / 8000</div>
+                {draftReport && (
+                  <div className={`mt-2 rounded-md border px-3 py-2 font-mono text-[10px] leading-relaxed ${draftReport.ok ? "border-white/[0.08] text-[#8E9194]" : "border-white/[0.24] bg-white/[0.04] text-[#F4F5F2]"}`}>
+                    {draftReport.ok ? (
+                      <>
+                        <span className="uppercase tracking-[0.16em]">verify: clean</span>
+                        <span className="ml-2 text-[#6E736E]">
+                          brief {draftReport.briefHash?.slice(0, 8) ?? "—"} · {draftReport.attempts} attempt{draftReport.attempts === 1 ? "" : "s"}
+                          {draftReport.soft.length > 0 && ` · soft: ${draftReport.soft.map((v) => v.code).join(", ")}`}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="uppercase tracking-[0.16em]">verify: violations — regenerate failed, edit by hand</span>
+                        <ul className="mt-1 list-disc pl-4 normal-case tracking-normal">
+                          {draftReport.hard.map((v, i) => (
+                            <li key={i}>
+                              {v.code}: {v.detail}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                  </div>
+                )}
                 <div className="mt-3 flex flex-wrap items-center gap-3">
                   <PillButton tone="dark" onClick={() => void sendColdEmail(false)} disabled={sendDisabled}>
                     {sending ? "sending…" : "send cold email"}
@@ -503,6 +786,7 @@ export function DossierDrawer({
                       {sendResult.kind === "cooldown" && "● cooldown active — manual send inside 24h"}
                       {sendResult.kind === "suppressed" && "● suppressed — the enclave will not send"}
                       {sendResult.kind === "casl" && "● casl gate — enclave refused"}
+                      {sendResult.kind === "verify" && "● integrity wall — send refused"}
                       {sendResult.kind === "error" && "● send failed — enclave error"}
                     </p>
                     <p className="mt-1 text-[11.5px] leading-relaxed text-[#8E9194]">
@@ -515,6 +799,18 @@ export function DossierDrawer({
                         `“${sendResult.lastSend.subject ?? "(no subject)"}” went out ${relTime(sendResult.lastSend.atMs, now) === "" ? "just now" : relTime(sendResult.lastSend.atMs, now)}. Force resend only if you are sure.`}
                       {sendResult.kind === "suppressed" && "This address opted out — every send path is closed, no exceptions."}
                       {sendResult.kind === "casl" && (sendResult.hint ?? "No consent basis on file.")}
+                      {sendResult.kind === "verify" && (
+                        <span>
+                          Every number and proper noun must be grounded in the evidence on file — fabricated “personalization” is worse than none. Fix the text; there is no override.
+                          <ul className="mt-1 list-disc pl-4">
+                            {sendResult.violations.map((v, i) => (
+                              <li key={i}>
+                                {v.code}: {v.detail}
+                              </li>
+                            ))}
+                          </ul>
+                        </span>
+                      )}
                       {sendResult.kind === "error" && "The enclave did not acknowledge — try again."}
                     </p>
                   </div>

@@ -52,6 +52,7 @@ model Prospect {
   intentAlerts       IntentAlert[]
   inboundReplies     InboundReply[]
   operatorActions    OperatorAction[]
+  painSignals        PainSignal[]
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -104,6 +105,8 @@ model Dispatch {
   providerMsgId String?
   footerApplied String?
   scheduledAt   DateTime? // Module 4/9: sequence step schedule (OOO replies push this forward)
+  briefHash     String? // personalization integrity: fingerprint of the evidence brief the draft was built from
+  verifyReportJson String? // deterministic verify report for the exact subject/body that left the enclave
   error         String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -292,4 +295,25 @@ model CommandBaseline {
   metricsJson String // KpiInputs document — see src/lib/vertebra/command.ts
 
   @@index([capturedAt])
+}
+
+/// Verbatim pain evidence per prospect — the raw material for 1:1 cold email.
+/// A prospect feels seen when a sentence would be false for any other company
+/// on the list; that requires quotes from their own world, never summaries and
+/// never inventions. Every signal carries provenance and can be vetoed by the
+/// operator; drafts are built from the active set and hashed into the Dispatch.
+model PainSignal {
+  id         String   @id @default(cuid())
+  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  prospectId String
+  kind       String // review_complaint | site_copy | job_posting | reply_language | telemetry | audit_finding | operator_note | research
+  verbatim   String // exact words — the texture that makes the email land
+  context    String?  // one line of surrounding context
+  sourceUrl  String?
+  sourceNote String?  // human-readable provenance when no URL exists
+  confidence String   @default("medium") // high | medium | low
+  status     String   @default("active") // active | vetoed
+  createdAt  DateTime @default(now())
+
+  @@index([prospectId, status])
 }

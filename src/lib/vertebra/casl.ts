@@ -6,10 +6,30 @@
  * Unsubscribe tokens are HMAC-SHA256 (secret-keyed) bindings of
  * prospect+address; the one-click endpoint is the console's own
  * /api/unsubscribe route (see src/app/api/unsubscribe/route.ts).
+ *
+ * Live-egress interlocks live in mailer.ts: with RESEND_API_KEY configured,
+ * sends refuse unless SYNTROPIC_UNSUBSCRIBE_SECRET is a real value and
+ * ENCLAVE_PASSWORD is set — no real mail leaves an unlocked enclave.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-const UNSUBSCRIBE_SECRET = process.env.VERTEBRA_UNSUBSCRIBE_SECRET ?? "vertebra-dev-unsubscribe-secret";
+/**
+ * SYNTROPIC_UNSUBSCRIBE_SECRET (renamed from VERTEBRA_UNSUBSCRIBE_SECRET —
+ * Syntropic is the company; the rename happened before any live send, so no
+ * footer tokens were invalidated). The dev fallback keeps the sandbox honest
+ * but the mailer preflight refuses live egress unless a real secret is set.
+ */
+export const DEV_UNSUBSCRIBE_SECRET = "vertebra-dev-unsubscribe-secret";
+const UNSUBSCRIBE_SECRET = process.env.SYNTROPIC_UNSUBSCRIBE_SECRET ?? DEV_UNSUBSCRIBE_SECRET;
+
+export type UnsubscribeSecretStatus = "custom" | "dev_default" | "missing";
+
+/** Preflight signal for the mailer interlock: only "custom" may send for real. */
+export function unsubscribeSecretStatus(): UnsubscribeSecretStatus {
+  const raw = process.env.SYNTROPIC_UNSUBSCRIBE_SECRET;
+  if (!raw || raw.trim() === "") return "missing";
+  return raw === DEV_UNSUBSCRIBE_SECRET ? "dev_default" : "custom";
+}
 
 export function unsubscribePath(prospectId: string, address: string): string {
   const digest = tokenFor(prospectId, address);

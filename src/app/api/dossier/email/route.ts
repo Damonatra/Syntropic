@@ -15,16 +15,26 @@
  *                         the previous send when it does).
  *   4. Honest send state — resend when RESEND_API_KEY is configured, else
  *                         status "staged": logged, visible, never pretending
- *                         an email left the building.
+ *                         an email left the building. Live egress additionally
+ *                         requires SYNTROPIC_UNSUBSCRIBE_SECRET + a locked
+ *                         enclave (mailer preflight interlocks).
+ *   5. Integrity wall   — the final text is fact-traced against the evidence
+ *                         brief (banned phrases, numbers/proper nouns grounded
+ *                         in held material, structural caps). Hard violations
+ *                         refuse the send with 422; there is no override —
+ *                         edit the text instead. Fabricated "personalization"
+ *                         is worse than none.
  *
  * Every accepted send writes a Dispatch row (channel operator_manual_email)
- * and an `emailed` OperatorAction so the dossier timeline tells the truth.
+ * with briefHash + verifyReportJson, and an `emailed` OperatorAction so the
+ * dossier timeline tells the truth.
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { guardWrite } from "@/lib/vertebra/guard";
 import { isSuppressed, mailProvider, sendEmail } from "@/lib/vertebra/mailer";
+import { buildBrief, verifyDraft } from "@/lib/vertebra/evidence";
 
 const EmailSchema = z.object({
   prospectId: z.string().min(1),
@@ -48,7 +58,24 @@ export async function POST(request: Request) {
 
     const prospect = await db.prospect.findUnique({
       where: { id: prospectId },
-      select: { id: true, name: true, country: true, region: true, caslScope: true, caslReason: true, bestEmail: true },
+      select: {
+        id: true,
+        name: true,
+        country: true,
+        region: true,
+        caslScope: true,
+        caslReason: true,
+        bestEmail: true,
+        city: true,
+        stateProvince: true,
+        vertical: true,
+        detectedErp: true,
+        quotePortalType: true,
+        rawExcerpt: true,
+        contacts: { take: 1, select: { firstName: true, lastName: true } },
+        painSignals: { where: { status: "active" }, orderBy: { createdAt: "desc" }, take: 6 },
+        scores: { orderBy: { createdAt: "desc" }, take: 1, select: { hooksJson: true, rationale: true } },
+      },
     });
     if (!prospect) return NextResponse.json({ error: "prospect_not_found" }, { status: 404 });
     if (!prospect.bestEmail) {
@@ -98,6 +125,45 @@ export async function POST(request: Request) {
       );
     }
 
+    // --- M6 rail 5 / integrity wall: fact-trace the final text -------------- //
+    const score = prospect.scores[0];
+    const brief = buildBrief({
+      prospectId: prospect.id,
+      companyName: prospect.name,
+      contactFirstName: prospect.contacts[0]?.firstName ?? null,
+      contactFullName: prospect.contacts[0] ? `${prospect.contacts[0].firstName} ${prospect.contacts[0].lastName}` : null,
+      city: prospect.city,
+      stateProvince: prospect.stateProvince,
+      region: prospect.region,
+      vertical: prospect.vertical,
+      detectedErp: prospect.detectedErp,
+      quotePortalType: prospect.quotePortalType,
+      portalHint: null,
+      rawExcerpt: prospect.rawExcerpt,
+      signals: prospect.painSignals.map((s) => ({
+        id: s.id,
+        kind: s.kind,
+        verbatim: s.verbatim,
+        context: s.context,
+        sourceUrl: s.sourceUrl,
+        sourceNote: s.sourceNote,
+        confidence: s.confidence,
+      })),
+      hookBodies: score ? (JSON.parse(score.hooksJson) as Array<{ body: string }>).map((h) => h.body) : [],
+      rationale: score?.rationale ?? null,
+    });
+    const verify = verifyDraft(subject, body, brief, { requireSignalEcho: false });
+    if (!verify.ok) {
+      return NextResponse.json(
+        {
+          error: "verify_failed",
+          violations: verify.hard,
+          hint: "the integrity wall refused this send — every number and proper noun must be grounded in the evidence on file; edit the text, there is no override",
+        },
+        { status: 422 },
+      );
+    }
+
     // --- M6 rail 4: honest send (sent vs staged) ---------------------------- //
     const result = await sendEmail({
       to: prospect.bestEmail,
@@ -120,6 +186,8 @@ export async function POST(request: Request) {
         provider: mailProvider(),
         providerMsgId: result.providerMsgId ?? null,
         footerApplied: result.footerApplied,
+        briefHash: brief.signals.length > 0 ? brief.briefHash : null,
+        verifyReportJson: JSON.stringify({ ok: verify.ok, hard: verify.hard, soft: verify.soft, stats: verify.stats }),
         error: result.reason ?? null,
       },
     });
@@ -133,6 +201,8 @@ export async function POST(request: Request) {
       send: { status: result.status, reason: result.reason ?? null, providerMsgId: result.providerMsgId ?? null, provider: mailProvider() },
       dispatch: { id: dispatch.id, channel: "operator_manual_email", status: dispatch.status },
       prospect: { id: prospect.id, name: prospect.name, email: prospect.bestEmail },
+      evidence: { signalCount: brief.signals.length, briefHash: brief.signals.length > 0 ? brief.briefHash : null },
+      verify: { ok: verify.ok, soft: verify.soft },
       guard: { caslScope: prospect.caslScope, cooldownOverride: Boolean(override) },
     });
   } catch (error) {

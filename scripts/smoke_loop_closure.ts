@@ -44,7 +44,7 @@ const after1 = await db.dispatch.findUnique({ where: { id: dispatch.id } });
 console.log(`    status=${after1?.status} · error=${after1?.error}`);
 
 // 4. Unsubscribe with a valid HMAC token (same derivation as casl.ts).
-const secret = process.env.VERTEBRA_UNSUBSCRIBE_SECRET ?? "dev-unsubscribe-secret-rotate-in-prod";
+const secret = process.env.SYNTROPIC_UNSUBSCRIBE_SECRET ?? "dev-unsubscribe-secret-rotate-in-prod";
 const token = createHmac("sha256", secret).update(`${lead.id}:${lead.bestEmail}`).digest("hex").slice(0, 32);
 const unsub = await j("POST", `/api/unsubscribe?p=${lead.id}&a=${encodeURIComponent(lead.bestEmail!)}&t=${token}`);
 console.log(`[4] one-click unsubscribe → ${unsub.status} ${JSON.stringify(unsub.data)}`);

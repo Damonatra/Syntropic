@@ -346,3 +346,28 @@ ALTER TABLE intent_alerts ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ;
 
 -- ------------------------- Module 8: rolling intent heat on the prospect ----
 ALTER TABLE prospects ADD COLUMN IF NOT EXISTS intent_heat INTEGER NOT NULL DEFAULT 0;
+
+-- ------------------------- Personalization: verbatim pain evidence ----------
+-- Raw material for 1:1 cold email. Signals are quotes from the prospect's own
+-- world (reviews, site copy, job postings, replies, held documents); every
+-- signal is sourced and operator-vetoable. Dispatch rows carry the brief
+-- fingerprint + deterministic verify report for the exact content sent.
+CREATE TABLE IF NOT EXISTS pain_signals (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    prospect_id UUID REFERENCES prospects(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL,
+    verbatim    TEXT NOT NULL,
+    context     TEXT,
+    source_url  TEXT,
+    source_note TEXT,
+    confidence  TEXT NOT NULL DEFAULT 'medium'
+                CHECK (confidence IN ('high','medium','low')),
+    status      TEXT NOT NULL DEFAULT 'active'
+                CHECK (status IN ('active','vetoed')),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS pain_signals_prospect_idx ON pain_signals (prospect_id, status);
+
+ALTER TABLE dispatches ADD COLUMN IF NOT EXISTS brief_hash TEXT;
+ALTER TABLE dispatches ADD COLUMN IF NOT EXISTS verify_report JSONB;
