@@ -53,6 +53,7 @@ model Prospect {
   inboundReplies     InboundReply[]
   operatorActions    OperatorAction[]
   painSignals        PainSignal[]
+  engagements        Engagement[]
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -268,21 +269,80 @@ model SuppressionRecord {
 
 /// Real audit-dropzone intake: files parsed server-side by /api/audit/parse.
 /// Findings carry only what extraction actually recovered — never fabricated.
+/// M3 binds documents to a paid Engagement so parsed evidence accumulates
+/// as audit forensics instead of evaporating.
 model AuditDocument {
-  id           String   @id @default(cuid())
+  id           String      @id @default(cuid())
   prospectId   String?
+  engagementId String?
+  engagement   Engagement? @relation(fields: [engagementId], references: [id], onDelete: SetNull)
   fileName     String
   mimeType     String
   sizeBytes    Int
   sha256       String
   pages        Int?
   lineItems    Int?
-  extraction   String   @default("partial") // full_text | partial | header_only
+  extraction   String      @default("partial") // full_text | partial | header_only
   findingsJson String?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime    @default(now())
 
   @@index([createdAt])
   @@index([sha256])
+  @@index([engagementId])
+}
+
+/// Paid engagements from the executive portal on the landing page — the
+/// bridge where client money becomes operator work. Rows arrive either via
+/// the HMAC-signed /api/portal/ingest webhook (source portal_webhook) or the
+/// desk's manual fallback (source manual). Idempotent on the payment ref:
+/// the landing page can retry safely and the ledger never double-books.
+/// The stage machine: paid → intake → forensics → verdict → delivered →
+/// sow | closed. The verdict stage records the $10,000 guarantee decision
+/// (guaranteeCleared + confirmedLeakageUsd) — the contract, enforced honestly.
+model Engagement {
+  id                  String    @id @default(cuid())
+  ref                 String    @unique
+  clientName          String
+  clientDomain        String?
+  contactName         String?
+  contactEmail        String?
+  contactPhone        String?
+  tier                String    @default("diagnostic_audit") // diagnostic_audit | enterprise_sow
+  amountUsd           Int
+  source              String    @default("manual") // portal_webhook | manual
+  status              String    @default("paid") // paid | intake | forensics | verdict | delivered | sow | closed
+  ingestPayload       String? // verbatim signed payload — provenance, never edited
+  intakeRfqPerMonth   Int?
+  intakeLineItems     Int?
+  guaranteeCleared    Boolean? // null = undecided; the audit contract in one bit
+  confirmedLeakageUsd Int? // operator-confirmed recoverable leakage at verdict
+  verdictNote         String?
+  deliverableUrl      String? // M4: generated audit PDF path
+  prospectId          String?
+  prospect            Prospect? @relation(fields: [prospectId], references: [id], onDelete: SetNull)
+  documents           AuditDocument[]
+  events              EngagementEvent[]
+  paidAt              DateTime  @default(now())
+  deliveredAt         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([status])
+  @@index([prospectId])
+}
+
+/// Append-only trail for every engagement movement — the honesty ledger the
+/// desk renders and the operator (or webhook) writes. Never deleted.
+model EngagementEvent {
+  id           String     @id @default(cuid())
+  engagement   Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  engagementId String
+  kind         String // ingested | stage_changed | document_added | verdict_recorded | prospect_linked | note | delivered
+  detail       String?
+  actor        String     @default("operator") // operator | portal_webhook | system
+  createdAt    DateTime   @default(now())
+
+  @@index([engagementId, createdAt])
 }
 
 /// Hourly KPI input captures for the 24h baseline deltas on the RADAR strip.

@@ -265,6 +265,45 @@ export interface OpsModule {
   detail: string;
 }
 
+// --------------------------------------------------------------------------- //
+// Portal engagement ledger — the desk's read model
+// --------------------------------------------------------------------------- //
+
+/** Event-trail row rendered verbatim on the desk (append-only ledger). */
+export interface EngagementEventShape {
+  id: string;
+  kind: string;
+  detail: string | null;
+  actor: string;
+  createdAtMs: number;
+}
+
+/** One paid engagement — money became work. Satisfies portal.EngagementLike. */
+export interface EngagementShape {
+  id: string;
+  ref: string;
+  clientName: string;
+  clientDomain: string | null;
+  contactName: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  tier: string;
+  amountUsd: number;
+  source: string;
+  status: string;
+  intakeRfqPerMonth: number | null;
+  intakeLineItems: number | null;
+  guaranteeCleared: boolean | null;
+  confirmedLeakageUsd: number | null;
+  verdictNote: string | null;
+  prospectId: string | null;
+  prospectName: string | null;
+  documentCount: number;
+  paidAtMs: number;
+  deliveredAtMs: number | null;
+  events: EngagementEventShape[];
+}
+
 export interface OpsSnapshot {
   modules: OpsModule[];
   outboxPending: number;
@@ -344,6 +383,8 @@ export interface CommandSnapshot {
   baseline: BaselineBlock | null;
   /** 48h movement ledger — optional so older cached snapshots still parse. */
   pulse?: PulseEvent[];
+  /** Portal engagement ledger — optional so older cached snapshots still parse. */
+  engagements?: EngagementShape[];
 }
 
 // --------------------------------------------------------------------------- //

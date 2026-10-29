@@ -103,7 +103,7 @@ const VIEW_TITLES: Record<ViewKey, string> = {
   strike: "Strike — recovery queue",
   theatre: "Theatre — spatial cluster board",
   pipeline: "Pipeline — machine state & triage",
-  portal: "Portal — margin defense entry",
+  portal: "Portal — engagement desk",
   ops: "Ops — engine health",
 };
 
@@ -786,7 +786,7 @@ export function CommandCentre() {
                   onCursorMeta={onPipelineCursorMeta}
                 />
               )}
-              {view === "portal" && <PortalView snap={snap} />}
+              {view === "portal" && <PortalView snap={snap} refresh={refresh} />}
               {view === "ops" && <OpsView snap={snap} />}
             </>
           )}

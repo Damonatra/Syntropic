@@ -24,6 +24,8 @@ import {
   type KpiInputs,
   type OpsModule,
   type OpsSnapshot,
+  type EngagementEventShape,
+  type EngagementShape,
   type PulseEvent,
   type PulseKind,
   type ReplyIntent,
@@ -144,6 +146,49 @@ export async function GET(request: Request) {
 
     const outboxPending = await db.outboxEvent.count({ where: { publishedAt: null } });
     const outboxPublished = await db.outboxEvent.count({ where: { publishedAt: { not: null } } });
+
+    // ---- portal engagement ledger ------------------------------------------ //
+    // The desk's read model: every paid engagement, newest money first, with
+    // the append-only event trail and the document count forensics reports on.
+    const engagementRows = await db.engagement.findMany({
+      orderBy: { paidAt: "desc" },
+      take: 60,
+      include: {
+        prospect: { select: { id: true, name: true } },
+        documents: { select: { id: true } },
+        events: { orderBy: { createdAt: "desc" }, take: 12 },
+      },
+    });
+    const engagements: EngagementShape[] = engagementRows.map((g) => ({
+      id: g.id,
+      ref: g.ref,
+      clientName: g.clientName,
+      clientDomain: g.clientDomain,
+      contactName: g.contactName,
+      contactEmail: g.contactEmail,
+      contactPhone: g.contactPhone,
+      tier: g.tier,
+      amountUsd: g.amountUsd,
+      source: g.source,
+      status: g.status,
+      intakeRfqPerMonth: g.intakeRfqPerMonth,
+      intakeLineItems: g.intakeLineItems,
+      guaranteeCleared: g.guaranteeCleared,
+      confirmedLeakageUsd: g.confirmedLeakageUsd,
+      verdictNote: g.verdictNote,
+      prospectId: g.prospectId,
+      prospectName: g.prospect?.name ?? null,
+      documentCount: g.documents.length,
+      paidAtMs: g.paidAt.getTime(),
+      deliveredAtMs: g.deliveredAt?.getTime() ?? null,
+      events: g.events.map<EngagementEventShape>((ev) => ({
+        id: ev.id,
+        kind: ev.kind,
+        detail: ev.detail,
+        actor: ev.actor,
+        createdAtMs: ev.createdAt.getTime(),
+      })),
+    }));
 
     // ---- telemetry aggregation per prospect ------------------------------- //
     const teleMap = new Map<
@@ -566,6 +611,7 @@ export async function GET(request: Request) {
       ops,
       baseline: null,
       pulse,
+      engagements,
     };
 
     // ---- 24h baseline ledger ------------------------------------------------ //
