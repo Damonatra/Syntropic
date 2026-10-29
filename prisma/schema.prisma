@@ -377,3 +377,40 @@ model PainSignal {
 
   @@index([prospectId, status])
 }
+
+/// Operator acknowledgements for derived ops alerts — the watchtower's
+/// memory. Alerts themselves are never stored: they are re-derived from real
+/// rows at every snapshot build, so an ack only needs to suppress the exact
+/// (watch, subject, window) key it named. The window bucket in the key means
+/// a condition that clears and refires later comes back as a new key — the
+/// operator is never nagged within a window, never silenced forever.
+model OpsAlertAck {
+  id        String   @id @default(cuid())
+  alertKey  String   @unique
+  actor     String   @default("operator")
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+/// Heartbeat pulses from external engines — the engine contract's ingress
+/// ledger. The document turnaround engine (or any watch reporter) POSTs a
+/// signed pulse per watch update to /api/ops/heartbeat; the watch layer
+/// merges these into the deck alongside native watches. Idempotent on
+/// (engineId, pulseRef) so retries are free. expectEveryMs is the engine's
+/// declared cadence — when it goes silent past 3× cadence the watch fires.
+model EnginePulse {
+  id            String   @id @default(cuid())
+  engineId      String
+  pulseRef      String
+  watchId       String
+  status        String   @default("ok") // ok | warn | fail
+  detail        String?
+  metricsJson   String?
+  expectEveryMs Int?
+  at            DateTime @default(now())
+
+  @@unique([engineId, pulseRef])
+  @@index([engineId, at])
+  @@index([watchId, at])
+}

@@ -207,8 +207,8 @@ export function personaDeltas(id: PersonaId, live: KpiInputs, baseline: { captur
   if (!baseline) return [null, null, null, null];
   return DELTA_MAP[id].map((spec) => {
     if (!spec) return null;
-    const now = live[spec.key];
-    const base = baseline.inputs[spec.key];
+    const now = live[spec.key] ?? 0;
+    const base = baseline.inputs[spec.key] ?? 0;
     const diff = now - base;
     if (diff === 0) return { text: "flat vs 24h", tone: "flat" as const };
     const glyph = diff > 0 ? "▲" : "▼";

@@ -635,9 +635,23 @@ function FunnelSpine({ funnel }: { funnel: FunnelStage[] }) {
  * ping at the apex, one luminance segment per module (bright = attention),
  * and the 24h throughput counters.
  */
+/** Eight-slot severity strip — one segment per live watch, dim when quiet. */
+function SEVERITY_SEGMENTS(deck: NonNullable<OpsSnapshot["deck"]>): Array<{ severity: "crit" | "warn" | "info" | "dim"; label: string }> {
+  const slots: Array<{ severity: "crit" | "warn" | "info" | "dim"; label: string }> = [];
+  for (let i = 0; i < 8; i++) {
+    const a = deck[i];
+    slots.push(a ? { severity: a.severity, label: `${a.watch} — ${a.severity.toUpperCase()}` } : { severity: "dim", label: "quiet" });
+  }
+  return slots;
+}
+
 function OpsHeartbeat({ ops }: { ops: OpsSnapshot }) {
-  const fail = ops.modules.find((m) => m.status === "fail");
-  const warn = ops.modules.find((m) => m.status === "warn");
+  // The watchtower replaced the module board — the heartbeat derives from the
+  // live deck: crit = failure, warn = degraded, quiet = all watches silent.
+  const deck = ops.deck ?? [];
+  const fail = deck.some((a) => a.severity === "crit");
+  const warn = deck.some((a) => a.severity === "warn");
+  const segments = SEVERITY_SEGMENTS(deck);
   return (
     <SoftCard className="mt-auto px-4 py-3.5">
       <div className="flex items-center justify-between gap-3">
@@ -646,7 +660,7 @@ function OpsHeartbeat({ ops }: { ops: OpsSnapshot }) {
           <span className="font-mono text-[10.5px] font-medium uppercase tracking-[0.22em] text-[#8E9194]">Ops heartbeat</span>
         </div>
         <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#5F6460]">
-          {fail ? "module failure" : warn ? "1 module degraded" : "M1–M9 nominal"}
+          {fail ? "crit watch live" : warn ? "watch degraded" : "all watches quiet"}
         </span>
       </div>
       <svg viewBox="0 0 300 28" preserveAspectRatio="none" className="mt-3 h-7 w-full" aria-hidden="true">
@@ -660,13 +674,13 @@ function OpsHeartbeat({ ops }: { ops: OpsSnapshot }) {
         />
         <circle cx="104" cy="5" r="4" fill="none" stroke="#F4F5F2" strokeWidth="1" className="cc-svg-pulse" />
       </svg>
-      <div className="mt-1 flex items-center gap-1" role="img" aria-label="Engine module status, M1 through M9">
-        {ops.modules.map((m) => (
+      <div className="mt-1 flex items-center gap-1" role="img" aria-label="Watchtower deck severity segments">
+        {segments.map((s, i) => (
           <span
-            key={m.id}
-            title={`${m.module} — ${m.status.toUpperCase()} · ${m.detail}`}
+            key={i}
+            title={s.label}
             className={`h-[3px] flex-1 rounded-full ${
-              m.status === "fail" ? "bg-[#F4F5F2] cc-blink" : m.status === "warn" ? "bg-[#8E9194]" : "bg-[#333732]"
+              s.severity === "crit" ? "bg-[#F4F5F2] cc-blink" : s.severity === "warn" ? "bg-[#8E9194]" : s.severity === "info" ? "bg-[#4B514D]" : "bg-[#333732]"
             }`}
           />
         ))}

@@ -22,8 +22,8 @@ import {
   type FeedItem,
   type FunnelStage,
   type KpiInputs,
-  type OpsModule,
   type OpsSnapshot,
+  type EnginePulseRow,
   type EngagementDocumentShape,
   type EngagementEventShape,
   type EngagementShape,
@@ -33,6 +33,18 @@ import {
   type ScoreShape,
   type TriageItem,
 } from "@/lib/vertebra/command";
+import {
+  ENGINE_STALE_MIN_MS,
+  deriveBaselineSentinels,
+  deriveEngineAlerts,
+  deriveEngineView,
+  deriveFunnelAlerts,
+  deriveSlaAlerts,
+  deriveSystemAlerts,
+  deriveVitals,
+  humanDuration,
+  rankAlerts,
+} from "@/lib/vertebra/watches";
 
 function parseErp(raw: string | null): ErpShape | null {
   if (!raw) return null;
@@ -85,6 +97,7 @@ function parseScore(
 const SNOOZE_RE = /snooze:(\d+)h/;
 
 export async function GET(request: Request) {
+  const t0 = Date.now();
   const ifNoneMatch = request.headers.get("if-none-match");
   const cached = getCachedSnapshot(ifNoneMatch);
   if (cached.status === 304 && cached.etag) {
@@ -481,27 +494,122 @@ export async function GET(request: Request) {
       };
     });
 
-    // ---- ops -------------------------------------------------------------- //
+    // ---- ops — the watchtower ---------------------------------------------- //
+    // Everything the Ops tab renders derives here, from rows the snapshot
+    // already carries plus three cheap ledger reads. Alerts are never stored:
+    // they are re-derived each build and suppressed only by OpsAlertAck keys
+    // (one window per ack — a refiring condition returns fresh).
     const telemetry24h = telemetryRows.filter((e) => e.occurredAt >= dayAgo).length;
     const dispatch24h = await db.dispatch.count({
       where: { updatedAt: { gte: dayAgo }, status: { in: ["sent", "opened", "clicked"] } },
     });
+    const dispatchFailed24h = await db.dispatch.count({
+      where: { updatedAt: { gte: dayAgo }, status: "failed" },
+    });
     const channelACount = await db.dispatch.count({ where: { channel: "channel_a_automated_email" } });
     const channelBCount = await db.highTouchQueueItem.count();
     const verifiedEmails = leads.filter((l) => l.bestEmail).length;
-    const modules: OpsModule[] = [
-      { id: "m1", module: "M1 · Ingestion", enginePath: "vertebra/ingestion/scraper.py", status: "ok", detail: "Six directories wired; corridor filter enforced." },
-      { id: "m2", module: "M2 · Permutations", enginePath: "vertebra/enrichment/permutations.py", status: verifiedEmails > 0 ? "ok" : "warn", detail: `${verifiedEmails}/${leads.length} prospects carry a verified best-email.` },
-      { id: "m3", module: "M3 · QLV Scorer", enginePath: "vertebra/ai/scorer.py", status: "ok", detail: `${scoredLeadsCount(leads)} scored · ${critCount(leads)} in critical band.` },
-      { id: "m4", module: "M4 · Dispatch Router", enginePath: "vertebra/dispatch/router.py", status: outboxPending > 0 ? "warn" : "ok", detail: `Channel A ${channelACount} rows · Channel B ${channelBCount} queued · ${outboxPending} outbox pending.` },
-      { id: "m5", module: "M5 · ERP Profiler", enginePath: "vertebra/enrichment/erp_profiler.py", status: "ok", detail: `${leads.filter((l) => l.erp != null).length} profiles with pitch angles.` },
-      { id: "m6", module: "M6 · Audit Preview", enginePath: "vertebra/intelligence/audit_preview.py", status: "warn", detail: "Playwright CDN offload disabled in sandbox — widget renders natively in dossiers." },
-      { id: "m7", module: "M7 · Spatial Clustering", enginePath: "vertebra/spatial/clustering.py", status: "ok", detail: `${clusters.length} theatres active.` },
-      { id: "m8", module: "M8 · Intent Tracker", enginePath: "vertebra/telemetry/intent_tracker.py", status: "ok", detail: `${telemetry24h} events / 24h · ${alerts.filter((a) => a.createdAtMs >= dayAgo.getTime()).length} alerts fired.` },
-      { id: "m9", module: "M9 · Reply Agent", enginePath: "vertebra/ai/reply_agent.py", status: "ok", detail: `${triage.pending.length} drafts pending review · ${triage.auto.length} auto-resolved.` },
-    ];
+
+    const [ackRows, pulseRows, baselineHistory] = await Promise.all([
+      // Raw SQL on purpose — same doctrine as the baseline ledger below: the
+      // running process must survive a schema push without a restart, so new
+      // tables are read through the engine, not through generated delegates.
+      db
+        .$queryRawUnsafe<{ alertKey: string }[]>(`SELECT alertKey FROM OpsAlertAck`)
+        .catch(() => [] as { alertKey: string }[]),
+      db
+        .$queryRawUnsafe<{
+          id: string;
+          engineId: string;
+          watchId: string;
+          status: string;
+          detail: string | null;
+          expectEveryMs: number | null;
+          at: Date;
+        }[]>(
+          `SELECT id, engineId, watchId, status, detail, expectEveryMs, at FROM EnginePulse WHERE at >= ? ORDER BY at DESC LIMIT 120`,
+          new Date(dayAgo),
+        )
+        .catch(() => [] as { id: string; engineId: string; watchId: string; status: string; detail: string | null; expectEveryMs: number | null; at: Date }[]),
+      db
+        .$queryRawUnsafe<{ capturedAt: Date; metricsJson: string }[]>(
+          `SELECT capturedAt, metricsJson FROM CommandBaseline WHERE capturedAt >= ? ORDER BY capturedAt ASC`,
+          new Date(now - 86_400_000),
+        )
+        .catch(() => [] as { capturedAt: Date; metricsJson: string }[]),
+    ]);
+    const acked = new Set(ackRows.map((a) => a.alertKey));
+    const pulseRowsShaped: EnginePulseRow[] = pulseRows.map((p) => ({
+      id: p.id,
+      engineId: p.engineId,
+      watchId: p.watchId,
+      status: p.status,
+      detail: p.detail,
+      atMs: p.at.getTime(),
+      expectEveryMs: p.expectEveryMs,
+    }));
+
+    // The capture heartbeat — newest baseline age. Read failure keeps the
+    // vital honest-quiet rather than breaking the snapshot.
+    let baselineAgeMs: number | null = null;
+    try {
+      const newestRows = await db.$queryRawUnsafe<{ capturedAt: Date }[]>(
+        `SELECT capturedAt FROM CommandBaseline ORDER BY capturedAt DESC LIMIT 1`,
+      );
+      if (newestRows[0]) baselineAgeMs = now - new Date(newestRows[0].capturedAt).getTime();
+    } catch {
+      baselineAgeMs = null;
+    }
+
+    const engine = deriveEngineView(engagements, now);
+    const deck = rankAlerts(
+      [
+        ...deriveSlaAlerts(engagements, now),
+        ...deriveFunnelAlerts(
+          {
+            outboxPending,
+            dispatchFailed24h,
+            dispatchSent24h: dispatch24h,
+            verifiedEmailShare: leads.length ? Math.round((verifiedEmails / leads.length) * 100) : 0,
+            leadCount: leads.length,
+          },
+          now,
+        ),
+        ...deriveSystemAlerts({ baselineAgeMs }, now),
+        ...deriveBaselineSentinels(
+          baselineHistory.map((r) => ({
+            capturedAtMs: new Date(r.capturedAt).getTime(),
+            metrics: JSON.parse(r.metricsJson) as Partial<KpiInputs>,
+          })),
+          now,
+        ),
+        ...deriveEngineAlerts(pulseRowsShaped, now),
+      ].filter((a) => !acked.has(a.key)),
+    );
+
+    const vitals = deriveVitals({ snapshotBuildMs: Date.now() - t0, baselineAgeMs, outboxPending, deckSize: deck.length });
+    if (pulseRowsShaped.length > 0) {
+      const engineIds = new Map<string, number>();
+      for (const p of pulseRowsShaped) {
+        const cur = engineIds.get(p.engineId);
+        if (cur == null || p.atMs > cur) engineIds.set(p.engineId, p.atMs);
+      }
+      const newestBeat = Math.max(...engineIds.values());
+      vitals.push({
+        id: "engines",
+        label: "engines",
+        value: `${engineIds.size} reporting · beat ${humanDuration(now - newestBeat)} ago`,
+        beat: now - newestBeat < ENGINE_STALE_MIN_MS * 6,
+        ageMs: now - newestBeat,
+        detail: "external pulses through /api/ops/heartbeat",
+      });
+    }
+
     const ops: OpsSnapshot = {
-      modules,
+      vitals,
+      deck,
+      engine,
+      enginePulses: pulseRowsShaped,
       outboxPending,
       outboxPublished,
       dispatchesSent24h: dispatch24h,
@@ -645,7 +753,10 @@ export async function GET(request: Request) {
     // schema push plus regenerate never requires a server restart. Ledger
     // failures must never break the read path: deltas simply disappear.
     try {
-      const inputs = deriveKpiInputs(snapshot);
+      // Sentinel inputs ride along on every capture — the watchtower's trend
+      // sentinels read this history, so the backlog and failure counts must
+      // accumulate alongside the persona KPIs.
+      const inputs = { ...deriveKpiInputs(snapshot), outboxPending, dispatchFailed24h };
       type BaselineRow = { id: string; capturedAt: Date; metricsJson: string };
       const lastRows = await db.$queryRawUnsafe<BaselineRow[]>(
         `SELECT id, capturedAt, metricsJson FROM CommandBaseline ORDER BY capturedAt DESC LIMIT 1`,

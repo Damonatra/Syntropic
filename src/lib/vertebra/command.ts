@@ -266,6 +266,82 @@ export interface OpsModule {
 }
 
 // --------------------------------------------------------------------------- //
+// The Watchtower — vitals, the alert deck, the turnaround engine view.
+// Everything here is derived from real rows at snapshot time; the deck is
+// never stored, only acknowledged (OpsAlertAck) per (watch, subject, window).
+// --------------------------------------------------------------------------- //
+
+export type WatchSeverity = "crit" | "warn" | "info";
+
+/** One measured heartbeat on the vitals strip. `beat` = currently alive. */
+export interface OpsVital {
+  id: string;
+  label: string;
+  /** Display value — already formatted ("14ms", "3h old", "LIVE"). */
+  value: string;
+  beat: boolean;
+  /** Age of the underlying signal where meaningful; null = instantaneous. */
+  ageMs: number | null;
+  detail: string;
+}
+
+/**
+ * One alert on the deck. `key` is the stable ack target:
+ * `${watchId}:${subjectId ?? "system"}:${windowBucket}` — acking suppresses
+ * exactly this fire; after the window the same condition returns fresh.
+ * `etaMs` is the predicted time-to-impact (null when not predictive);
+ * `evidence` is the math line — the watchtower never fires an alarm it
+ * cannot show the math for.
+ */
+export interface OpsWatchAlert {
+  key: string;
+  watchId: string;
+  watch: string;
+  severity: WatchSeverity;
+  subjectKind: "engagement" | "dispatch" | "system" | "engine" | "funnel";
+  subjectId: string | null;
+  subjectLabel: string;
+  title: string;
+  action: string;
+  evidence: string | null;
+  etaMs: number | null;
+  firedAtMs: number;
+}
+
+/** One stage of the document turnaround engine — counts + dwell + risk. */
+export interface EngineStageStat {
+  stage: string;
+  label: string;
+  count: number;
+  medianDwellMs: number | null;
+  maxDwellMs: number | null;
+  atRisk: number;
+  atRiskDollars: number;
+}
+
+/** The turnaround engine read-out: stage flow + document throughput. */
+export interface EngineView {
+  stages: EngineStageStat[];
+  delivered24h: number;
+  docs24h: number;
+  parseFull: number;
+  parsePartial: number;
+  activeDollars: number;
+  guaranteeExposureDollars: number;
+}
+
+/** One external engine pulse (the engine contract's ingress ledger). */
+export interface EnginePulseRow {
+  id: string;
+  engineId: string;
+  watchId: string;
+  status: string;
+  detail: string | null;
+  atMs: number;
+  expectEveryMs: number | null;
+}
+
+// --------------------------------------------------------------------------- //
 // Portal engagement ledger — the desk's read model
 // --------------------------------------------------------------------------- //
 
@@ -320,7 +396,16 @@ export interface EngagementShape {
 }
 
 export interface OpsSnapshot {
-  modules: OpsModule[];
+  /** Legacy module board — superseded by the watchtower; kept optional for older cached snapshots. */
+  modules?: OpsModule[];
+  /** The vitals strip — measured heartbeats (bridge beat is client-side). */
+  vitals?: OpsVital[];
+  /** The alert deck — ranked, ack-filtered, evidence attached. */
+  deck?: OpsWatchAlert[];
+  /** The document turnaround engine read-out. */
+  engine?: EngineView;
+  /** External engine pulses — the engine contract's watches. */
+  enginePulses?: EnginePulseRow[];
   outboxPending: number;
   outboxPublished: number;
   dispatchesSent24h: number;
@@ -347,6 +432,9 @@ export interface KpiInputs {
   highIntentCount: number;
   telemetryEvents24h: number;
   dispatchesSent24h: number;
+  /** Watchtower sentinel inputs — optional so pre-watchtower baseline rows still parse. */
+  outboxPending?: number;
+  dispatchFailed24h?: number;
 }
 
 /** The ~24h-ago comparison point served alongside the live snapshot. */

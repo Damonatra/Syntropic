@@ -32,7 +32,7 @@ export function CommandRail({
 }) {
   const highIntent = snap?.leads.filter((l) => l.highIntentNow).length ?? 0;
   const drafts = snap?.triage.pending.length ?? 0;
-  const warn = snap?.ops.modules.filter((m) => m.status !== "ok").length ?? 0;
+  const warn = snap?.ops.deck?.filter((a) => a.severity !== "info").length ?? 0;
 
   const badge = (key: ViewKey): string | null => {
     if (key === "radar" && highIntent > 0) return String(highIntent);
@@ -100,7 +100,7 @@ export function CommandRail({
             <SectionLabel>Enclave</SectionLabel>
             <LiveDot level={warn === 0 ? "live" : "warn"} />
           </div>
-          <p className="mt-1.5 text-[11.5px] text-[#8E9194]">{snap ? (warn === 0 ? "All modules nominal" : `${warn} degraded`) : "…"}</p>
+          <p className="mt-1.5 text-[11.5px] text-[#8E9194]">{snap ? (warn === 0 ? "All watches quiet" : `${warn} watch${warn > 1 ? "es" : ""} live`) : "…"}</p>
         </div>
         <div className="border-t border-white/[0.08] pt-4">
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#F4F5F2]">Operator // Josias</p>

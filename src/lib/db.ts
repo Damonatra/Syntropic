@@ -30,7 +30,9 @@ function generatedModelNames(): string[] | null {
 
 // In dev the global survives HMR; keep it only when it matches the current
 // Prisma Client generation (all generated models present), so a schema push
-// plus regenerate never requires a server restart.
+// plus regenerate never requires a server restart. Editing THIS module also
+// forces re-evaluation, which is what lets the probe swap a stale global for
+// a fresh client after a schema push.
 export const db = (() => {
   const cached = globalForPrisma.prisma
   if (!cached) return freshClient()

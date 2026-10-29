@@ -1,9 +1,32 @@
-/** OPS — machine health + HUD telemetry (compute footprint, Qdrant index, AST veto). */
+/**
+ * OPS — The Watchtower. Machine health that watches back.
+ *
+ * The old tab described the machine: fake HUD bars jittered by Math.random,
+ * a hardcoded module board. This tab watches it. Three layers, one question
+ * answered above the fold — "what needs me?":
+ *
+ *   vitals strip  measured heartbeats — bridge, snapshot build, KPI baseline
+ *                 capture, outbox, external engines. Quiet when beating.
+ *   alert deck    every unacknowledged watch, ranked crit → warn → info, then
+ *                 by time-to-impact. Each row states the problem in plain
+ *                 words, the next action, the evidence line (the math), and
+ *                 the predicted breach ETA. j/k cursor · a ack · enter opens
+ *                 the subject drawer · esc closes.
+ *   engine view   the document turnaround pipeline measured: per-stage count,
+ *                 dwell, at-risk dollars — the promise (deliverable within 5
+ *                 days of payment) priced out stage by stage.
+ *
+ * Silence is the product: an empty deck renders one deliberate sentence, not
+ * confetti. Every number traces to a real row — the watchtower never fires
+ * an alarm it cannot show the math for.
+ */
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Chip, ErpBadge, LiveDot, PillButton, SectionLabel, SoftCard } from "./bits";
-import type { CommandSnapshot } from "@/lib/vertebra/command";
+import type { CommandSnapshot, OpsWatchAlert, WatchSeverity } from "@/lib/vertebra/command";
+import { nextActionFor, STAGE_LABELS, type EngagementStage } from "@/lib/vertebra/portal";
+import { humanDuration } from "@/lib/vertebra/watches";
 
 interface TickResult {
   ok: boolean;
@@ -16,49 +39,139 @@ interface TickResult {
   details: Array<{ prospect: string; outcome: string; note?: string }>;
 }
 
-/** Live compute telemetry — jitters inside calibrated bands. */
-function useHudTelemetry() {
-  const [t, setT] = useState({ compute: 34, qdrant: 98.2, latency: 11 });
+const usd = (v: number) => `$${Math.round(v).toLocaleString("en-US")}`;
+
+const SEVERITY_ORDER: WatchSeverity[] = ["crit", "warn", "info"];
+
+function SeverityChip({ severity }: { severity: WatchSeverity }) {
+  if (severity === "crit") {
+    return <span className="shrink-0 rounded-lg bg-[#F4F5F2] px-2.5 py-1 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-[#0B0C0B]">crit</span>;
+  }
+  if (severity === "warn") {
+    return <span className="shrink-0 rounded-lg border border-white/30 px-2.5 py-1 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-[#F4F5F2]">warn</span>;
+  }
+  return <span className="shrink-0 rounded-lg border border-white/[0.09] px-2.5 py-1 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-[#6E736E]">info</span>;
+}
+
+export function OpsView({
+  snap,
+  connected,
+  refresh,
+}: {
+  snap: CommandSnapshot;
+  connected: boolean;
+  refresh: () => Promise<void>;
+}) {
+  const nowMs = snap.generatedAtMs || Date.now();
+  const vitals = snap.ops.vitals ?? [];
+  const deck = snap.ops.deck ?? [];
+  const engine = snap.ops.engine ?? null;
+  const pulses = snap.ops.enginePulses ?? [];
+
+  const [cursor, setCursor] = useState(0);
+  const [drawerFor, setDrawerFor] = useState<OpsWatchAlert | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ackFlash, setAckFlash] = useState<string | null>(null);
+
+  // Keep the cursor honest as the deck refires and shrinks.
   useEffect(() => {
-    const id = setInterval(() => {
-      setT({
-        compute: 28 + Math.round(Math.random() * 14),
-        qdrant: Math.min(99.9, 97.4 + Math.random() * 2.4),
-        latency: 9 + Math.round(Math.random() * 7),
-      });
-    }, 2400);
-    return () => clearInterval(id);
-  }, []);
-  return t;
-}
+    if (cursor >= deck.length) setCursor(deck.length ? deck.length - 1 : 0);
+  }, [deck.length, cursor]);
 
-function HudBar({ label, value, display, unit = "%" }: { label: string; value: number; display: string; unit?: string }) {
-  return (
-    <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[#8E9194]">{label}</span>
-        <span className="font-mono text-[10.5px] tabular-nums text-[#F4F5F2]">
-          {display}
-          {unit}
-        </span>
-      </div>
-      <div className="h-[5px] w-full overflow-hidden rounded-full bg-[#232623]">
-        <div
-          className="h-full rounded-full bg-[#F4F5F2] transition-all duration-700"
-          style={{ width: `${Math.min(100, Math.max(4, value))}%` }}
-        />
-      </div>
-    </div>
+  const ack = useCallback(
+    async (a: OpsWatchAlert) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const res = await fetch("/api/ops/ack", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ key: a.key }),
+        });
+        if (!res.ok) {
+          const detail = (await res.json().catch(() => ({}))) as { error?: string; hint?: string };
+          setError(detail.hint ?? detail.error ?? `ack_${res.status}`);
+          return false;
+        }
+        setAckFlash(a.watchId);
+        await refresh();
+        return true;
+      } catch {
+        setError("network_error");
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [refresh],
   );
-}
 
-export function OpsView({ snap }: { snap: CommandSnapshot }) {
-  const hud = useHudTelemetry();
-  const warn = snap.ops.modules.filter((m) => m.status !== "ok").length;
+  // ---- keyboard — j/k cursor · a ack · enter drawer · esc close ----------- //
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      if (e.key === "Escape") {
+        if (drawerFor) {
+          e.preventDefault();
+          setDrawerFor(null);
+        }
+        return;
+      }
+      if (deck.length === 0) return;
+      if (e.key === "j" || e.key === "ArrowDown") {
+        e.preventDefault();
+        setCursor((c) => Math.min(deck.length - 1, c + 1));
+      } else if (e.key === "k" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setCursor((c) => Math.max(0, c - 1));
+      } else if (e.key === "a") {
+        const a = deck[cursor];
+        if (a) void ack(a);
+      } else if (e.key === "Enter") {
+        const a = deck[cursor];
+        if (a) {
+          e.preventDefault();
+          setDrawerFor(a);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [deck, cursor, ack, drawerFor]);
+
+  // ---- vitals — the bridge beat is client-side, the rest are server-measured //
+  const allVitals = useMemo(
+    () => [
+      {
+        id: "bridge",
+        label: "socket bridge",
+        value: connected ? "LIVE" : "DOWN",
+        beat: connected,
+        ageMs: null as number | null,
+        detail: ":3003 telemetry fan-out · connection held from this console",
+      },
+      ...vitals,
+    ],
+    [connected, vitals],
+  );
+
+  const counts = useMemo(
+    () => ({
+      crit: deck.filter((a) => a.severity === "crit").length,
+      warn: deck.filter((a) => a.severity === "warn").length,
+      info: deck.filter((a) => a.severity === "info").length,
+    }),
+    [deck],
+  );
+
+  // ---- sequence engine (real — kept from the old tab) --------------------- //
   const [tick, setTick] = useState<TickResult | null>(null);
   const [ticking, setTicking] = useState(false);
   const [tickError, setTickError] = useState<string | null>(null);
-
   const runTick = async () => {
     setTicking(true);
     setTickError(null);
@@ -80,54 +193,207 @@ export function OpsView({ snap }: { snap: CommandSnapshot }) {
   }, {});
   const erpRows = Object.entries(erpCounts).sort((a, b) => b[1] - a[1]);
 
+  // The drawer's subject — engagement drawers read the live snapshot trail.
+  const drawerEngagement =
+    drawerFor?.subjectKind === "engagement" && drawerFor.subjectId
+      ? (snap.engagements ?? []).find((e) => e.id === drawerFor.subjectId) ?? null
+      : null;
+
   return (
-    <div className="flex h-full flex-col overflow-y-auto cc-scroll p-6">
+    <div className="relative flex h-full flex-col overflow-y-auto cc-scroll p-6">
+      {/* header */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <SectionLabel>Ops — engine health</SectionLabel>
+          <SectionLabel>Ops — the watchtower</SectionLabel>
           <p className="mt-2 flex items-center gap-2.5 font-display text-[22px] font-semibold tracking-[-0.03em] text-[#F4F5F2]">
-            <LiveDot level={warn === 0 ? "live" : "warn"} />
-            {warn === 0 ? "All nine modules nominal" : `${warn} module${warn > 1 ? "s" : ""} degraded`}
+            <LiveDot level={counts.crit > 0 ? "fail" : counts.warn > 0 ? "warn" : "live"} />
+            {deck.length === 0
+              ? "All watches quiet"
+              : `${deck.length} watch${deck.length > 1 ? "es" : ""} live — ${counts.crit} crit · ${counts.warn} warn${counts.info ? ` · ${counts.info} info` : ""}`}
+          </p>
+          <p className="mt-1 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#5F6460]">
+            silence is the product · every alarm carries its math
           </p>
         </div>
       </div>
 
-      {/* HUD telemetry bars — compute footprint · Qdrant index · AST veto */}
-      <SoftCard className="mt-5 flex flex-wrap items-stretch gap-x-8 gap-y-4 px-6 py-5">
-        <HudBar label="Compute footprint" value={hud.compute} display={String(hud.compute)} />
-        <HudBar label="Qdrant vector index" value={hud.qdrant} display={hud.qdrant.toFixed(1)} />
-        <HudBar label="AST security veto" value={100} display="PASS" unit="" />
-        <HudBar label="Ingest latency" value={hud.latency * 4} display={String(hud.latency)} unit="ms" />
-        <div className="flex items-center">
-          <span className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[#5F6460]">live · 2.4s cadence</span>
-        </div>
+      {error && (
+        <p className="mt-4 rounded-lg border border-white/20 bg-[#141614] px-4 py-2 font-mono text-[10.5px] uppercase tracking-[0.12em] text-[#FF8A7A]">
+          {error}
+        </p>
+      )}
+
+      {/* vitals strip — measured heartbeats */}
+      <SoftCard className="mt-5 flex flex-wrap items-stretch gap-x-7 gap-y-3 px-6 py-4">
+        {allVitals.map((v) => (
+          <div key={v.id} className="flex min-w-0 flex-1 items-center gap-2.5" title={v.detail}>
+            <LiveDot level={v.beat ? "live" : "fail"} />
+            <div className="min-w-0">
+              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#6E736E]">{v.label}</p>
+              <p className="truncate font-mono text-[11.5px] tabular-nums text-[#F4F5F2]">{v.value}</p>
+            </div>
+          </div>
+        ))}
       </SoftCard>
 
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-        {(
-          [
-            ["Outbox pending", snap.ops.outboxPending],
-            ["Outbox published", snap.ops.outboxPublished],
-            ["Dispatches 24h", snap.ops.dispatchesSent24h],
-            ["Telemetry 24h", snap.ops.telemetryEvents24h],
-            ["Alerts 24h", snap.ops.alerts24h],
-            ["Verified email", `${snap.ops.verifiedEmailShare}%`],
-          ] as Array<[string, string | number]>
-        ).map(([label, value]) => (
-          <SoftCard key={label} className="px-4 py-3.5">
-            <p className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[#8E9194]">{label}</p>
-            <p className="mt-1.5 font-display text-[22px] font-semibold leading-none tracking-[-0.03em] tabular-nums text-[#F4F5F2]">{value}</p>
+      {/* the alert deck */}
+      <div className="mt-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <SectionLabel>Alert deck</SectionLabel>
+          <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#5F6460]">
+            ranked crit → warn → info, then time-to-impact · j / k · a ack · enter opens
+          </p>
+        </div>
+
+        {deck.length === 0 ? (
+          <SoftCard className="mt-3 flex flex-col items-center justify-center px-8 py-10 text-center">
+            <LiveDot level="live" />
+            <p className="mt-3 font-display text-[16px] font-semibold text-[#F4F5F2]">All watches quiet</p>
+            <p className="mt-1.5 max-w-[420px] font-mono text-[10px] uppercase leading-relaxed tracking-[0.12em] text-[#5F6460]">
+              the sentinels re-sweep on every snapshot build — the deck rings the moment something drifts,
+              with its math attached
+            </p>
           </SoftCard>
-        ))}
+        ) : (
+          <div className="mt-3 flex flex-col">
+            {deck.map((a, i) => {
+              const isCursor = i === cursor;
+              return (
+                <div
+                  key={a.key}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={isCursor}
+                  onClick={() => setCursor(i)}
+                  onDoubleClick={() => setDrawerFor(a)}
+                  onKeyDown={(ev) => {
+                    if (ev.key === "Enter" || ev.key === " ") {
+                      ev.preventDefault();
+                      setCursor(i);
+                      setDrawerFor(a);
+                    }
+                  }}
+                  className={`mb-2 cursor-pointer rounded-xl px-5 py-4 transition-all ${
+                    isCursor ? "ink" : "neu hover:border-white/25"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <SeverityChip severity={a.severity} />
+                    <p
+                      className={`min-w-0 flex-1 font-display text-[15px] font-semibold tracking-[-0.02em] ${
+                        isCursor ? "text-white" : "text-[#F4F5F2]"
+                      }`}
+                    >
+                      {a.title}
+                    </p>
+                    {a.etaMs != null && (
+                      <p className={`font-mono text-[10px] tabular-nums tracking-[0.1em] ${isCursor ? "text-white/85" : "text-[#8E9194]"}`}>
+                        eta {a.etaMs === 0 ? "now" : humanDuration(a.etaMs)}
+                      </p>
+                    )}
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+                    <p className={`font-mono text-[10px] uppercase tracking-[0.1em] ${isCursor ? "text-white/80" : "text-[#8E9194]"}`}>
+                      ▸ {a.action}
+                    </p>
+                    <p className="font-mono text-[8.5px] uppercase tracking-[0.12em] text-[#5F6460]">
+                      {a.watch} · {a.subjectLabel}
+                    </p>
+                  </div>
+                  {a.evidence && (
+                    <p className={`mt-1.5 font-mono text-[9.5px] leading-relaxed tracking-[0.04em] ${isCursor ? "text-white/60" : "text-[#4B514D]"}`}>
+                      math ▸ {a.evidence}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+            {ackFlash && (
+              <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#5F6460]">
+                acked {ackFlash} — suppressed for this window · a refire returns fresh
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Sequence engine */}
+      {/* engine view — the document turnaround pipeline, measured */}
+      {engine && (
+        <SoftCard className="mt-5 px-6 py-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <SectionLabel>Engine — document turnaround</SectionLabel>
+            <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#5F6460]">
+              promise: deliverable within 5d of payment · verdict within 3d
+            </p>
+          </div>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full min-w-[560px] border-collapse">
+              <thead>
+                <tr className="border-b border-white/[0.08]">
+                  {["stage", "in stage", "median dwell", "oldest", "at risk", "at-risk $"].map((h) => (
+                    <th key={h} className="px-2 py-2 text-left font-mono text-[9px] font-medium uppercase tracking-[0.16em] text-[#6E736E]">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {engine.stages.map((s) => (
+                  <tr key={s.stage} className="border-b border-white/[0.04] last:border-0">
+                    <td className="px-2 py-2.5">
+                      <span className="flex items-center gap-2">
+                        <span className={`inline-block size-1.5 rounded-full ${s.atRisk > 0 ? "bg-[#F4F5F2]" : "bg-[#3C413C]"}`} />
+                        <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-[#C9CCC7]">{s.label}</span>
+                      </span>
+                    </td>
+                    <td className="px-2 py-2.5 font-display text-[15px] font-semibold tabular-nums text-[#F4F5F2]">{s.count}</td>
+                    <td className="px-2 py-2.5 font-mono text-[11px] tabular-nums text-[#8E9194]">
+                      {s.medianDwellMs != null ? humanDuration(s.medianDwellMs) : "—"}
+                    </td>
+                    <td className="px-2 py-2.5 font-mono text-[11px] tabular-nums text-[#8E9194]">
+                      {s.maxDwellMs != null ? humanDuration(s.maxDwellMs) : "—"}
+                    </td>
+                    <td className="px-2 py-2.5 font-mono text-[11px] tabular-nums text-[#C9CCC7]">{s.atRisk || "—"}</td>
+                    <td className="px-2 py-2.5 font-mono text-[11px] tabular-nums text-[#C9CCC7]">{s.atRiskDollars ? usd(s.atRiskDollars) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1.5 border-t border-white/[0.06] pt-3 font-mono text-[9.5px] uppercase tracking-[0.12em] text-[#6E736E]">
+            <span>delivered 24h <span className="text-[#F4F5F2]">{engine.delivered24h}</span></span>
+            <span>docs sealed 24h <span className="text-[#F4F5F2]">{engine.docs24h}</span></span>
+            <span>parse full <span className="text-[#F4F5F2]">{engine.parseFull}</span> · partial <span className="text-[#F4F5F2]">{engine.parsePartial}</span></span>
+            <span>active book <span className="text-[#F4F5F2]">{usd(engine.activeDollars)}</span></span>
+            <span>guarantee exposure <span className="text-[#F4F5F2]">{usd(engine.guaranteeExposureDollars)}</span></span>
+          </div>
+          {pulses.length > 0 && (
+            <div className="mt-3 border-t border-white/[0.06] pt-3">
+              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#6E736E]">external engine pulses</p>
+              <div className="mt-2 flex flex-col">
+                {pulses.slice(0, 5).map((p) => (
+                  <div key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5">
+                    <LiveDot level={p.status === "ok" ? "live" : p.status === "warn" ? "warn" : "fail"} />
+                    <p className="font-mono text-[10.5px] text-[#C9CCC7]">{p.engineId} · {p.watchId}</p>
+                    <p className="truncate font-mono text-[9.5px] text-[#5F6460]">{p.detail ?? ""}</p>
+                    <p className="ml-auto font-mono text-[9px] tabular-nums uppercase tracking-[0.1em] text-[#5F6460]">
+                      {humanDuration(Math.max(0, nowMs - p.atMs))} ago
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </SoftCard>
+      )}
+
+      {/* sequence engine — the real send loop */}
       <SoftCard className="mt-5 px-6 py-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <SectionLabel>Sequence engine — Module 4/9 loop closer</SectionLabel>
+            <SectionLabel>Sequence engine — channel A loop</SectionLabel>
             <p className="mt-1.5 text-[12.5px] leading-relaxed text-[#8E9194]">
-              Claims due Channel A dispatches, honors the suppression ledger, sends through the configured provider, backs off honestly when none is set.
+              Claims due dispatches, honors the suppression ledger, sends through the configured provider, backs off honestly when none is set.
             </p>
           </div>
           <PillButton tone="dark" onClick={() => void runTick()} disabled={ticking}>
@@ -164,21 +430,7 @@ export function OpsView({ snap }: { snap: CommandSnapshot }) {
         )}
       </SoftCard>
 
-      {/* Module health */}
-      <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {snap.ops.modules.map((m) => (
-          <SoftCard key={m.id} className="px-5 py-4">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-[14px] font-medium text-[#E9EBE7]">{m.module}</p>
-              <LiveDot level={m.status === "ok" ? "live" : m.status === "warn" ? "warn" : "fail"} />
-            </div>
-            <p className="mt-1 font-mono text-[10.5px] text-[#6E736E]">{m.enginePath}</p>
-            <p className="mt-2.5 text-[12.5px] leading-relaxed text-[#8E9194]">{m.detail}</p>
-          </SoftCard>
-        ))}
-      </div>
-
-      {/* ERP stack coverage */}
+      {/* ERP coverage */}
       <SoftCard className="mt-5 px-6 py-5">
         <SectionLabel className="mb-3">ERP stack coverage — distributor book</SectionLabel>
         <div className="flex flex-wrap items-center gap-2.5">
@@ -192,22 +444,102 @@ export function OpsView({ snap }: { snap: CommandSnapshot }) {
         </div>
       </SoftCard>
 
+      {/* the subject drawer — enter opens the thing the alarm names */}
+      {drawerFor && (
+        <div className="fixed bottom-4 right-4 top-16 z-20 w-[400px] max-w-[calc(100vw-2rem)]">
+          <div className="neu-lg flex h-full flex-col overflow-y-auto cc-scroll rounded-xl p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)]">
+            <div className="flex items-start justify-between gap-3">
+              <SeverityChip severity={drawerFor.severity} />
+              <button
+                onClick={() => setDrawerFor(null)}
+                className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#8E9194] transition-colors hover:text-[#F4F5F2]"
+              >
+                close · esc
+              </button>
+            </div>
+            <p className="mt-3 font-mono text-[9px] uppercase tracking-[0.18em] text-[#5F6460]">
+              {drawerFor.watch} · {drawerFor.subjectLabel}
+            </p>
+            <h3 className="mt-1.5 font-display text-[17px] font-semibold leading-snug tracking-[-0.02em] text-[#F4F5F2]">
+              {drawerFor.title}
+            </h3>
+            <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.1em] text-[#8E9194]">▸ {drawerFor.action}</p>
+            {drawerFor.evidence && (
+              <p className="mt-2 rounded-lg border border-white/[0.08] bg-[#0E100E] px-3.5 py-2.5 font-mono text-[10px] leading-relaxed tracking-[0.04em] text-[#8E9194]">
+                math ▸ {drawerFor.evidence}
+              </p>
+            )}
+
+            {drawerEngagement && (
+              <div className="mt-4 border-t border-white/[0.07] pt-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-display text-[15px] font-semibold text-[#F4F5F2]">{drawerEngagement.clientName}</p>
+                  <Chip tone="raised">{STAGE_LABELS[drawerEngagement.status as EngagementStage] ?? drawerEngagement.status}</Chip>
+                  <p className="ml-auto font-display text-[15px] font-semibold tabular-nums text-[#F4F5F2]">
+                    {usd(drawerEngagement.amountUsd)}
+                  </p>
+                </div>
+                <p className="mt-1 font-mono text-[9.5px] uppercase tracking-[0.12em] text-[#6E736E]">
+                  {drawerEngagement.ref} · paid {humanDuration(Math.max(0, nowMs - drawerEngagement.paidAtMs))} ago · next ▸ {nextActionFor(drawerEngagement).action}
+                </p>
+                <div className="mt-3">
+                  <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#6E736E]">ledger trail</p>
+                  <div className="mt-1.5 flex flex-col">
+                    {drawerEngagement.events.slice(0, 5).map((ev) => (
+                      <div key={ev.id} className="flex items-baseline justify-between gap-3 border-b border-white/[0.05] py-1.5 last:border-0">
+                        <p className="min-w-0 truncate font-mono text-[10.5px] text-[#C9CCC7]">{ev.detail ?? ev.kind}</p>
+                        <p className="shrink-0 font-mono text-[8.5px] uppercase tabular-nums text-[#5F6460]">
+                          {humanDuration(Math.max(0, nowMs - ev.createdAtMs))} ago
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    void ack(drawerFor);
+                    setDrawerFor(null);
+                  }}
+                  disabled={busy}
+                  className="tactile-btn mt-4 w-full bg-[#0B0C0B] px-4 py-2 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-white ring-1 ring-white/25 hover:ring-white/50 disabled:opacity-40"
+                >
+                  Acknowledge — quiet for this window
+                </button>
+              </div>
+            )}
+            {drawerFor.subjectKind !== "engagement" && (
+              <button
+                onClick={() => {
+                  void ack(drawerFor);
+                  setDrawerFor(null);
+                }}
+                disabled={busy}
+                className="tactile-btn mt-4 w-full bg-[#0B0C0B] px-4 py-2 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-white ring-1 ring-white/25 hover:ring-white/50 disabled:opacity-40"
+              >
+                Acknowledge — quiet for this window
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      {/* the engine contract — how the document turnaround engine reports in */}
       <SoftCard className="mt-5 px-6 py-5">
-        <SectionLabel className="mb-3">Module 8 production intake contract</SectionLabel>
-        <pre className="ink overflow-x-auto rounded-lg p-4 font-mono text-[11.5px] leading-relaxed text-white/90">{`POST /api/telemetry/ingest
+        <SectionLabel className="mb-3">Engine contract — signed heartbeat ingress</SectionLabel>
+        <pre className="ink overflow-x-auto rounded-lg p-4 font-mono text-[11.5px] leading-relaxed text-white/90">{`POST /api/ops/heartbeat
+x-vertebra-signature: HMAC-SHA256(rawBody, OPS_HEARTBEAT_SECRET)
 {
-  "prospectId": "cuid",              // or "domainKey"
-  "eventType": "portal_visit",       // audit_view | document_download | pricing_view | session_end
-  "sessionId": "…", "url": "…",
-  "city": "Houston", "country": "United States",
-  "latitude": 29.7604, "longitude": -95.3698,
-  "device": "desktop", "durationMs": 214000
+  "engineId": "turnaround-core",     // stable engine name
+  "pulseRef": "run-2026-10-30-014",  // idempotent — retries are free
+  "watchId": "parse_queue",          // which watch this pulse reports
+  "status": "ok",                    // ok | warn | fail
+  "detail": "queue drained · 12 docs parsed",
+  "expectEveryMs": 300000            // silence past max(3x, 10min) rings the deck
 }
-→ 200 { ok, event, prospect, alert? }   // alert when QLV ≥ 85 + high-signal type`}</pre>
+→ 200 { ok, deduped? }   // engines report in; the watchtower never dials out`}</pre>
         <div className="mt-3 flex flex-wrap gap-2">
-          <Chip tone="outline">source: vertebra/telemetry/intent_tracker.py</Chip>
-          <Chip tone="outline">fan-out: socket bridge :3003</Chip>
-          <Chip tone="outline">channels: in_app · telegram · slack</Chip>
+          <Chip tone="outline">zero egress · one door in</Chip>
+          <Chip tone="outline">deck: fail pulses ring crit · silence rings crit</Chip>
+          <Chip tone="outline">native watches: SLA clocks · trend sentinels</Chip>
         </div>
       </SoftCard>
     </div>

@@ -787,7 +787,7 @@ export function CommandCentre() {
                 />
               )}
               {view === "portal" && <PortalView snap={snap} refresh={refresh} />}
-              {view === "ops" && <OpsView snap={snap} />}
+              {view === "ops" && <OpsView snap={snap} connected={connected} refresh={refresh} />}
             </>
           )}
         </div>
