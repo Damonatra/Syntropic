@@ -337,7 +337,7 @@ model EngagementEvent {
   id           String     @id @default(cuid())
   engagement   Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
   engagementId String
-  kind         String // ingested | stage_changed | document_added | verdict_recorded | prospect_linked | note | delivered
+  kind         String // ingested | stage_changed | document_added | verdict_recorded | prospect_linked | deliverable_generated | note | delivered
   detail       String?
   actor        String     @default("operator") // operator | portal_webhook | system
   createdAt    DateTime   @default(now())

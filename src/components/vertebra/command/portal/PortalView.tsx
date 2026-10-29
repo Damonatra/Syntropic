@@ -10,8 +10,8 @@
  *
  * The old brochure tiles (guarantee banner, leakage estimator, static
  * rev-share example) left the console — selling happens on the landing
- * page; the console only works. Commercial terms remain as a slim
- * reference strip derived from the unified leakage model.
+ * page; the console only works. The bottom strip is the close ledger:
+ * live conversions from the engagement rows, never invented numbers.
  */
 "use client";
 
@@ -60,6 +60,17 @@ export function PortalView({ snap, refresh }: { snap: CommandSnapshot; refresh: 
       setBusy(true);
       setError(null);
       try {
+        // Commitment point — advancing to `delivered` generates the audit
+        // deliverable first (verdict gate enforced server-side), then moves
+        // the stage. One button, both writes, the ledger records each.
+        if (body.op === "stage" && body.to === "delivered" && !selected.deliverableUrl) {
+          const dres = await fetch(`/api/portal/engagements/${selected.id}/deliver`, { method: "POST" });
+          if (!dres.ok) {
+            const detail = (await dres.json().catch(() => ({}))) as { error?: string; hint?: string };
+            setError(detail.hint ?? detail.error ?? `deliver_${dres.status}`);
+            return false;
+          }
+        }
         const res = await fetch(`/api/portal/engagements/${selected.id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
@@ -129,6 +140,14 @@ export function PortalView({ snap, refresh }: { snap: CommandSnapshot; refresh: 
   const undecided = queue.filter((e) => e.status === "verdict" && e.guaranteeCleared == null).length;
   const oldestPaidDays =
     active.length > 0 ? Math.max(...active.map((e) => Math.floor((nowMs - e.paidAtMs) / 86_400_000))) : 0;
+
+  // ---- close ledger — live conversions, zero invented numbers ------------- //
+  const deliveredE = queue.filter((e) => e.status === "delivered");
+  const sowE = queue.filter((e) => e.status === "sow");
+  const closedE = queue.filter((e) => e.status === "closed");
+  const deliveredUsd = deliveredE.reduce((sum, e) => sum + e.amountUsd, 0);
+  const sowUsd = sowE.reduce((sum, e) => sum + e.amountUsd, 0);
+  const revShareBasis = clearedUsd * LEAKAGE_MODEL.revShareRate;
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-hidden p-5">
@@ -251,7 +270,14 @@ export function PortalView({ snap, refresh }: { snap: CommandSnapshot; refresh: 
         {/* detail */}
         <div className={`${detailOpen ? "flex" : "hidden xl:flex"} min-h-0 flex-col xl:flex`}>
           {selected ? (
-            <DeskDetail engagement={selected} onPatch={patch} busy={busy} nowMs={nowMs} />
+            <DeskDetail
+              engagement={selected}
+              onPatch={patch}
+              busy={busy}
+              nowMs={nowMs}
+              prospect={snap.leads.find((l) => l.id === selected.prospectId) ?? null}
+              refresh={refresh}
+            />
           ) : (
             <div className="flex flex-1 items-center justify-center neu-lg">
               <p className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-[#5F6460]">
@@ -262,14 +288,18 @@ export function PortalView({ snap, refresh }: { snap: CommandSnapshot; refresh: 
         </div>
       </div>
 
-      {/* commercial reference — the contract the desk enforces */}
+      {/* close ledger — live conversions from the engagement rows */}
       <div className="grid shrink-0 grid-cols-2 gap-3 sm:grid-cols-4">
         {(
           [
-            ["01 · diagnostic audit", usd(LEAKAGE_MODEL.auditFeeUsd), "deposit credited to any SOW"],
-            ["02 · guarantee floor", usd(LEAKAGE_MODEL.guaranteeFloorUsd), "the audit contract, enforced at verdict"],
-            ["03 · enterprise sow", usd(LEAKAGE_MODEL.sowFloorUsd), "continuous margin defense deployment"],
-            ["04 · rev-share", `${LEAKAGE_MODEL.revShareRate * 100}%`, "recovered margin only · model " + LEAKAGE_MODEL.version],
+            ["delivered audits", `${deliveredE.length} · ${usd(deliveredUsd)}`, "fee banked · deliverable sealed"],
+            ["sow conversions", `${sowE.length} · ${usd(sowUsd)}`, "continuous margin defense live"],
+            ["closed", `${closedE.length}`, "guarantee honored · ledger sealed"],
+            [
+              "rev-share basis",
+              usd(revShareBasis),
+              `${Math.round(LEAKAGE_MODEL.revShareRate * 100)}% of ${usd(clearedUsd)} confirmed recoverable · ${LEAKAGE_MODEL.version}`,
+            ],
           ] as Array<[string, string, string]>
         ).map(([label, value, body]) => (
           <div key={label} className="neu rounded-lg px-4 py-3">

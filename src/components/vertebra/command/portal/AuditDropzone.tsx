@@ -22,6 +22,8 @@ interface ParseResult {
   distinctSkus: number;
   extraction: "full_text" | "partial" | "header_only";
   note: string;
+  /** Server-side idempotency: same bytes already sealed to this engagement. */
+  duplicate?: boolean;
   sampleItems: Array<{ sku: string | null; qty: number | null; unitPrice: number | null }>;
 }
 
@@ -48,7 +50,7 @@ const ENGINE_STAGES = [
 ];
 
 /** Real upload progress via XHR — the percentage is bytes on the wire. */
-function uploadFile(file: File, onProgress: (pct: number) => void): Promise<ParseResult> {
+function uploadFile(file: File, engagementId: string | null, onProgress: (pct: number) => void): Promise<ParseResult & { duplicate?: boolean }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/audit/parse");
@@ -64,11 +66,22 @@ function uploadFile(file: File, onProgress: (pct: number) => void): Promise<Pars
     xhr.onerror = () => reject(new Error("network_error"));
     const form = new FormData();
     form.append("file", file);
+    // M3 — when the desk mounts the dropzone, every byte is sealed to the
+    // paid engagement and the ledger records the evidence arriving.
+    if (engagementId) form.append("engagementId", engagementId);
     xhr.send(form);
   });
 }
 
-export function AuditDropzone() {
+export function AuditDropzone({
+  engagementId = null,
+  onUploaded,
+}: {
+  /** Paid engagement binding — evidence sealed to the audit that needs it. */
+  engagementId?: string | null;
+  /** Fired after each successful parse so the desk re-reads the snapshot. */
+  onUploaded?: () => void;
+} = {}) {
   const [files, setFiles] = useState<QueuedFile[]>([]);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -89,8 +102,9 @@ export function AuditDropzone() {
       setFiles((prev) => prev.map((f) => (f.id === q.id ? { ...f, state: "running" } : f)));
       setProgress(0);
       try {
-        const result = await uploadFile(original, setProgress);
+        const result = await uploadFile(original, engagementId, setProgress);
         setFiles((prev) => prev.map((f) => (f.id === q.id ? { ...f, state: "done", result } : f)));
+        onUploaded?.();
       } catch (e) {
         setFiles((prev) =>
           prev.map((f) => (f.id === q.id ? { ...f, state: "error", error: String((e as Error).message) } : f)),
@@ -136,6 +150,8 @@ export function AuditDropzone() {
     setFiles([]);
     setProgress(0);
   }, [busy]);
+
+  const dedupeHint = files.some((f) => f.state === "done" && f.result?.duplicate);
 
   const runningNow = busy || files.some((f) => f.state === "running");
 
@@ -286,7 +302,7 @@ export function AuditDropzone() {
           {last.sampleItems.length > 0 && (
             <div className="mt-2.5 flex flex-wrap gap-1.5">
               {last.sampleItems.slice(0, 4).map((it, i) => (
-                <Chip key={i} tone="sunken" className="normal-case">
+                <Chip key={i} tone="well" className="normal-case">
                   {it.sku ?? "item"} · {it.unitPrice != null ? `$${it.unitPrice.toFixed(2)}` : "price n/a"}
                   {it.qty != null ? ` × ${it.qty}` : ""}
                 </Chip>
@@ -304,9 +320,17 @@ export function AuditDropzone() {
         </p>
       )}
 
+      {dedupeHint && (
+        <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.12em] text-[#8E9194]">
+          identical bytes already sealed to this engagement — resolved to the existing document
+        </p>
+      )}
+
       <div className="mt-4 flex items-center justify-between">
         <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#5F6460]">
-          real parse on the enclave · docling ocr + qdrant run engine-side
+          {engagementId
+            ? `evidence sealed to engagement ${engagementId.slice(0, 8)} · ledger records every arrival`
+            : "unbound drop — legacy orphan door · the desk always binds engagements"}
         </p>
         {files.length > 0 && (
           <button

@@ -22,6 +22,7 @@ import { createHash } from "node:crypto";
 import { inflateSync } from "node:zlib";
 import { db } from "@/lib/db";
 import { guardWrite } from "@/lib/vertebra/guard";
+import { invalidateSnapshot } from "@/lib/vertebra/snapshot-cache";
 
 const MAX_BYTES = 10 * 1024 * 1024;
 
@@ -167,6 +168,15 @@ export async function POST(request: Request) {
       if (!exists) return NextResponse.json({ error: "prospect_not_found" }, { status: 404 });
     }
 
+    // M3 — engagement binding: evidence sealed to the paid engagement that
+    // needs it. Unbound drops stay possible (the legacy orphan door), but the
+    // desk always posts with engagementId so parsed forensics accumulate.
+    const engagementId = (form.get("engagementId") as string | null)?.trim() || null;
+    if (engagementId) {
+      const engagement = await db.engagement.findUnique({ where: { id: engagementId }, select: { id: true } });
+      if (!engagement) return NextResponse.json({ error: "engagement_not_found" }, { status: 404 });
+    }
+
     const buf = Buffer.from(await file.arrayBuffer());
     const sha256 = createHash("sha256").update(buf).digest("hex");
     const mime = file.type || "application/octet-stream";
@@ -203,9 +213,39 @@ export async function POST(request: Request) {
     const spaRefs = (extraction.text.match(/\bSPA\b|\bspecial pricing agreement\b/gi) ?? []).length;
     const distinctSkus = new Set(items.map((i) => i.sku).filter(Boolean)).size;
 
+    // Idempotent evidence: the same bytes dropped twice on the same engagement
+    // resolve to the existing row — the forensics locker never double-counts
+    // a document, and the ledger never double-writes the event.
+    if (engagementId) {
+      const prior = await db.auditDocument.findFirst({
+        where: { engagementId, sha256 },
+        select: { id: true, fileName: true, lineItems: true },
+      });
+      if (prior) {
+        return NextResponse.json({
+          ok: true,
+          duplicate: true,
+          documentId: prior.id,
+          fileName: prior.fileName,
+          mimeType: mime,
+          sizeBytes: file.size,
+          sha256: sha256.slice(0, 16),
+          pages: extraction.pages,
+          lineItems: prior.lineItems ?? items.length,
+          spaReferences: spaRefs,
+          distinctSkus,
+          extraction: extraction.extraction,
+          note: "identical bytes already sealed to this engagement",
+          sampleItems: [],
+          engineStages: { docling_ocr: "engine_pending", hybrid_rrf_qdrant: "engine_pending" },
+        });
+      }
+    }
+
     const doc = await db.auditDocument.create({
       data: {
         prospectId,
+        engagementId,
         fileName: file.name.slice(0, 200),
         mimeType: mime.slice(0, 100),
         sizeBytes: file.size,
@@ -222,6 +262,19 @@ export async function POST(request: Request) {
         }),
       },
     });
+
+    // The desk's ledger records every piece of evidence that entered the room.
+    if (engagementId) {
+      await db.engagementEvent.create({
+        data: {
+          engagementId,
+          kind: "document_added",
+          actor: "operator",
+          detail: `${doc.fileName} · ${items.length} line items · ${extraction.extraction.replace(/_/g, " ")}`,
+        },
+      });
+      invalidateSnapshot();
+    }
 
     return NextResponse.json({
       ok: true,

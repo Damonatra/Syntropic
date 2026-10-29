@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Portal engagement ledger verification — Module M1:
-# signed webhook ingest, idempotency, manual door, stage machine guards,
-# verdict gate, snapshot wiring, matcher/stage pure logic.
+# Portal engagement ledger verification — Modules M1→M4:
+#   M1 signed webhook ingest, idempotency, manual door, auto-match
+#   M2 stage machine guards, verdict gate, snapshot wiring, pure logic
+#   M3 forensics — evidence bound to the engagement, sha-256 dedupe, ledger events
+#   M4 close — verdict-gated deliverable PDF, streaming route, close fields
 # Usage: bash scripts/verify_portal.sh
 set -u
 BASE="http://localhost:81"
@@ -14,7 +16,7 @@ bad()  { echo "  FAIL: $1"; FAIL=$((FAIL+1)); }
 sig()  { node -e "const c=require('crypto');process.stdout.write(c.createHmac('sha256',process.argv[1]).update(process.argv[2]).digest('hex'))" "$SECRET" "$1"; }
 
 echo "== 0. Cleanup — remove previous verify rows (repeatable runs)"
-bun -e "import {PrismaClient} from '@prisma/client'; const db=new PrismaClient(); const r=await db.engagement.deleteMany({where:{ref:{startsWith:'verify_portal_'}}}); console.log('  removed', r.count, 'prior verify rows'); process.exit(0)" >/dev/null 2>&1 || true
+bun -e "import {PrismaClient} from '@prisma/client'; const db=new PrismaClient(); const e=await db.engagement.deleteMany({where:{ref:{startsWith:'verify_portal_'}}}); const d=await db.auditDocument.deleteMany({where:{fileName:{startsWith:'verify_forensics_'}}}); console.log('  removed', e.count, 'prior verify engagements ·', d.count, 'verify documents'); process.exit(0)" >/dev/null 2>&1 || true
 
 echo "== 1. Enclave auth — POST /api/gate (expect 200 ok)"
 code=$(curl -s -o /tmp/gate.json -w "%{http_code}" -c "$JAR" -X POST "$BASE/api/gate" \
@@ -226,7 +228,141 @@ if rg -qi "kenya|nairobi|lappset" src/lib/vertebra/portal.ts src/app/api/portal/
   bad "stale references found in portal surfaces"
 else ok "portal surfaces are clean"; fi
 
-rm -f "$JAR" /tmp/gate.json /tmp/ing1.json /tmp/ing2.json /tmp/ing3.json /tmp/patch.json /tmp/cmd_portal.json
+# ---------------------------------------------------------------------------
+# M3 — forensics: evidence sealed to the engagement
+# ---------------------------------------------------------------------------
+
+echo "== 13. M3 forensics — book a verify engagement, run it to forensics"
+ENG3=$(curl -s -b "$JAR" -X POST "$BASE/api/portal/ingest" \
+  -H 'content-type: application/json' \
+  -d '{"ref":"verify_portal_m3_001","clientName":"Gulf Coast Valve & Fitting","clientDomain":"gulfcoastvalve.com","contactName":"Forensics Contact","contactEmail":"forensics@gulfcoastvalve.com","tier":"diagnostic_audit","amountUsd":3500,"source":"manual","intake":{"rfqPerMonth":140,"lineItems":26}}' \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('engagement',{}).get('id',''))")
+[ -n "$ENG3" ] && ok "verify engagement booked ($ENG3)" || bad "verify engagement booking failed"
+curl -s -o /dev/null -b "$JAR" -X PATCH "$BASE/api/portal/engagements/$ENG3" -H 'content-type: application/json' -d '{"op":"stage","to":"intake"}'
+curl -s -o /dev/null -b "$JAR" -X PATCH "$BASE/api/portal/engagements/$ENG3" -H 'content-type: application/json' -d '{"op":"intake","rfqPerMonth":140,"lineItems":26}'
+code=$(curl -s -o /dev/null -w "%{http_code}" -b "$JAR" -X PATCH "$BASE/api/portal/engagements/$ENG3" -H 'content-type: application/json' -d '{"op":"stage","to":"forensics"}')
+[ "$code" = "200" ] && ok "engagement moved to forensics" || bad "forensics move returned $code"
+
+echo "== 14. M3 evidence — upload binds to the engagement, ledger records the arrival"
+cat > /tmp/verify_forensics_quotes.csv << 'CSV'
+SKU,QTY,UNIT PRICE,DESCRIPTION
+GV-4410,12,184.50,butterfly valve 4in wafer
+GV-8820,4,612.00,check valve 8in flanged
+EL-MCC-210,36,44.25,motor contactor 210A
+SPA-REF-77,1,0.00,special pricing agreement addendum line
+CSV
+curl -s -o /tmp/up1.json -b "$JAR" -X POST "$BASE/api/audit/parse" \
+  -F "file=@/tmp/verify_forensics_quotes.csv;type=text/csv" -F "engagementId=$ENG3"
+python3 << 'PY'
+import json
+d = json.load(open("/tmp/up1.json"))
+assert d.get("ok") and d.get("documentId"), f"upload failed: {d}"
+assert d.get("lineItems", 0) >= 3, f"line-item detection lost: {d}"
+print(f"  PASS: evidence parsed · {d['lineItems']} line items · {d['extraction']}")
+PY
+[ $? -eq 0 ] && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
+if bun -e "
+import {PrismaClient} from '@prisma/client';
+const db = new PrismaClient();
+const ev = await db.engagementEvent.findFirst({ where: { engagementId: '$ENG3', kind: 'document_added' } });
+if (!ev) { console.log('  FAIL: document_added event missing'); process.exit(1); }
+console.log('  PASS: ledger recorded ·', ev.detail);
+process.exit(0);
+"; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); fi
+
+echo "== 15. M3 dedupe — identical bytes resolve to the existing document"
+curl -s -o /tmp/up2.json -b "$JAR" -X POST "$BASE/api/audit/parse" \
+  -F "file=@/tmp/verify_forensics_quotes.csv;type=text/csv" -F "engagementId=$ENG3"
+DOCS=$(bun -e "
+import {PrismaClient} from '@prisma/client';
+const db = new PrismaClient();
+const n = await db.auditDocument.count({ where: { engagementId: '$ENG3' } });
+console.log(n); process.exit(0);
+")
+python3 - "$DOCS" << 'PY'
+import json, sys
+d = json.load(open("/tmp/up2.json"))
+docs = int(sys.argv[1])
+if d.get("duplicate") is True and docs == 1:
+    print("  PASS: replay flagged duplicate · locker holds exactly 1 document")
+    sys.exit(0)
+print(f"  FAIL: duplicate={d.get('duplicate')} docs={docs}")
+sys.exit(1)
+PY
+[ $? -eq 0 ] && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
+
+echo "== 16. M4 gate — deliverable refused while the verdict is undecided"
+code=$(curl -s -o /dev/null -w "%{http_code}" -b "$JAR" -X POST "$BASE/api/portal/engagements/$ENG3/deliver")
+[ "$code" = "409" ] && ok "deliver refused without a recorded verdict (409)" || bad "deliver gate returned $code"
+
+echo "== 17. M4 close — verdict recorded, deliverable generated, streamed, delivered"
+curl -s -o /dev/null -b "$JAR" -X PATCH "$BASE/api/portal/engagements/$ENG3" -H 'content-type: application/json' -d '{"op":"stage","to":"verdict"}'
+code=$(curl -s -o /dev/null -w "%{http_code}" -b "$JAR" -X PATCH "$BASE/api/portal/engagements/$ENG3" \
+  -H 'content-type: application/json' \
+  -d '{"op":"verdict","confirmedLeakageUsd":14200,"guaranteeCleared":true,"note":"verify verdict — crosscheck panel suggested 13968"}')
+[ "$code" = "200" ] && ok "verdict recorded — \$14,200 recoverable, guarantee CLEARED" || bad "verdict op returned $code"
+curl -s -o /tmp/deliver.json -b "$JAR" -X POST "$BASE/api/portal/engagements/$ENG3/deliver"
+python3 << 'PY'
+import json
+d = json.load(open("/tmp/deliver.json"))
+assert d.get("ok") and d.get("deliverableUrl") and d.get("bytes", 0) > 1000, f"deliver failed: {d}"
+print(f"  PASS: deliverable generated · {d['bytes']} bytes · seal {d.get('seal')}")
+PY
+[ $? -eq 0 ] && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
+curl -s -b "$JAR" -o /tmp/deliverable.pdf "$BASE/api/portal/engagements/$ENG3/deliverable"
+if head -c 5 /tmp/deliverable.pdf | grep -q "%PDF" && [ "$(stat -c%s /tmp/deliverable.pdf)" -gt 1000 ]; then
+  ok "deliverable streams — valid PDF ($(stat -c%s /tmp/deliverable.pdf) bytes)"
+else bad "deliverable stream invalid"; fi
+code=$(curl -s -o /dev/null -w "%{http_code}" -b "$JAR" -X PATCH "$BASE/api/portal/engagements/$ENG3" -H 'content-type: application/json' -d '{"op":"stage","to":"delivered"}')
+[ "$code" = "200" ] && ok "verdict → delivered — the full contract arc ran" || bad "delivered after deliver returned $code"
+bun -e "
+import {PrismaClient} from '@prisma/client';
+const db = new PrismaClient();
+const gens = await db.engagementEvent.count({ where: { engagementId: '$ENG3', kind: 'deliverable_generated' } });
+const del = await db.engagementEvent.count({ where: { engagementId: '$ENG3', kind: 'delivered' } });
+if (gens >= 1 && del >= 1) { console.log('  PASS: deliverable_generated + delivered events on the trail'); process.exit(0); }
+console.log('  FAIL: gens', gens, 'del', del); process.exit(1);
+"
+[ $? -eq 0 ] && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
+
+echo "== 18. M4 snapshot — deliverable URL + evidence array live on the read model"
+curl -s -b "$JAR" -o /tmp/cmd_m4.json "$BASE/api/command"
+python3 << 'PY'
+import json, sys
+d = json.load(open("/tmp/cmd_m4.json"))
+engs = {e["ref"]: e for e in d.get("engagements", [])}
+e = engs.get("verify_portal_m3_001")
+assert e, "verify engagement missing from snapshot"
+assert e["deliverableUrl"], f"deliverableUrl missing: {e.get('deliverableUrl')}"
+assert len(e.get("documents") or []) == 1, f"documents array wrong: {len(e.get('documents') or [])}"
+doc = e["documents"][0]
+for f in ("fileName", "sizeBytes", "sha256", "pages", "lineItems", "extraction", "createdAtMs"):
+    assert f in doc, f"document field {f} missing"
+print(f"  PASS: snapshot carries deliverableUrl + {len(e['documents'])} sealed document(s) · {doc['lineItems']} line items")
+sys.exit(0)
+PY
+[ $? -eq 0 ] && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
+
+echo "== 19. Cleanup — verify rows, documents and artifact removed"
+bun -e "
+import {PrismaClient} from '@prisma/client';
+import { unlinkSync, existsSync } from 'node:fs';
+const db = new PrismaClient();
+const eng = await db.engagement.findUnique({ where: { ref: 'verify_portal_m3_001' }, select: { id: true } });
+if (eng) {
+  await db.auditDocument.deleteMany({ where: { engagementId: eng.id } });
+  await db.engagement.delete({ where: { id: eng.id } });
+  const p = 'db/deliverables/' + eng.id + '.pdf';
+  try { if (existsSync(p)) unlinkSync(p); } catch {}
+}
+const total = await db.engagement.count();
+console.log('  PASS: verify arc removed ·', total, 'fixture engagements remain');
+process.exit(0);
+"
+[ $? -eq 0 ] && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
+
+rm -f "$JAR" /tmp/gate.json /tmp/ing1.json /tmp/ing2.json /tmp/ing3.json /tmp/patch.json /tmp/cmd_portal.json \
+  /tmp/up1.json /tmp/up2.json /tmp/deliver.json /tmp/deliverable.pdf /tmp/cmd_m4.json /tmp/verify_forensics_quotes.csv
 echo
 echo "portal ledger verification: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]

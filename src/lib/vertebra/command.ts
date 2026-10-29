@@ -278,6 +278,18 @@ export interface EngagementEventShape {
   createdAtMs: number;
 }
 
+/** One sealed evidence document in the engagement forensics locker. */
+export interface EngagementDocumentShape {
+  id: string;
+  fileName: string;
+  sizeBytes: number;
+  sha256: string;
+  pages: number | null;
+  lineItems: number | null;
+  extraction: string;
+  createdAtMs: number;
+}
+
 /** One paid engagement — money became work. Satisfies portal.EngagementLike. */
 export interface EngagementShape {
   id: string;
@@ -296,9 +308,12 @@ export interface EngagementShape {
   guaranteeCleared: boolean | null;
   confirmedLeakageUsd: number | null;
   verdictNote: string | null;
+  deliverableUrl: string | null;
   prospectId: string | null;
   prospectName: string | null;
   documentCount: number;
+  /** Evidence locker contents — the desk's forensics panel reads this. */
+  documents?: EngagementDocumentShape[];
   paidAtMs: number;
   deliveredAtMs: number | null;
   events: EngagementEventShape[];

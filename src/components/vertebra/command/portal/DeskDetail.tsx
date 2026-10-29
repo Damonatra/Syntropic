@@ -1,19 +1,25 @@
 /**
  * DeskDetail — the right side of the engagement desk: everything about one
  * paid engagement, in operator order. The stage rail states the contract
- * progress; the verdict recorder enforces the $10,000 guarantee decision;
- * the event trail is the append-only honesty ledger rendered verbatim.
+ * progress; the forensics panel carries the evidence locker and the verdict
+ * math (both leakage derivations cross-checked, ±15% agreement); the verdict
+ * recorder enforces the $10,000 guarantee decision; the event trail is the
+ * append-only honesty ledger rendered verbatim.
  *
  * Frictionless rules: the next legal move is always one button (or the `a`
  * key) away; the commitment gate (verdict before delivery) is mirrored
  * client-side and enforced server-side; every write appends a ledger event.
+ * The deliverable is generated from real rows only — the desk never types a
+ * number the ledger cannot prove.
  */
 "use client";
 
 import { useMemo, useState } from "react";
 import { Chip, HudMeta, SectionLabel } from "../bits";
-import type { EngagementShape } from "@/lib/vertebra/command";
+import type { CommandLead, EngagementShape } from "@/lib/vertebra/command";
 import { nextActionFor, STAGE_LABELS, STAGE_TRANSITIONS, type EngagementStage } from "@/lib/vertebra/portal";
+import { crossCheckLeakage, LEAKAGE_MODEL } from "@/lib/vertebra/leakage";
+import { AuditDropzone } from "./AuditDropzone";
 
 const usd = (v: number) => `$${Math.round(v).toLocaleString("en-US")}`;
 
@@ -26,6 +32,7 @@ const EVENT_GLYPHS: Record<string, string> = {
   verdict_recorded: "⚖",
   prospect_linked: "⌁",
   document_added: "▤",
+  deliverable_generated: "▣",
   note: "·",
 };
 
@@ -44,11 +51,16 @@ export function DeskDetail({
   onPatch,
   busy,
   nowMs,
+  prospect,
+  refresh,
 }: {
   engagement: EngagementShape;
   onPatch: (body: Record<string, unknown>) => Promise<boolean>;
   busy: boolean;
   nowMs: number;
+  /** Matched prospect read-model — carries the book-audit inputs (revenue, QLV). */
+  prospect: CommandLead | null;
+  refresh: () => Promise<void>;
 }) {
   const [verdictUsd, setVerdictUsd] = useState<string>(
     engagement.confirmedLeakageUsd != null ? String(engagement.confirmedLeakageUsd) : "",
@@ -72,9 +84,33 @@ export function DeskDetail({
   const nextAction = nextActionFor(engagement);
   const verdictDecided = engagement.guaranteeCleared != null && engagement.confirmedLeakageUsd != null;
 
+  // ---- forensics readouts ------------------------------------------------- //
+  const docs = useMemo(() => engagement.documents ?? [], [engagement.documents]);
+  const showForensics = stageIdx >= STAGE_ORDER.indexOf("forensics") || docs.length > 0;
+
+  // The verdict math — both derivations of the unified model, cross-checked.
+  // Null when intake volume was never confirmed; the audit side is null when
+  // the matched book row lacks revenue/QLV. The desk states which inputs are
+  // missing rather than inventing a number.
+  const cross = useMemo(() => {
+    const rfq = engagement.intakeRfqPerMonth;
+    const lines = engagement.intakeLineItems;
+    if (!rfq || !lines) return null;
+    return crossCheckLeakage(rfq, lines, prospect?.revenueEstimateUsd ?? null, prospect?.score?.qlvScore ?? null);
+  }, [engagement.intakeRfqPerMonth, engagement.intakeLineItems, prospect]);
+  const suggested = cross?.engagement.recoverable ?? null;
+
   const advance = async () => {
     if (!nextForward || busy) return;
+    // `delivered` runs the two-step in the PATCH path — the deliverable is
+    // generated first (PortalView intercepts stage→delivered), then the move.
     await onPatch({ op: "stage", to: nextForward });
+  };
+
+  const applySuggested = () => {
+    if (suggested == null || busy) return;
+    setVerdictUsd(String(suggested));
+    setVerdictCleared(suggested >= LEAKAGE_MODEL.guaranteeFloorUsd);
   };
 
   return (
@@ -157,6 +193,104 @@ export function DeskDetail({
           </p>
         )}
       </div>
+
+      {/* forensics — evidence locker + verdict math */}
+      {showForensics && (
+        <div className="neu-lg rounded-lg px-6 py-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <SectionLabel>Forensics — evidence locker</SectionLabel>
+            <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#5F6460]">
+              {docs.length} document{docs.length === 1 ? "" : "s"} sealed · sha-256 deduped
+            </p>
+          </div>
+
+          {/* evidence inventory — real parsed rows */}
+          {docs.length > 0 ? (
+            <div className="mt-3 flex flex-col">
+              {docs.map((d) => (
+                <div key={d.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-white/[0.05] py-2 last:border-0">
+                  <p className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-[#C9CCC7]" title={d.fileName}>
+                    ▤ {d.fileName}
+                  </p>
+                  <Chip tone="well">{d.extraction.replace(/_/g, " ")}</Chip>
+                  <p className="font-mono text-[9.5px] tabular-nums tracking-[0.08em] text-[#8E9194]">
+                    {(d.sizeBytes / 1024).toFixed(1)} kb
+                    {d.pages != null ? ` · ${d.pages}p` : ""}
+                    {` · ${d.lineItems ?? 0} lines · ${d.sha256.slice(0, 12)}`}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 font-mono text-[10.5px] uppercase leading-relaxed tracking-[0.12em] text-[#5F6460]">
+              no evidence sealed yet — the locker fills as quote PDFs and cost sheets land
+            </p>
+          )}
+
+          {/* the dropzone lives on the desk while forensics is open */}
+          {stage === "forensics" && (
+            <div className="mt-3">
+              <AuditDropzone engagementId={engagement.id} onUploaded={() => void refresh()} />
+            </div>
+          )}
+
+          {/* verdict math — both derivations, cross-checked */}
+          <div className="mt-4 border-t border-white/[0.07] pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#8E9194]">
+                Verdict math — model {LEAKAGE_MODEL.version}
+              </p>
+              {stage === "verdict" && !verdictDecided && suggested != null && (
+                <button
+                  onClick={applySuggested}
+                  disabled={busy}
+                  className="rounded-lg border border-white/25 px-3 py-1.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-[#F4F5F2] transition-colors hover:bg-white hover:text-[#0B0C0B] disabled:opacity-40"
+                >
+                  apply {usd(suggested)} to verdict
+                </button>
+              )}
+            </div>
+            {cross ? (
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border border-white/[0.08] bg-[#101210] px-4 py-3">
+                  <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#5F6460]">quote-volume derivation</p>
+                  <p className="mt-1.5 font-display text-[19px] font-semibold leading-none tracking-[-0.03em] tabular-nums text-[#F4F5F2]">
+                    {usd(cross.engagement.annual)}
+                    <span className="ml-2 font-mono text-[9.5px] font-normal tracking-[0.08em] text-[#6E736E]">/ yr</span>
+                  </p>
+                  <p className="mt-1 font-mono text-[9.5px] tabular-nums tracking-[0.06em] text-[#8E9194]">
+                    band {usd(cross.engagement.low)}–{usd(cross.engagement.high)} · recoverable {usd(cross.engagement.recoverable)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-white/[0.08] bg-[#101210] px-4 py-3">
+                  <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#5F6460]">book-audit derivation</p>
+                  {cross.audit && cross.deltaPct != null ? (
+                    <>
+                      <p className="mt-1.5 font-display text-[19px] font-semibold leading-none tracking-[-0.03em] tabular-nums text-[#F4F5F2]">
+                        {usd(cross.audit.annual)}
+                        <span className="ml-2 font-mono text-[9.5px] font-normal tracking-[0.08em] text-[#6E736E]">/ yr</span>
+                      </p>
+                      <p className="mt-1 flex items-center gap-2 font-mono text-[9.5px] tabular-nums tracking-[0.06em] text-[#8E9194]">
+                        delta {cross.deltaPct > 0 ? "+" : ""}
+                        {cross.deltaPct}%
+                        <Chip tone={cross.agree ? "well" : "default"}>{cross.agree ? "agrees ±15%" : "diverges"}</Chip>
+                      </p>
+                    </>
+                  ) : (
+                    <p className="mt-2 font-mono text-[9.5px] leading-relaxed tracking-[0.06em] text-[#6E736E]">
+                      not derivable — {prospect ? "matched prospect lacks revenue estimate or QLV score" : "no prospect linked"}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="mt-3 font-mono text-[9.5px] leading-relaxed tracking-[0.08em] text-[#6E736E]">
+                intake volume never confirmed — record RFQ/month and lines/RFQ to model leakage honestly
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* verdict recorder — the guarantee decision */}
       {(stage === "verdict" || verdictDecided) && (
@@ -242,7 +376,7 @@ export function DeskDetail({
                 className="w-full rounded-lg border border-black/15 bg-black/[0.06] px-3 py-2 font-mono text-[11.5px] text-[#0B0C0B] outline-none placeholder:text-[#6E736E] focus:border-black/40"
               />
               <p className="font-mono text-[9.5px] leading-relaxed tracking-[0.06em] text-[#2E322E]">
-                the number the desk reports to the client · the guarantee floor is {usd(10000)} · cleared verdicts unlock delivery
+                the number the desk reports to the client · the guarantee floor is {usd(LEAKAGE_MODEL.guaranteeFloorUsd)} · cleared verdicts unlock delivery
               </p>
             </div>
           )}
@@ -332,8 +466,22 @@ export function DeskDetail({
               disabled={busy}
               className="tactile-btn ml-auto rounded-lg bg-white px-4 py-1.5 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-[#0B0C0B] hover:bg-[#C9CCC7] disabled:opacity-40"
             >
-              {verdictDecided && stage === "verdict" ? "Deliver" : `Advance → ${STAGE_LABELS[nextForward]}`}
+              {stage === "verdict" && verdictDecided
+                ? engagement.deliverableUrl
+                  ? "Deliver"
+                  : "Generate & deliver"
+                : `Advance → ${STAGE_LABELS[nextForward]}`}
             </button>
+          )}
+          {engagement.deliverableUrl && (
+            <a
+              href={engagement.deliverableUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg border border-white/25 px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[#F4F5F2] transition-colors hover:bg-white hover:text-[#0B0C0B]"
+            >
+              Open deliverable ↗
+            </a>
           )}
         </div>
       </div>
