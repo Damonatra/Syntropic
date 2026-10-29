@@ -1,7 +1,7 @@
 /** STRIKE — the ranked margin-recovery queue. Luminance target cards, keyboard loop. */
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Chip, EmptyHint, ErpBadge, HudMeta, LiveDot, PillButton, PriorityBar, ScoreBlock, SectionLabel, SoftCard } from "./bits";
 import { EVENT_VERBS, PORTAL_LABELS, heatLevel, money, relTime, verticalLabel, type CommandLead, type CommandSnapshot } from "@/lib/vertebra/command";
 
@@ -67,6 +67,7 @@ export function StrikeView({
   filter,
   onFilter,
   scrollTick = 0,
+  acted = {},
 }: {
   snap: CommandSnapshot;
   ranked: CommandLead[];
@@ -79,6 +80,8 @@ export function StrikeView({
   onFilter: (f: StrikeFilter) => void;
   /** Bumped by the keyboard loop on every j/k — the only cursor source that scrolls. */
   scrollTick?: number;
+  /** M5 — optimistic action ledger: prospectId -> action, drives the dim until fresh truth arrives. */
+  acted?: Record<string, string>;
 }) {
   const stake = useMemo(() => ranked.reduce((sum, l) => sum + (l.leakageUsd ?? 0), 0), [ranked]);
   const counts = useMemo(() => computeFilterCounts(snap, now), [snap, now]);
@@ -87,6 +90,51 @@ export function StrikeView({
   const cursorIdx = useMemo(() => ranked.findIndex((l) => l.id === cursorId), [ranked, cursorId]);
   const listRef = useRef<HTMLDivElement>(null);
   const listInnerRef = useRef<HTMLDivElement>(null);
+
+  // M5 — cursor advance: when the lead under the cursor vanishes from the ranked
+  // list (snoozed out, reclassified, filtered by the machine), the cursor moves to
+  // the SAME index instead of jumping to the top. Muscle memory survives churn.
+  const lastIdxRef = useRef(0);
+  useEffect(() => {
+    if (cursorIdx >= 0) {
+      lastIdxRef.current = cursorIdx;
+      return;
+    }
+    if (ranked.length > 0) onCursor(ranked[Math.min(lastIdxRef.current, ranked.length - 1)].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cursorIdx, ranked, cursorId]);
+
+  // M5 — arrival buffer: live snapshot churn re-ranks the queue under the operator.
+  // Never silently — count the disturbance and offer a reseat. Keyed on CONTENT
+  // (joined ids), not array identity: `ranked` recomputes every clock tick, and a
+  // reference-keyed effect would re-arm the comparison every second and kill the
+  // strip one tick after it appears.
+  const rankedKey = useMemo(() => ranked.map((l) => l.id).join("|"), [ranked]);
+  const prevOrderRef = useRef<{ ids: string[]; filter: StrikeFilter } | null>(null);
+  const [shift, setShift] = useState<{ moved: number; fresh: number } | null>(null);
+  useEffect(() => {
+    const ids = rankedKey ? rankedKey.split("|") : [];
+    const prev = prevOrderRef.current;
+    prevOrderRef.current = { ids, filter };
+    if (!prev || prev.filter !== filter) {
+      setShift(null);
+      return;
+    }
+    const prevIdx = new Map(prev.ids.map((id, i) => [id, i]));
+    let moved = 0;
+    let fresh = 0;
+    ids.forEach((id, i) => {
+      const pi = prevIdx.get(id);
+      if (pi == null) fresh += 1;
+      else if (pi !== i) moved += 1;
+    });
+    setShift(moved > 0 || fresh > 0 ? { moved, fresh } : null);
+  }, [rankedKey, filter]);
+
+  function reseat() {
+    const el = listInnerRef.current?.children[cursorIdx] as HTMLElement | undefined;
+    el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
 
   // M1 — a filter change resets the viewport and snaps the cursor to card #1,
   // so the J/K loop always resumes from a visible anchor.
@@ -145,6 +193,20 @@ export function StrikeView({
       </div>
 
       <div ref={listInnerRef} className="mt-5 flex flex-col gap-3 pb-6">
+        {/* M5 — arrival buffer strip: the queue moved under the operator, say so */}
+        {shift && (
+          <button
+            type="button"
+            onClick={() => {
+              setShift(null);
+              reseat();
+            }}
+            className="flex h-9 items-center gap-2 rounded-full border border-white/[0.14] bg-[#131513] px-4 font-mono text-[10px] uppercase tracking-[0.14em] text-[#8E9194] transition-colors hover:border-white/30 hover:text-[#F4F5F2]"
+          >
+            <span className="size-1.5 rounded-full bg-[#8E9194] cc-pulse-dot" />
+            queue shifted — {shift.moved} re-ranked{shift.fresh > 0 ? ` · +${shift.fresh} new` : ""} · click to reseat cursor
+          </button>
+        )}
         {ranked.length === 0 && (
           <div className="flex flex-col items-start gap-3">
             <EmptyHint>Nothing matches {activeLabel} — the machine keeps working</EmptyHint>
@@ -166,6 +228,7 @@ export function StrikeView({
             now={now}
             maxPriority={maxPriority}
             focused={cursorId === lead.id}
+            actedState={acted[lead.id] ?? null}
             onFocus={() => onCursor(lead.id)}
             onOpen={() => onOpenDossier(lead)}
             onAction={onAction}
@@ -176,12 +239,22 @@ export function StrikeView({
   );
 }
 
+const ACTED_LABELS: Record<string, string> = {
+  called: "call logged",
+  deferred: "deferred",
+  snoozed: "snoozed",
+  booked: "booked",
+  note: "noted",
+  emailed: "email staged",
+};
+
 function StrikeCard({
   lead,
   rank,
   now,
   maxPriority,
   focused,
+  actedState,
   onFocus,
   onOpen,
   onAction,
@@ -191,6 +264,7 @@ function StrikeCard({
   now: number;
   maxPriority: number;
   focused: boolean;
+  actedState: string | null;
   onFocus: () => void;
   onOpen: () => void;
   onAction: (prospectId: string, action: "called" | "deferred" | "snoozed" | "booked", note?: string) => void;
@@ -210,7 +284,7 @@ function StrikeCard({
         focused
           ? "border-white/45 shadow-[0_0_0_1px_rgba(244,245,242,0.55)]"
           : ""
-      } ${lead.highIntentNow ? "border-white/[0.24]" : ""}`}
+      } ${lead.highIntentNow ? "border-white/[0.24]" : ""} ${actedState ? "opacity-45" : ""}`}
     >
       {/* M2 — cursor marker: luminance edge bar, visible across the room */}
       {focused && <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-[#F4F5F2]" />}
@@ -224,6 +298,11 @@ function StrikeCard({
           {focused && (
             <span className="inline-flex items-center gap-1.5 font-mono text-[9.5px] uppercase tracking-[0.16em] text-[#F4F5F2]">
               <span className="size-1.5 rounded-full bg-[#F4F5F2] cc-pulse-dot" /> cursor
+            </span>
+          )}
+          {actedState && (
+            <span className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[#F4F5F2]">
+              · {ACTED_LABELS[actedState] ?? actedState}
             </span>
           )}
         </div>

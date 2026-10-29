@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { CommandRail, type ViewKey } from "./CommandRail";
 import { RadarView } from "./RadarView";
-import { StrikeView, computeRanked, type StrikeFilter } from "./StrikeView";
+import { StrikeView, STRIKE_FILTERS, computeRanked, type StrikeFilter } from "./StrikeView";
 import { TheatreView } from "./TheatreView";
 import { PipelineView } from "./PipelineView";
 import { PortalView } from "./portal/PortalView";
@@ -97,6 +97,9 @@ export function CommandCentre() {
   const [cursorId, setCursorId] = useState<string | null>(null);
   const [cursorScrollTick, setCursorScrollTick] = useState(0);
   const [filter, setFilter] = useState<StrikeFilter>("all");
+  // M5 — optimistic action ledger + one-shot guard
+  const [acted, setActed] = useState<Record<string, string>>({});
+  const actingRef = useRef<Set<string>>(new Set());
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [connected, setConnected] = useState(false);
   const [clock, setClock] = useState("");
@@ -223,6 +226,29 @@ export function CommandCentre() {
     const t = setInterval(() => void refresh(), 60_000);
     return () => clearInterval(t);
   }, [refresh]);
+
+  // M5 — fresh snapshot arrived: optimistic dims yield to the real state.
+  useEffect(() => {
+    if (snap) setActed({});
+  }, [snap]);
+
+  // M5 — filter memory: restore the last strike filter, persist every change.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("vertebra:strike-filter") as StrikeFilter | null;
+      if (saved && STRIKE_FILTERS.some(([k]) => k === saved)) setFilter(saved);
+    } catch {
+      /* private mode — default to all */
+    }
+  }, []);
+  const handleFilter = useCallback((f: StrikeFilter) => {
+    setFilter(f);
+    try {
+      localStorage.setItem("vertebra:strike-filter", f);
+    } catch {
+      /* private mode */
+    }
+  }, []);
 
   // ---- socket bridge ----------------------------------------------------- //
   useEffect(() => {
@@ -380,6 +406,9 @@ export function CommandCentre() {
   // ---- operator actions -------------------------------------------------- //
   const doAction = useCallback(
     async (prospectId: string, action: "called" | "deferred" | "snoozed" | "booked" | "note", note?: string) => {
+      if (actingRef.current.has(prospectId)) return; // M5 — one-shot: a second click mid-flight is ignored
+      actingRef.current.add(prospectId);
+      setActed((prev) => ({ ...prev, [prospectId]: action })); // optimistic dim until fresh truth
       const lead = snap?.leads.find((l) => l.id === prospectId);
       try {
         const res = await fetch("/api/actions", {
@@ -401,7 +430,14 @@ export function CommandCentre() {
         });
         void refresh();
       } catch {
+        setActed((prev) => {
+          const next = { ...prev };
+          delete next[prospectId]; // action refused — remove the dim, the card is still live
+          return next;
+        });
         pushToast({ kind: "info", title: "Action failed", body: "The enclave did not acknowledge — try again." });
+      } finally {
+        actingRef.current.delete(prospectId); // M5 — release the one-shot guard
       }
     },
     [snap, pushToast, refresh],
@@ -579,8 +615,9 @@ export function CommandCentre() {
                   onOpenDossier={openDossier}
                   onAction={doAction}
                   filter={filter}
-                  onFilter={setFilter}
+                  onFilter={handleFilter}
                   scrollTick={cursorScrollTick}
+                  acted={acted}
                 />
               )}
               {view === "theatre" && <TheatreView snap={snap} onOpenDossier={openDossier} />}

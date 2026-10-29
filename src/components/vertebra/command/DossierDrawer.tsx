@@ -124,6 +124,7 @@ export function DossierDrawer({
   const [noteText, setNoteText] = useState("");
   const [triaging, setTriaging] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [acting, setActing] = useState(false);
   const seededForRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -153,14 +154,35 @@ export function DossierDrawer({
       .catch(() => {});
   }
 
-  // Angle seeds: prefill the compose desk once per prospect from the top hook.
+  // Angle seeds + M5 draft memory: an unsent draft survives close/reopen.
+  // Local memory first, hook seeds second — seeded once per prospect.
   useEffect(() => {
     if (!data || seededForRef.current === data.prospect.id) return;
-    const top = data.prospect.score?.hooks?.[0];
-    if (!top) return;
     seededForRef.current = data.prospect.id;
-    setComposeSubject((s) => s || seedSubject(top.flavor, data.prospect.name));
-    setComposeBody((b) => b || seedBody(top.body, data.prospect.contacts[0]?.name.split(" ")[0]));
+    const key = `vertebra:compose:${data.prospect.id}`;
+    try {
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        const parsed = JSON.parse(saved) as { subject?: string; body?: string };
+        setComposeSubject(parsed.subject ?? "");
+        setComposeBody(parsed.body ?? "");
+        return;
+      }
+    } catch {
+      /* corrupt or private mode — fall through to seeds */
+    }
+    const top = data.prospect.score?.hooks?.[0];
+    if (top) {
+      const s = seedSubject(top.flavor, data.prospect.name);
+      const b = seedBody(top.body, data.prospect.contacts[0]?.name.split(" ")[0]);
+      setComposeSubject(s);
+      setComposeBody(b);
+      try {
+        localStorage.setItem(key, JSON.stringify({ subject: s, body: b }));
+      } catch {
+        /* private mode */
+      }
+    }
   }, [data]);
 
   const now = Date.now();
@@ -186,6 +208,9 @@ export function DossierDrawer({
         ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([data.prospect.city, data.prospect.stateProvince, data.prospect.country].filter(Boolean).join(" "))}`
         : null
     : null;
+  // M5 — the dispatch ledger is the truth source for the persistent staged badge
+  const lastManual = data?.dispatches.find((d) => d.channel === "operator_manual_email") ?? null;
+  const lastManualHours = lastManual ? (now - lastManual.createdAtMs) / 3_600_000 : null;
 
   function copyEmail() {
     if (!data?.prospect.bestEmail) return;
@@ -196,6 +221,19 @@ export function DossierDrawer({
         setTimeout(() => setCopied(false), 1600);
       })
       .catch(() => {});
+  }
+
+  /** M5 — mirror every keystroke into the per-prospect draft memory. */
+  function touchCompose(patch: { subject?: string; body?: string }) {
+    if (!data) return;
+    try {
+      localStorage.setItem(
+        `vertebra:compose:${data.prospect.id}`,
+        JSON.stringify({ subject: patch.subject ?? composeSubject, body: patch.body ?? composeBody }),
+      );
+    } catch {
+      /* private mode */
+    }
   }
 
   async function sendColdEmail(override: boolean) {
@@ -217,14 +255,17 @@ export function DossierDrawer({
         | { ok?: boolean; send?: { status: string; reason: string | null; providerMsgId: string | null }; lastSend?: { subject: string | null; atMs: number }; error?: string; hint?: string; reason?: string }
         | null;
       if (res.ok && j?.ok && j.send) {
-        if (j.send.status === "sent") {
-          setSendResult({ kind: "sent", id: j.send.providerMsgId });
+        if (j.send.status === "sent" || j.send.status === "staged") {
+          setSendResult(
+            j.send.status === "sent" ? { kind: "sent", id: j.send.providerMsgId } : { kind: "staged", reason: j.send.reason },
+          );
           setComposeSubject("");
           setComposeBody("");
-        } else if (j.send.status === "staged") {
-          setSendResult({ kind: "staged", reason: j.send.reason });
-          setComposeSubject("");
-          setComposeBody("");
+          try {
+            localStorage.removeItem(`vertebra:compose:${data.prospect.id}`); // M5 — sent is sent
+          } catch {
+            /* private mode */
+          }
         } else {
           setSendResult({ kind: "failed", reason: j.send.reason });
         }
@@ -262,9 +303,14 @@ export function DossierDrawer({
   }
 
   async function act(action: "called" | "deferred" | "snoozed" | "booked" | "note", note?: string) {
-    if (!data) return;
-    await onAction(data.prospect.id, action, note);
-    refetchDossier();
+    if (!data || acting) return; // M5 — one-shot while a dossier action is in flight
+    setActing(true);
+    try {
+      await onAction(data.prospect.id, action, note);
+      refetchDossier();
+    } finally {
+      setActing(false);
+    }
   }
 
   function logNote() {
@@ -366,6 +412,16 @@ export function DossierDrawer({
                 <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-[#8E9194]">
                   to · <span className="normal-case tracking-normal text-[#E9EBE7]">{data.prospect.bestEmail ?? "unverified — no send path"}</span>
                 </div>
+                {lastManual?.status === "staged" && (
+                  <p className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-white/[0.14] bg-white/[0.03] px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-[#F4F5F2]">
+                    <span className="size-1.5 rounded-full bg-[#F4F5F2] cc-pulse-dot" /> mail: staged — no provider · awaiting resend key
+                  </p>
+                )}
+                {lastManual && lastManual.status !== "staged" && lastManualHours != null && lastManualHours < 24 && (
+                  <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[#6E736E]">
+                    last manual send {relTime(lastManual.createdAtMs, now) || "just now"} · {lastManual.status} · cooldown active
+                  </p>
+                )}
                 <p className={`mt-2.5 rounded-md border px-3 py-2 font-mono text-[10.5px] leading-relaxed ${gateClosed ? "border-white/[0.24] bg-white/[0.04] text-[#F4F5F2]" : "border-white/[0.08] text-[#8E9194]"}`}>
                   {caslNotice}
                 </p>
@@ -390,7 +446,10 @@ export function DossierDrawer({
                 )}
                 <input
                   value={composeSubject}
-                  onChange={(e) => setComposeSubject(e.target.value)}
+                  onChange={(e) => {
+                    setComposeSubject(e.target.value);
+                    touchCompose({ subject: e.target.value });
+                  }}
                   placeholder="subject"
                   maxLength={200}
                   disabled={!data.prospect.bestEmail}
@@ -398,7 +457,10 @@ export function DossierDrawer({
                 />
                 <textarea
                   value={composeBody}
-                  onChange={(e) => setComposeBody(e.target.value)}
+                  onChange={(e) => {
+                    setComposeBody(e.target.value);
+                    touchCompose({ body: e.target.value });
+                  }}
                   rows={7}
                   maxLength={8000}
                   placeholder="body"
@@ -651,7 +713,7 @@ export function DossierDrawer({
                   maxLength={280}
                   className="h-9 min-w-0 flex-1 rounded-full border border-white/[0.10] bg-[#131513] px-4 font-mono text-[11.5px] text-[#F4F5F2] placeholder:text-[#6E736E] focus:border-white/[0.28] focus:outline-none"
                 />
-                <PillButton tone="ghost" disabled={!noteText.trim()} onClick={logNote}>
+                <PillButton tone="ghost" disabled={!noteText.trim() || acting} onClick={logNote}>
                   Log note
                 </PillButton>
               </div>
@@ -661,16 +723,16 @@ export function DossierDrawer({
                     Call {phone}
                   </PillButton>
                 )}
-                <PillButton tone="ghost" onClick={() => void act("called", "Logged from dossier")}>
+                <PillButton tone="ghost" disabled={acting} onClick={() => void act("called", "Logged from dossier")}>
                   Log call
                 </PillButton>
-                <PillButton tone="dark" onClick={() => void act("booked")}>
+                <PillButton tone="dark" disabled={acting} onClick={() => void act("booked")}>
                   Booked
                 </PillButton>
-                <PillButton tone="well" onClick={() => void act("deferred")}>
+                <PillButton tone="well" disabled={acting} onClick={() => void act("deferred")}>
                   Defer
                 </PillButton>
-                <PillButton tone="well" onClick={() => void act("snoozed", undefined)}>
+                <PillButton tone="well" disabled={acting} onClick={() => void act("snoozed", undefined)}>
                   Snooze 24h
                 </PillButton>
                 {data.prospect.score && (
