@@ -213,6 +213,49 @@ body {
   .tactile-btn:active {
     transform: scale(0.96);
   }
+  /* Door — a desk entry. On hover or keyboard focus the light floods in:
+     the panel inverts to paper and every child reads its color from the
+     door's variables, so the inversion never depends on Tailwind's
+     (hover: hover) media gate. Disabled doors stay shut. */
+  .door {
+    --door-title: #f4f5f2;
+    --door-meta: #6e736e;
+    --door-kbd-border: rgba(255, 255, 255, 0.15);
+    --door-kbd-text: #8e9194;
+    --door-kbd-bg: rgba(0, 0, 0, 0.25);
+    background: #131513;
+    border: 1px solid rgba(216, 216, 216, 0.12);
+    border-radius: 12px;
+    transition: background-color 150ms ease, border-color 150ms ease, transform 140ms ease;
+  }
+  .door:hover:not(:disabled),
+  .door:focus-visible:not(:disabled) {
+    --door-title: #0b0c0b;
+    --door-meta: #4b514d;
+    --door-kbd-border: rgba(0, 0, 0, 0.25);
+    --door-kbd-text: #0b0c0b;
+    --door-kbd-bg: transparent;
+    background: #f4f5f2;
+    border-color: #f4f5f2;
+  }
+  .door:active:not(:disabled) {
+    transform: scale(0.995);
+  }
+  .door-kbd {
+    color: var(--door-kbd-text);
+    border-color: var(--door-kbd-border);
+    background: var(--door-kbd-bg);
+    transition: color 150ms ease, border-color 150ms ease, background-color 150ms ease;
+  }
+  .door-arrow {
+    color: var(--door-arrow, #5f6460);
+    transition: color 150ms ease, transform 150ms ease;
+  }
+  .door:hover:not(:disabled) .door-arrow,
+  .door:focus-visible:not(:disabled) .door-arrow {
+    color: #0b0c0b;
+    transform: translateX(4px);
+  }
 }
 
 /* --- Legacy marketing utilities (dark-flipped; unused by the enclave) --- */

@@ -5,20 +5,23 @@
  * audit. The old layout crowded the operator — counters, queue and detail
  * all shouting at once — so the desk now holds exactly one view at a time:
  *
- *   desk        a quiet surface: one statement, one honest status line and
- *               two doors — ENGAGEMENT QUEUE and ENGAGEMENT.
- *   queue       the sorted ledger of paid work; a row opens its engagement.
- *   engagement  the full desk detail for the cursor's engagement.
+ *   desk   a quiet surface: one statement, one honest status line and three
+ *          doors — ENGAGEMENT QUEUE, ENGAGEMENT, CLOSE LEDGER. Each door
+ *          inverts to paper on hover or focus: the light floods in, the
+ *          label goes dark. Disabled doors stay shut.
+ *   queue  the sorted ledger of paid work; a row opens its engagement.
+ *   engagement
+ *          the full desk detail for the cursor's engagement.
+ *   ledger the money room — guarantees cleared, rev-share basis, fees
+ *          banked, and the delivered / SOW / closed rows behind them.
  *
  * Esc walks back out the way you came; nothing crowds anything. Keyboard
  * first: q toggles the queue door, e (or enter) opens the engagement under
- * the cursor, j/k move the cursor, a advances the selected engagement's
- * stage, esc backs out.
+ * the cursor, c opens the close ledger, j/k move the cursor, a advances the
+ * selected engagement's stage, esc backs out.
  *
- * Selling happens on the landing page; the console only works. The desk
- * keeps two quiet readouts: the status line (live, from the ledger) and the
- * close ledger strip — live conversions from engagement rows, never
- * invented numbers.
+ * Selling happens on the landing page; the console only works. Every number
+ * on the desk derives from the engagement ledger — never invented.
  */
 "use client";
 
@@ -33,7 +36,7 @@ const usd = (v: number) => `$${Math.round(v).toLocaleString("en-US")}`;
 
 const STAGE_ORDER: EngagementStage[] = ["paid", "intake", "forensics", "verdict", "delivered", "sow", "closed"];
 
-type DeskView = "desk" | "queue" | "engagement";
+type DeskView = "desk" | "queue" | "engagement" | "ledger";
 
 /** Terminal stages sink; the rest sort by money-waiting × age × undecided-verdict. */
 function sortQueue(queue: EngagementShape[], nowMs: number): EngagementShape[] {
@@ -45,12 +48,21 @@ function sortQueue(queue: EngagementShape[], nowMs: number): EngagementShape[] {
   });
 }
 
-/** Keyboard hint chip — the door's shortcut, rendered inside the button. */
+/** Keyboard hint chip — the door's shortcut; inverts with the door. */
 function Kbd({ children }: { children: ReactNode }) {
   return (
-    <kbd className="rounded border border-white/15 bg-black/25 px-1.5 py-0.5 font-mono text-[8.5px] uppercase tracking-[0.08em] text-[#8E9194] transition-colors group-hover:border-white/30 group-hover:text-[#F4F5F2]">
+    <kbd className="door-kbd rounded border px-1.5 py-0.5 font-mono text-[8.5px] uppercase tracking-[0.08em]">
       {children}
     </kbd>
+  );
+}
+
+/** The door's arrow — slides forward and goes dark as the light floods in. */
+function DoorArrow() {
+  return (
+    <span aria-hidden className="door-arrow font-mono text-[13px]">
+      →
+    </span>
   );
 }
 
@@ -131,7 +143,7 @@ export function PortalView({ snap, refresh }: { snap: CommandSnapshot; refresh: 
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
-      // esc walks back out: engagement → queue → desk.
+      // esc walks back out: engagement → queue → desk (ledger → desk).
       if (e.key === "Escape") {
         e.preventDefault();
         setView((v) => (v === "engagement" ? "queue" : "desk"));
@@ -141,6 +153,12 @@ export function PortalView({ snap, refresh }: { snap: CommandSnapshot; refresh: 
       if (e.key === "q") {
         e.preventDefault();
         setView((v) => (v === "queue" ? "desk" : "queue"));
+        return;
+      }
+      // c — the money room, from anywhere.
+      if (e.key === "c") {
+        e.preventDefault();
+        setView("ledger");
         return;
       }
       if (queue.length === 0) return;
@@ -172,7 +190,7 @@ export function PortalView({ snap, refresh }: { snap: CommandSnapshot; refresh: 
         return;
       }
       // a — advance the selected engagement one legal stage (working views only).
-      if (view !== "desk" && e.key === "a") {
+      if (view !== "desk" && view !== "ledger" && e.key === "a") {
         const cur = queue[idx];
         if (!cur) return;
         const idxCur = STAGE_ORDER.indexOf(cur.status as EngagementStage);
@@ -198,7 +216,6 @@ export function PortalView({ snap, refresh }: { snap: CommandSnapshot; refresh: 
   const sowE = queue.filter((e) => e.status === "sow");
   const closedE = queue.filter((e) => e.status === "closed");
   const deliveredUsd = deliveredE.reduce((sum, e) => sum + e.amountUsd, 0);
-  const sowUsd = sowE.reduce((sum, e) => sum + e.amountUsd, 0);
   const revShareBasis = clearedUsd * LEAKAGE_MODEL.revShareRate;
 
   const errorStrip = error ? (
@@ -209,7 +226,7 @@ export function PortalView({ snap, refresh }: { snap: CommandSnapshot; refresh: 
 
   return (
     <div className="flex h-full flex-col overflow-hidden p-5">
-      {/* ================= DESK — the quiet surface, two doors ================ */}
+      {/* ================= DESK — the quiet surface, three doors ============== */}
       {view === "desk" && (
         <>
           <div className="flex shrink-0 items-center justify-between">
@@ -226,8 +243,8 @@ export function PortalView({ snap, refresh }: { snap: CommandSnapshot; refresh: 
                 Where money becomes work.
               </h2>
               <p className="mt-3 max-w-[500px] text-[12.5px] leading-relaxed text-[#8E9194]">
-                The landing page closes the deal — this desk runs the audit. Two doors: the queue of paid
-                engagements, and the engagement itself.
+                The landing page closes the deal — this desk runs the audit. Three doors: the queue, the
+                engagement, and the money the work returns.
               </p>
 
               {/* status line — live numbers, zero tiles */}
@@ -249,42 +266,37 @@ export function PortalView({ snap, refresh }: { snap: CommandSnapshot; refresh: 
                 </span>
               </div>
 
-              {/* the two doors */}
+              {/* the three doors — hover or focus and the light floods in */}
               <div className="mt-6 flex flex-col gap-3">
                 <button
                   onClick={() => setView("queue")}
-                  className="group neu-lg flex items-center justify-between gap-4 rounded-xl px-6 py-5 text-left transition-all hover:border-white/25 hover:bg-[#151815] focus:outline-none focus-visible:ring-1 focus-visible:ring-white/40"
+                  className="door flex items-center justify-between gap-4 px-6 py-5 text-left focus:outline-none"
                 >
                   <span className="min-w-0">
-                    <span className="block font-display text-[18px] font-semibold tracking-[-0.02em] text-[#F4F5F2]">
+                    <span className="block font-display text-[18px] font-semibold tracking-[-0.02em] text-[var(--door-title)] transition-colors duration-150">
                       Engagement Queue
                     </span>
-                    <span className="mt-1 block truncate font-mono text-[9px] uppercase tracking-[0.14em] text-[#6E736E]">
+                    <span className="mt-1 block truncate font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--door-meta)] transition-colors duration-150">
                       {queue.length} engagement{queue.length === 1 ? "" : "s"} · {usd(underAudit)} waiting ·
                       money-waiting × age
                     </span>
                   </span>
                   <span className="flex shrink-0 items-center gap-3">
                     <Kbd>Q</Kbd>
-                    <span
-                      aria-hidden
-                      className="font-mono text-[13px] text-[#5F6460] transition-all group-hover:translate-x-1 group-hover:text-[#F4F5F2]"
-                    >
-                      →
-                    </span>
+                    <DoorArrow />
                   </span>
                 </button>
 
                 <button
                   onClick={() => selected && setView("engagement")}
                   disabled={!selected}
-                  className="group neu-lg flex items-center justify-between gap-4 rounded-xl px-6 py-5 text-left transition-all hover:border-white/25 hover:bg-[#151815] focus:outline-none focus-visible:ring-1 focus-visible:ring-white/40 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-[rgba(216,216,216,0.12)] disabled:hover:bg-transparent"
+                  className="door flex items-center justify-between gap-4 px-6 py-5 text-left focus:outline-none disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <span className="min-w-0">
-                    <span className="block font-display text-[18px] font-semibold tracking-[-0.02em] text-[#F4F5F2]">
+                    <span className="block font-display text-[18px] font-semibold tracking-[-0.02em] text-[var(--door-title)] transition-colors duration-150">
                       Engagement
                     </span>
-                    <span className="mt-1 block truncate font-mono text-[9px] uppercase tracking-[0.14em] text-[#6E736E]">
+                    <span className="mt-1 block truncate font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--door-meta)] transition-colors duration-150">
                       {selected
                         ? `${selected.clientName} · ${STAGE_LABELS[selected.status as EngagementStage] ?? selected.status} — ${nextActionFor(selected).action}`
                         : "nothing on the cursor — open the queue"}
@@ -292,32 +304,34 @@ export function PortalView({ snap, refresh }: { snap: CommandSnapshot; refresh: 
                   </span>
                   <span className="flex shrink-0 items-center gap-3">
                     <Kbd>E</Kbd>
-                    <span
-                      aria-hidden
-                      className="font-mono text-[13px] text-[#5F6460] transition-all group-hover:translate-x-1 group-hover:text-[#F4F5F2]"
-                    >
-                      →
+                    <DoorArrow />
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setView("ledger")}
+                  className="door flex items-center justify-between gap-4 px-6 py-5 text-left focus:outline-none"
+                >
+                  <span className="min-w-0">
+                    <span className="block font-display text-[18px] font-semibold tracking-[-0.02em] text-[var(--door-title)] transition-colors duration-150">
+                      Close Ledger
                     </span>
+                    <span className="mt-1 block truncate font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--door-meta)] transition-colors duration-150">
+                      delivered {deliveredE.length} · sow {sowE.length} · closed {closedE.length} · rev-share basis{" "}
+                      {usd(revShareBasis)}
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-3">
+                    <Kbd>C</Kbd>
+                    <DoorArrow />
                   </span>
                 </button>
               </div>
 
               <p className="mt-6 font-mono text-[8.5px] uppercase tracking-[0.2em] text-[#5F6460]">
-                q queue · e engagement · j / k cursor · a advance stage · esc back
+                q queue · e engagement · c close ledger · j / k cursor · a advance stage · esc back
               </p>
             </div>
-          </div>
-
-          {/* close ledger — one quiet line, live conversions only */}
-          <div className="shrink-0 border-t border-white/[0.06] pt-3">
-            <p className="font-mono text-[9px] uppercase leading-relaxed tracking-[0.14em] text-[#5F6460]">
-              <span className="text-[#8E9194]">close ledger</span>
-              {" — "}delivered {deliveredE.length} · {usd(deliveredUsd)} fee banked
-              {" — "}sow {sowE.length} · {usd(sowUsd)} live
-              {" — "}closed {closedE.length}
-              {" — "}rev-share basis {usd(revShareBasis)} ({Math.round(LEAKAGE_MODEL.revShareRate * 100)}% of{" "}
-              {usd(clearedUsd)} confirmed)
-            </p>
           </div>
         </>
       )}
@@ -415,6 +429,130 @@ export function PortalView({ snap, refresh }: { snap: CommandSnapshot; refresh: 
 
           <p className="shrink-0 pt-2 text-center font-mono text-[8.5px] uppercase tracking-[0.2em] text-[#5F6460]">
             j / k cursor · enter opens the engagement · esc back to the desk
+          </p>
+        </>
+      )}
+
+      {/* ================= CLOSE LEDGER — the money room ====================== */}
+      {view === "ledger" && (
+        <>
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-4">
+              <BackBtn label="Desk" onClick={() => setView("desk")} />
+              <SectionLabel>Close ledger</SectionLabel>
+            </div>
+            <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#5F6460]">
+              live conversions · zero invented numbers
+            </p>
+          </div>
+
+          <div className="cc-scroll mx-auto mt-4 min-h-0 w-full max-w-[780px] flex-1 overflow-y-auto pb-2">
+            {/* summary — only what the ledger can prove */}
+            <div className="neu-lg rounded-xl px-6 py-5">
+              <p className="font-mono text-[9.5px] uppercase tracking-[0.2em] text-[#8E9194]">
+                The money ledger — model {LEAKAGE_MODEL.version}
+              </p>
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                {(
+                  [
+                    ["guarantees cleared", `${cleared.length}`, `${usd(clearedUsd)} confirmed recoverable`],
+                    [
+                      "rev-share basis",
+                      usd(revShareBasis),
+                      `${Math.round(LEAKAGE_MODEL.revShareRate * 100)}% of confirmed leakage`,
+                    ],
+                    ["fees banked", usd(deliveredUsd), `${deliveredE.length} audit${deliveredE.length === 1 ? "" : "s"} delivered`],
+                  ] as Array<[string, string, string]>
+                ).map(([k, v, sub]) => (
+                  <div key={k}>
+                    <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#6E736E]">{k}</p>
+                    <p className="mt-1 font-display text-[22px] font-semibold leading-none tracking-[-0.03em] tabular-nums text-[#F4F5F2]">
+                      {v}
+                    </p>
+                    <p className="mt-1 font-mono text-[8.5px] uppercase tracking-[0.1em] text-[#5F6460]">{sub}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* conversion sections — each row traces to a real engagement */}
+            {(
+              [
+                ["delivered — fee banked, deliverable sealed", deliveredE],
+                ["sow — continuous margin defense live", sowE],
+                ["closed — ledger sealed", closedE],
+              ] as Array<[string, EngagementShape[]]>
+            ).map(([label, rows]) =>
+              rows.length > 0 ? (
+                <div key={label} className="mt-5">
+                  <p className="px-1 font-mono text-[9px] uppercase tracking-[0.18em] text-[#6E736E]">{label}</p>
+                  <div className="mt-2">
+                    {rows.map((e) => (
+                      <div
+                        key={e.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => {
+                          setCursorId(e.id);
+                          setView("engagement");
+                        }}
+                        onKeyDown={(ev) => {
+                          if (ev.key === "Enter" || ev.key === " ") {
+                            ev.preventDefault();
+                            setCursorId(e.id);
+                            setView("engagement");
+                          }
+                        }}
+                        className="neu mb-2 cursor-pointer rounded-xl px-5 py-4 transition-all hover:border-white/25"
+                      >
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          <p className="font-display text-[15.5px] font-semibold tracking-[-0.02em] text-[#F4F5F2]">
+                            {e.clientName}
+                          </p>
+                          <Chip tone="raised">{STAGE_LABELS[e.status as EngagementStage] ?? e.status}</Chip>
+                          <p className="ml-auto font-display text-[16px] font-semibold tabular-nums text-[#F4F5F2]">
+                            {usd(e.amountUsd)}
+                          </p>
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-[#8E9194]">
+                            {e.status === "delivered"
+                              ? `fee banked${e.deliveredAtMs ? ` · delivered ${Math.max(0, Math.floor((nowMs - e.deliveredAtMs) / 86_400_000))}d ago` : ""}`
+                              : e.status === "sow"
+                                ? `recovery ops live${e.prospectName ? ` · ${e.prospectName}` : ""}`
+                                : "guarantee honored · ledger sealed"}
+                          </p>
+                          {e.deliverableUrl && (
+                            <a
+                              href={e.deliverableUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(ev) => ev.stopPropagation()}
+                              className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#8E9194] underline decoration-white/20 underline-offset-4 transition-colors hover:text-[#F4F5F2]"
+                            >
+                              deliverable ↗
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null,
+            )}
+
+            {deliveredE.length === 0 && sowE.length === 0 && closedE.length === 0 && (
+              <div className="mt-6 flex flex-col items-center justify-center px-8 text-center">
+                <p className="font-display text-[15px] font-semibold text-[#F4F5F2]">Nothing delivered yet</p>
+                <p className="mt-1.5 font-mono text-[10px] uppercase leading-relaxed tracking-[0.12em] text-[#5F6460]">
+                  the desk works the queue — conversions land here the moment an audit leaves the building
+                </p>
+              </div>
+            )}
+          </div>
+
+          <p className="shrink-0 pt-2 text-center font-mono text-[8.5px] uppercase tracking-[0.2em] text-[#5F6460]">
+            rows open the engagement · esc back to the desk
           </p>
         </>
       )}
