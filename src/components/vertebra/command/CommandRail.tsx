@@ -106,7 +106,7 @@ export function CommandRail({
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#F4F5F2]">Operator // Josias</p>
           <p className="mt-0.5 text-[11px] text-[#8E9194]">Clearance: {personaCode} · 1-of-1</p>
           <p className="mt-3 font-mono text-[9.5px] leading-relaxed text-[#5F6460]">
-            j/k move · enter open · c call · s snooze · ⌘K jump
+            j/k move · e cold email · f filter · ? help · ⌘K jump
           </p>
         </div>
       </div>

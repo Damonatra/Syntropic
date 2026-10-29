@@ -165,7 +165,7 @@ export function StrikeView({
             filter <span className="text-[#F4F5F2]">{activeLabel}</span> — {ranked.length} of {counts.all} eligible · {money(stake)} at stake
           </p>
           <p className="mt-1 font-mono text-[10.5px] uppercase tracking-[0.14em] text-[#5F6460]">
-            j / k move · enter dossier · c call · x defer · s snooze
+            j / k move · enter dossier · e cold email · c dial · x defer · s snooze · f filter · ? help
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -248,6 +248,16 @@ const ACTED_LABELS: Record<string, string> = {
   emailed: "email staged",
 };
 
+/** M7 — QLV driver labels, short form for the card chips. */
+const DRIVER_LABELS: Record<string, string> = {
+  rfq_latency: "RFQ latency",
+  legacy_portal: "legacy portal",
+  unapplied_spa: "unapplied SPAs",
+  manual_quoting_share: "manual quoting",
+  vertical_fit: "vertical fit",
+  size_fit: "size fit",
+};
+
 function StrikeCard({
   lead,
   rank,
@@ -275,6 +285,16 @@ function StrikeCard({
       ? `${EVENT_VERBS[lead.telemetry.lastEventType] ?? lead.telemetry.lastEventType} ${relTime(lead.telemetry.lastEventAtMs, now)} · ${lead.city ?? "—"}, ${lead.country ?? "—"}`
       : "No telemetry yet — sequence-driven";
   const snoozed = lead.snoozedUntilMs != null && lead.snoozedUntilMs > now;
+  // M7 — top QLV driver: the factor with the largest weighted contribution
+  const topDriver = useMemo(() => {
+    const fs = lead.score?.factors ?? [];
+    if (fs.length === 0) return null;
+    return fs.reduce((a, b) => (b.points * b.weight > a.points * a.weight ? b : a));
+  }, [lead.score]);
+  // M7 — queue aging: untouched for a week+ earns a mark (lastAction, else score age)
+  const lastTouch = lead.lastActionAtMs ?? (lead.score ? Date.parse(lead.score.createdAt) : null);
+  const ageDays = lastTouch != null && Number.isFinite(lastTouch) ? Math.floor((now - lastTouch) / 86_400_000) : null;
+  const aging = ageDays != null && ageDays >= 7 && !snoozed;
 
   return (
     <SoftCard
@@ -304,6 +324,11 @@ function StrikeCard({
             <span className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[#F4F5F2]">
               · {ACTED_LABELS[actedState] ?? actedState}
             </span>
+          )}
+          {aging && (
+            <Chip tone={ageDays != null && ageDays >= 14 ? "raised" : "outline"}>
+              {ageDays != null && ageDays >= 14 ? "stale" : "aging"} {ageDays}d
+            </Chip>
           )}
         </div>
         <HudMeta node={`AST-0${(lead.id.charCodeAt(4) % 8) + 1}`} hash={lead.id.slice(0, 4)} />
@@ -358,6 +383,11 @@ function StrikeCard({
           <p className="mt-1.5 text-[12.5px] text-[#8E9194]">{trigger}</p>
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
+            {topDriver && (
+              <Chip tone="raised">
+                {DRIVER_LABELS[topDriver.key] ?? topDriver.key} · {Math.round(topDriver.points * topDriver.weight)}
+              </Chip>
+            )}
             <Chip tone="well">{verticalLabel(lead.vertical)}</Chip>
             {lead.erp && <ErpBadge erp={lead.erp.detected_erp} />}
             {lead.quotePortalType && <Chip>{PORTAL_LABELS[lead.quotePortalType] ?? lead.quotePortalType}</Chip>}

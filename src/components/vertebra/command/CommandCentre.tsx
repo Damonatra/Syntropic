@@ -74,6 +74,21 @@ interface Toast {
   prospectId?: string;
 }
 
+/** M7 — the grammar overlay's single source of truth. */
+const SHORTCUTS: Array<[string, string, string]> = [
+  ["global", "1 – 6", "switch deck"],
+  ["global", "⌘K", "command jump"],
+  ["global", "?", "this overlay"],
+  ["strike", "j / k", "move cursor"],
+  ["strike", "enter", "open dossier"],
+  ["strike", "e", "dossier + cold email desk"],
+  ["strike", "c", "dial contact"],
+  ["strike", "x", "defer"],
+  ["strike", "s", "snooze 24h"],
+  ["strike", "f", "cycle filter"],
+  ["strike", "esc", "close / dismiss"],
+];
+
 const VIEW_TITLES: Record<ViewKey, string> = {
   radar: "Radar — margin telemetry, live",
   strike: "Strike — recovery queue",
@@ -100,6 +115,9 @@ export function CommandCentre() {
   // M5 — optimistic action ledger + one-shot guard
   const [acted, setActed] = useState<Record<string, string>>({});
   const actingRef = useRef<Set<string>>(new Set());
+  // M7 — keyboard grammar surface
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [dossierFocusCompose, setDossierFocusCompose] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [connected, setConnected] = useState(false);
   const [clock, setClock] = useState("");
@@ -390,7 +408,8 @@ export function CommandCentre() {
   const strikeCursorIdx = view === "strike" ? ranked.findIndex((l) => l.id === cursorId) : -1;
   const strikeCursorName = strikeCursorIdx >= 0 ? ranked[strikeCursorIdx].name : null;
 
-  const openDossier = useCallback((lead: CommandLead) => {
+  const openDossier = useCallback((lead: CommandLead, opts?: { focusCompose?: boolean }) => {
+    setDossierFocusCompose(Boolean(opts?.focusCompose));
     setDossier(lead);
     setDossierOpen(true);
   }, []);
@@ -477,11 +496,17 @@ export function CommandCentre() {
         return;
       }
       if (e.key === "Escape") {
-        if (paletteOpen) setPaletteOpen(false);
+        if (shortcutsOpen) setShortcutsOpen(false);
+        else if (paletteOpen) setPaletteOpen(false);
         else if (dossierOpen) setDossierOpen(false);
         return;
       }
-      if (paletteOpen || dossierOpen) return;
+      if (e.key === "?") {
+        e.preventDefault();
+        setShortcutsOpen((o) => !o);
+        return;
+      }
+      if (shortcutsOpen || paletteOpen || dossierOpen) return;
 
       if (["1", "2", "3", "4", "5", "6"].includes(e.key)) {
         setView(VIEW_KEYS[Number(e.key) - 1]);
@@ -509,6 +534,14 @@ export function CommandCentre() {
         if (cursorId) void doAction(cursorId, "deferred");
       } else if (e.key === "s") {
         if (cursorId) void doAction(cursorId, "snoozed");
+      } else if (e.key === "e") {
+        const lead = snap?.leads.find((l) => l.id === cursorId);
+        if (lead) openDossier(lead, { focusCompose: true }); // M7 — straight to the cold email desk
+      } else if (e.key === "f") {
+        // M7 — cycle filters: all → critical → hot → now → all (persists via handleFilter)
+        const idx = STRIKE_FILTERS.findIndex(([k]) => k === filter);
+        const next = STRIKE_FILTERS[(idx + 1) % STRIKE_FILTERS.length][0];
+        handleFilter(next);
       } else if (e.key === "a") {
         const first = snap?.triage.pending[0];
         if (first?.draftId) void doTriage(first.draftId, "approved");
@@ -516,7 +549,7 @@ export function CommandCentre() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [view, rankedIds, cursorId, snap, paletteOpen, dossierOpen, doAction, doTriage, openDossier]);
+  }, [view, rankedIds, cursorId, snap, paletteOpen, dossierOpen, shortcutsOpen, filter, doAction, doTriage, openDossier, handleFilter]);
 
   // ---- render ------------------------------------------------------------ //
   return (
@@ -631,6 +664,44 @@ export function CommandCentre() {
         </div>
       </main>
 
+      {/* M7 — keyboard grammar overlay (?) */}
+      {shortcutsOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Keyboard shortcuts"
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-6"
+          onClick={() => setShortcutsOpen(false)}
+        >
+          <div
+            className="w-full max-w-[560px] rounded-xl border border-white/[0.14] bg-[#131513] p-6 shadow-[0_30px_80px_rgba(0,0,0,0.6)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[#F4F5F2]">enclave keyboard grammar</p>
+              <button
+                type="button"
+                onClick={() => setShortcutsOpen(false)}
+                className="font-mono text-[10px] uppercase tracking-[0.14em] text-[#6E736E] transition-colors hover:text-[#F4F5F2]"
+              >
+                esc · close
+              </button>
+            </div>
+            <div className="mt-5 grid grid-cols-1 gap-x-10 gap-y-1 sm:grid-cols-2">
+              {SHORTCUTS.map(([group, keys, label]) => (
+                <div key={`${group}-${keys}`} className="flex items-baseline justify-between gap-3 border-b border-white/[0.05] py-1.5">
+                  <span className="truncate text-[12px] text-[#C9CCC7]">
+                    <span className="mr-2 font-mono text-[9px] uppercase tracking-[0.16em] text-[#5F6460]">{group}</span>
+                    {label}
+                  </span>
+                  <kbd className="shrink-0 rounded border border-white/[0.16] bg-[#0B0C0B] px-1.5 py-0.5 font-mono text-[10px] text-[#F4F5F2]">{keys}</kbd>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Alert toasts — alert = deep onyx inverse, info = white tactile */}
       <div className="pointer-events-none fixed right-5 top-5 z-[80] flex w-[380px] max-w-[calc(100vw-40px)] flex-col gap-2.5">
         {toasts.map((t) => (
@@ -661,7 +732,7 @@ export function CommandCentre() {
         ))}
       </div>
 
-      <DossierDrawer lead={dossier} open={dossierOpen} onOpenChange={setDossierOpen} onAction={doAction} />
+      <DossierDrawer lead={dossier} open={dossierOpen} onOpenChange={setDossierOpen} onAction={doAction} focusCompose={dossierFocusCompose} />
 
       {/* Command palette */}
       <Dialog open={paletteOpen} onOpenChange={setPaletteOpen}>

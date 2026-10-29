@@ -108,11 +108,14 @@ export function DossierDrawer({
   open,
   onOpenChange,
   onAction,
+  focusCompose = false,
 }: {
   lead: CommandLead | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAction: (prospectId: string, action: "called" | "deferred" | "snoozed" | "booked" | "note", note?: string) => Promise<void> | void;
+  /** M7 — opened via the `e` key: land the operator on the cold email desk. */
+  focusCompose?: boolean;
 }) {
   const [data, setData] = useState<DossierData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -126,6 +129,7 @@ export function DossierDrawer({
   const [copied, setCopied] = useState(false);
   const [acting, setActing] = useState(false);
   const seededForRef = useRef<string | null>(null);
+  const composeInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open || !lead) {
@@ -153,6 +157,16 @@ export function DossierDrawer({
       })
       .catch(() => {});
   }
+
+  // M7 — `e` opens the dossier straight onto the cold email desk.
+  useEffect(() => {
+    if (!open || !data || !focusCompose) return;
+    const t = setTimeout(() => {
+      composeInputRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+      composeInputRef.current?.focus({ preventScroll: true });
+    }, 150);
+    return () => clearTimeout(t);
+  }, [open, data, focusCompose]);
 
   // Angle seeds + M5 draft memory: an unsent draft survives close/reopen.
   // Local memory first, hook seeds second — seeded once per prospect.
@@ -445,6 +459,7 @@ export function DossierDrawer({
                   </div>
                 )}
                 <input
+                  ref={composeInputRef}
                   value={composeSubject}
                   onChange={(e) => {
                     setComposeSubject(e.target.value);
