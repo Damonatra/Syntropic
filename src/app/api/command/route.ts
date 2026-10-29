@@ -23,28 +23,37 @@ import {
   type FunnelStage,
   type KpiInputs,
   type OpsSnapshot,
+  type OpsWatchAlert,
   type EnginePulseRow,
   type EngagementDocumentShape,
   type EngagementEventShape,
   type EngagementShape,
+  type OpsBriefing,
   type PulseEvent,
   type PulseKind,
   type ReplyIntent,
   type ScoreShape,
   type TriageItem,
+  type WatchHealth,
 } from "@/lib/vertebra/command";
 import {
   ENGINE_STALE_MIN_MS,
+  ESCALATE_AFTER_MS,
+  correlateDeck,
   deriveBaselineSentinels,
+  deriveCoverageAlerts,
   deriveEngineAlerts,
   deriveEngineView,
+  deriveFlapAlerts,
   deriveFunnelAlerts,
   deriveSlaAlerts,
+  deriveQueueForecastAlerts,
   deriveSystemAlerts,
   deriveVitals,
+  escalateDeck,
   humanDuration,
-  rankAlerts,
 } from "@/lib/vertebra/watches";
+import { deliverAlert, pagerConfigured } from "@/lib/vertebra/pager";
 
 function parseErp(raw: string | null): ErpShape | null {
   if (!raw) return null;
@@ -515,8 +524,10 @@ export async function GET(request: Request) {
       // running process must survive a schema push without a restart, so new
       // tables are read through the engine, not through generated delegates.
       db
-        .$queryRawUnsafe<{ alertKey: string }[]>(`SELECT alertKey FROM OpsAlertAck`)
-        .catch(() => [] as { alertKey: string }[]),
+        .$queryRawUnsafe<{ alertKey: string; reason: string; createdAt: Date }[]>(
+          `SELECT alertKey, reason, createdAt FROM OpsAlertAck`,
+        )
+        .catch(() => [] as { alertKey: string; reason: string; createdAt: Date }[]),
       db
         .$queryRawUnsafe<{
           id: string;
@@ -533,8 +544,10 @@ export async function GET(request: Request) {
         .catch(() => [] as { id: string; engineId: string; watchId: string; status: string; detail: string | null; expectEveryMs: number | null; at: Date }[]),
       db
         .$queryRawUnsafe<{ capturedAt: Date; metricsJson: string }[]>(
-          `SELECT capturedAt, metricsJson FROM CommandBaseline WHERE capturedAt >= ? ORDER BY capturedAt ASC`,
-          new Date(now - 86_400_000),
+          // 7.5d — the sentinels' seasonal baseline reads same-hour-of-day
+          // peers across the trailing week; 24h is no longer enough history.
+          `SELECT capturedAt, metricsJson FROM CommandBaseline WHERE capturedAt >= ? ORDER BY capturedAt ASC LIMIT 400`,
+          new Date(now - 7.5 * 86_400_000),
         )
         .catch(() => [] as { capturedAt: Date; metricsJson: string }[]),
     ]);
@@ -562,30 +575,156 @@ export async function GET(request: Request) {
     }
 
     const engine = deriveEngineView(engagements, now);
-    const deck = rankAlerts(
-      [
-        ...deriveSlaAlerts(engagements, now),
-        ...deriveFunnelAlerts(
-          {
-            outboxPending,
-            dispatchFailed24h,
-            dispatchSent24h: dispatch24h,
-            verifiedEmailShare: leads.length ? Math.round((verifiedEmails / leads.length) * 100) : 0,
-            leadCount: leads.length,
-          },
-          now,
-        ),
-        ...deriveSystemAlerts({ baselineAgeMs }, now),
-        ...deriveBaselineSentinels(
-          baselineHistory.map((r) => ({
-            capturedAtMs: new Date(r.capturedAt).getTime(),
-            metrics: JSON.parse(r.metricsJson) as Partial<KpiInputs>,
-          })),
-          now,
-        ),
-        ...deriveEngineAlerts(pulseRowsShaped, now),
-      ].filter((a) => !acked.has(a.key)),
+
+    // ---- flap ledger — the watchtower's own memory ------------------------
+    // Record this sweep's presence per (watch, subject, hour), then read the
+    // trailing-24h distinct-hour counts. Recorded pre-ack-filter: an acked
+    // but still-live condition is still live, and chronicness must not
+    // escape the ledger just because each window got acknowledged.
+    const rawAlerts: OpsWatchAlert[] = [
+      ...deriveSlaAlerts(engagements, now),
+      ...deriveFunnelAlerts(
+        {
+          outboxPending,
+          dispatchFailed24h,
+          dispatchSent24h: dispatch24h,
+          verifiedEmailShare: leads.length ? Math.round((verifiedEmails / leads.length) * 100) : 0,
+          leadCount: leads.length,
+        },
+        now,
+      ),
+      ...deriveSystemAlerts({ baselineAgeMs }, now),
+      ...deriveBaselineSentinels(
+        baselineHistory.map((r) => ({
+          capturedAtMs: new Date(r.capturedAt).getTime(),
+          metrics: JSON.parse(r.metricsJson) as Partial<KpiInputs>,
+        })),
+        now,
+      ),
+      ...deriveEngineAlerts(pulseRowsShaped, now),
+      ...deriveQueueForecastAlerts(engagements, now),
+      ...deriveCoverageAlerts(
+        {
+          engagements,
+          newLeads7d: await db.prospect.count({ where: { createdAt: { gte: new Date(now - 7 * 86_400_000) } } }),
+          newLeadsPrior21d: await db.prospect.count({
+            where: {
+              createdAt: { gte: new Date(now - 28 * 86_400_000), lt: new Date(now - 7 * 86_400_000) },
+            },
+          }),
+        },
+        now,
+      ),
+    ];
+    const hourBucket = Math.floor(now / 3_600_000);
+    try {
+      for (const a of rawAlerts) {
+        const watchKey = `${a.watchId}:${a.subjectId ?? "system"}`;
+        await db.$executeRawUnsafe(
+          `INSERT INTO OpsWatchFire (id, watchKey, hourBucket, lastFireAt) VALUES (?, ?, ?, ?)
+           ON CONFLICT(watchKey, hourBucket) DO NOTHING`,
+          `fire_${now.toString(36)}_${Math.random().toString(36).slice(2, 6)}_${watchKey.length.toString(36)}`,
+          watchKey,
+          hourBucket,
+          new Date(now),
+        );
+      }
+    } catch {
+      // Ledger failure never breaks the read path — flap counts simply lag.
+    }
+    const fireRows = await db
+      .$queryRawUnsafe<{ watchKey: string; c: number }[]>(
+        // CAST keeps the count an integer — SQLite COUNT(*) arrives as BigInt
+        // through raw SQL and BigInt cannot survive JSON.stringify.
+        `SELECT watchKey, CAST(COUNT(*) AS INTEGER) as c FROM OpsWatchFire WHERE hourBucket >= ? GROUP BY watchKey`,
+        hourBucket - 24,
+      )
+      .catch(() => [] as { watchKey: string; c: number }[]);
+    const firesByKey = new Map(fireRows.map((f) => [f.watchKey, Number(f.c)]));
+
+    // ---- per-watch ack accuracy — the tuning loop's read-out --------------
+    const healthTally = new Map<string, { acked: number; real: number; fp: number; handled: number }>();
+    for (const row of ackRows) {
+      if (new Date(row.createdAt).getTime() < now - 7 * 86_400_000) continue;
+      const watchId = row.alertKey.split(":")[0] ?? "unknown";
+      const t = healthTally.get(watchId) ?? { acked: 0, real: 0, fp: 0, handled: 0 };
+      t.acked += 1;
+      if (row.reason === "false_positive") t.fp += 1;
+      else if (row.reason === "handled") t.handled += 1;
+      else t.real += 1;
+      healthTally.set(watchId, t);
+    }
+    const watchHealth: WatchHealth[] = [...healthTally.entries()]
+      .filter(([, t]) => t.acked >= 3) // a sample below 3 verdicts is a coin flip
+      .map(([watchId, t]) => ({
+        watchId,
+        acked7d: t.acked,
+        real7d: t.real,
+        falsePositive7d: t.fp,
+        realSharePct: t.real + t.fp > 0 ? Math.round((t.real / (t.real + t.fp)) * 100) : null,
+      }))
+      .sort((a, b) => b.acked7d - a.acked7d);
+
+    // ---- first-seen ledger read (feeds the escalation ladder) --------------
+    // Number() twice over: SQLite MIN() also surfaces as BigInt through raw
+    // SQL, and BigInt cannot pass new Date() or JSON.stringify.
+    const firstSeenRows = await db
+      .$queryRawUnsafe<{ watchKey: string; firstSeen: number }[]>(
+        `SELECT watchKey, CAST(MIN(lastFireAt) AS INTEGER) as firstSeen FROM OpsWatchFire WHERE hourBucket >= ? GROUP BY watchKey`,
+        hourBucket - 24,
+      )
+      .catch(() => [] as { watchKey: string; firstSeen: number }[]);
+    const firstSeenByKey = new Map(firstSeenRows.map((r) => [r.watchKey, Number(r.firstSeen)]));
+
+    // Correlate after the ack filter: echoes are ranked under their root, each
+    // row keeping its own ack key — one incident, not twelve rows. Flap alarms
+    // join the raw list first: the self-audit rides the same rank and ack law.
+    const deck = escalateDeck(
+      correlateDeck(
+        [...rawAlerts, ...deriveFlapAlerts(fireRows.map((f) => ({ watchKey: f.watchKey, fires24h: f.c })), now)]
+          .map((a) => ({
+            ...a,
+            fires24h: firesByKey.get(`${a.watchId}:${a.subjectId ?? "system"}`),
+          }))
+          .filter((a) => !acked.has(a.key)),
+      ),
+      firstSeenByKey,
+      now,
     );
+
+    // ---- escalation pager — the out-of-band rung of the ladder -------------
+    // An escalated crit re-pages at most every 15 minutes per alert key, and
+    // only through channels actually configured (Telegram / Slack env). With
+    // none set the attempt list is empty and reported honestly — the enclave
+    // stays closed and the deck remains the whole ladder.
+    const gPaged = globalThis as unknown as { __vertebraPaged?: Map<string, number> };
+    if (!gPaged.__vertebraPaged) gPaged.__vertebraPaged = new Map();
+    const pagedAt = gPaged.__vertebraPaged;
+    const channels = pagerConfigured();
+    if (channels.length > 0) {
+      for (const a of deck) {
+        if (!a.escalated) continue;
+        const last = pagedAt.get(a.key);
+        if (last != null && now - last < ESCALATE_AFTER_MS) continue;
+        pagedAt.set(a.key, now);
+        void deliverAlert(`ESCALATED · ${a.title}`, `${a.action}\nmath: ${a.evidence ?? "n/a"}`).then((out) => {
+          if (out.delivered.length === 0) {
+            console.warn(`[watchtower] pager attempt for ${a.watchId} delivered nowhere: attempted=${out.attempted.join(",") || "none configured"}`);
+          }
+        });
+      }
+    }
+
+    // ---- the morning brief — one glance answers "what changed" -------------
+    const acked24h = ackRows.filter((r) => new Date(r.createdAt).getTime() >= now - 86_400_000).length;
+    const etas = deck.map((a) => a.etaMs).filter((x): x is number => x != null && x > 0);
+    const briefing: OpsBriefing = {
+      fired24h: firstSeenRows.length,
+      acked24h,
+      liveNow: deck.length,
+      nextBreachMs: etas.length ? Math.min(...etas) : null,
+      atRiskDollars: engine.stages.reduce((s, st) => s + st.atRiskDollars, 0),
+    };
 
     const vitals = deriveVitals({ snapshotBuildMs: Date.now() - t0, baselineAgeMs, outboxPending, deckSize: deck.length });
     if (pulseRowsShaped.length > 0) {
@@ -610,6 +749,8 @@ export async function GET(request: Request) {
       deck,
       engine,
       enginePulses: pulseRowsShaped,
+      watchHealth,
+      briefing,
       outboxPending,
       outboxPublished,
       dispatchesSent24h: dispatch24h,

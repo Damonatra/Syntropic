@@ -67,6 +67,8 @@ export function OpsView({
   const deck = snap.ops.deck ?? [];
   const engine = snap.ops.engine ?? null;
   const pulses = snap.ops.enginePulses ?? [];
+  const watchHealth = snap.ops.watchHealth ?? [];
+  const briefing = snap.ops.briefing ?? null;
 
   const [cursor, setCursor] = useState(0);
   const [drawerFor, setDrawerFor] = useState<OpsWatchAlert | null>(null);
@@ -80,21 +82,21 @@ export function OpsView({
   }, [deck.length, cursor]);
 
   const ack = useCallback(
-    async (a: OpsWatchAlert) => {
+    async (a: OpsWatchAlert, reason: "real" | "false_positive" | "handled" = "real") => {
       setBusy(true);
       setError(null);
       try {
         const res = await fetch("/api/ops/ack", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ key: a.key }),
+          body: JSON.stringify({ key: a.key, reason }),
         });
         if (!res.ok) {
           const detail = (await res.json().catch(() => ({}))) as { error?: string; hint?: string };
           setError(detail.hint ?? detail.error ?? `ack_${res.status}`);
           return false;
         }
-        setAckFlash(a.watchId);
+        setAckFlash(`${a.watchId} · ${reason.replace("_", " ")}`);
         await refresh();
         return true;
       } catch {
@@ -130,7 +132,13 @@ export function OpsView({
         setCursor((c) => Math.max(0, c - 1));
       } else if (e.key === "a") {
         const a = deck[cursor];
-        if (a) void ack(a);
+        if (a) void ack(a, "real");
+      } else if (e.key === "f") {
+        const a = deck[cursor];
+        if (a) void ack(a, "false_positive");
+      } else if (e.key === "h") {
+        const a = deck[cursor];
+        if (a) void ack(a, "handled");
       } else if (e.key === "Enter") {
         const a = deck[cursor];
         if (a) {
@@ -159,14 +167,13 @@ export function OpsView({
     [connected, vitals],
   );
 
-  const counts = useMemo(
-    () => ({
-      crit: deck.filter((a) => a.severity === "crit").length,
-      warn: deck.filter((a) => a.severity === "warn").length,
-      info: deck.filter((a) => a.severity === "info").length,
-    }),
-    [deck],
-  );
+  const counts = useMemo(() => {
+    const crit = deck.filter((a) => a.severity === "crit").length;
+    const warn = deck.filter((a) => a.severity === "warn").length;
+    const info = deck.filter((a) => a.severity === "info").length;
+    const roots = deck.filter((a) => !a.causedBy).length;
+    return { crit, warn, info, roots, explained: deck.length - roots };
+  }, [deck]);
 
   // ---- sequence engine (real — kept from the old tab) --------------------- //
   const [tick, setTick] = useState<TickResult | null>(null);
@@ -209,13 +216,23 @@ export function OpsView({
             <LiveDot level={counts.crit > 0 ? "fail" : counts.warn > 0 ? "warn" : "live"} />
             {deck.length === 0
               ? "All watches quiet"
-              : `${deck.length} watch${deck.length > 1 ? "es" : ""} live — ${counts.crit} crit · ${counts.warn} warn${counts.info ? ` · ${counts.info} info` : ""}`}
+              : `${counts.roots} incident${counts.roots > 1 ? "s" : ""} live${counts.explained ? ` · ${counts.explained} explained` : ""} — ${counts.crit} crit · ${counts.warn} warn${counts.info ? ` · ${counts.info} info` : ""}`}
           </p>
           <p className="mt-1 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#5F6460]">
-            silence is the product · every alarm carries its math
+            one incident, not twelve rows · every alarm carries its math
           </p>
         </div>
       </div>
+
+      {/* the morning brief — one glance answers "what changed" */}
+      {briefing && (
+        <p className="mt-3 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#5F6460]">
+          24h brief — {briefing.fired24h} watch{briefing.fired24h === 1 ? "" : "es"} fired · {briefing.acked24h} acked ·{" "}
+          {briefing.liveNow} live now
+          {briefing.nextBreachMs != null ? ` · next breach in ${humanDuration(briefing.nextBreachMs)}` : ""} ·{" "}
+          <span className="text-[#C9CCC7]">{usd(briefing.atRiskDollars)}</span> at risk
+        </p>
+      )}
 
       {error && (
         <p className="mt-4 rounded-lg border border-white/20 bg-[#141614] px-4 py-2 font-mono text-[10.5px] uppercase tracking-[0.12em] text-[#FF8A7A]">
@@ -241,7 +258,7 @@ export function OpsView({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <SectionLabel>Alert deck</SectionLabel>
           <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#5F6460]">
-            ranked crit → warn → info, then time-to-impact · j / k · a ack · enter opens
+            ranked crit → warn → info, then time-to-impact · echoes explained under their root · j / k · a ack real · f false positive · h handled · enter opens
           </p>
         </div>
 
@@ -274,8 +291,8 @@ export function OpsView({
                     }
                   }}
                   className={`mb-2 cursor-pointer rounded-xl px-5 py-4 transition-all ${
-                    isCursor ? "ink" : "neu hover:border-white/25"
-                  }`}
+                    a.causedBy ? "ml-6 " : ""
+                  }${isCursor ? "ink" : "neu cc-row"}`}
                 >
                   <div className="flex flex-wrap items-center gap-2.5">
                     <SeverityChip severity={a.severity} />
@@ -292,12 +309,23 @@ export function OpsView({
                       </p>
                     )}
                   </div>
+                  {a.causedBy && (
+                    <p className={`mt-1.5 font-mono text-[9.5px] uppercase tracking-[0.12em] ${isCursor ? "text-white/75" : "text-[#8E9194]"}`}>
+                      ↳ {a.causedBy.reason}
+                    </p>
+                  )}
+                  {a.escalated && (
+                    <p className="mt-1.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-[#FF8A7A]">
+                      unacked {humanDuration(a.escalated.unackedMs)} — escalated
+                    </p>
+                  )}
                   <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
                     <p className={`font-mono text-[10px] uppercase tracking-[0.1em] ${isCursor ? "text-white/80" : "text-[#8E9194]"}`}>
                       ▸ {a.action}
                     </p>
                     <p className="font-mono text-[8.5px] uppercase tracking-[0.12em] text-[#5F6460]">
                       {a.watch} · {a.subjectLabel}
+                      {a.fires24h != null && a.fires24h > 1 ? ` · fired ${a.fires24h}× / 24h` : ""}
                     </p>
                   </div>
                   {a.evidence && (
@@ -317,6 +345,31 @@ export function OpsView({
         )}
       </div>
 
+      {/* watch self-audit — the tuning loop's read-out */}
+      {watchHealth && watchHealth.length > 0 && (
+        <SoftCard className="mt-5 px-6 py-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <SectionLabel>Watch self-audit — ack accuracy, 7d</SectionLabel>
+            <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#5F6460]">
+              watches with ≥3 ack verdicts · tuning data, not opinion
+            </p>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-x-7 gap-y-2.5">
+            {watchHealth.map((w) => (
+              <div key={w.watchId}>
+                <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#6E736E]">{w.watchId}</p>
+                <p className="font-mono text-[11.5px] tabular-nums text-[#F4F5F2]">
+                  {w.realSharePct != null ? `${w.realSharePct}% real` : "no verdicts"}
+                  <span className="text-[#5F6460]">
+                    {" "}· {w.acked7d} acked · {w.falsePositive7d} fp
+                  </span>
+                </p>
+              </div>
+            ))}
+          </div>
+        </SoftCard>
+      )}
+
       {/* engine view — the document turnaround pipeline, measured */}
       {engine && (
         <SoftCard className="mt-5 px-6 py-5">
@@ -327,10 +380,10 @@ export function OpsView({
             </p>
           </div>
           <div className="mt-3 overflow-x-auto">
-            <table className="w-full min-w-[560px] border-collapse">
+            <table className="w-full min-w-[720px] border-collapse">
               <thead>
                 <tr className="border-b border-white/[0.08]">
-                  {["stage", "in stage", "median dwell", "oldest", "at risk", "at-risk $"].map((h) => (
+                  {["stage", "in stage", "median dwell", "p90 dwell", "oldest", "at risk", "at-risk $"].map((h) => (
                     <th key={h} className="px-2 py-2 text-left font-mono text-[9px] font-medium uppercase tracking-[0.16em] text-[#6E736E]">
                       {h}
                     </th>
@@ -351,6 +404,9 @@ export function OpsView({
                       {s.medianDwellMs != null ? humanDuration(s.medianDwellMs) : "—"}
                     </td>
                     <td className="px-2 py-2.5 font-mono text-[11px] tabular-nums text-[#8E9194]">
+                      {s.p90DwellMs != null ? humanDuration(s.p90DwellMs) : "—"}
+                    </td>
+                    <td className="px-2 py-2.5 font-mono text-[11px] tabular-nums text-[#8E9194]">
                       {s.maxDwellMs != null ? humanDuration(s.maxDwellMs) : "—"}
                     </td>
                     <td className="px-2 py-2.5 font-mono text-[11px] tabular-nums text-[#C9CCC7]">{s.atRisk || "—"}</td>
@@ -366,6 +422,20 @@ export function OpsView({
             <span>parse full <span className="text-[#F4F5F2]">{engine.parseFull}</span> · partial <span className="text-[#F4F5F2]">{engine.parsePartial}</span></span>
             <span>active book <span className="text-[#F4F5F2]">{usd(engine.activeDollars)}</span></span>
             <span>guarantee exposure <span className="text-[#F4F5F2]">{usd(engine.guaranteeExposureDollars)}</span></span>
+          </div>
+          {/* Little's Law drain — the queue measured against its own outflow */}
+          <div className="mt-3 border-t border-white/[0.06] pt-3">
+            <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#6E736E]">drain forecast — little's law on the real trail (7d)</p>
+            <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1.5">
+              {engine.drain.map((d) => (
+                <span key={d.stage} className="font-mono text-[10px] uppercase tracking-[0.1em] text-[#6E736E]">
+                  {d.label} <span className="text-[#C9CCC7]">{d.depth} queued</span>{" · "}
+                  {d.drainPerHour != null
+                    ? `${Math.round(d.drainPerHour * 100) / 100}/h · clears ${d.timeToDrainMs != null ? humanDuration(d.timeToDrainMs) : "—"}`
+                    : "no drain data yet"}
+                </span>
+              ))}
+            </div>
           </div>
           {pulses.length > 0 && (
             <div className="mt-3 border-t border-white/[0.06] pt-3">
@@ -464,6 +534,16 @@ export function OpsView({
               {drawerFor.title}
             </h3>
             <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.1em] text-[#8E9194]">▸ {drawerFor.action}</p>
+            {drawerFor.causedBy && (
+              <p className="mt-2 font-mono text-[9.5px] uppercase tracking-[0.12em] text-[#8E9194]">
+                ↳ {drawerFor.causedBy.reason}
+              </p>
+            )}
+            {drawerFor.escalated && (
+              <p className="mt-2 font-mono text-[9.5px] uppercase tracking-[0.12em] text-[#FF8A7A]">
+                unacked {humanDuration(drawerFor.escalated.unackedMs)} — escalated
+              </p>
+            )}
             {drawerFor.evidence && (
               <p className="mt-2 rounded-lg border border-white/[0.08] bg-[#0E100E] px-3.5 py-2.5 font-mono text-[10px] leading-relaxed tracking-[0.04em] text-[#8E9194]">
                 math ▸ {drawerFor.evidence}
@@ -497,27 +577,73 @@ export function OpsView({
                 </div>
                 <button
                   onClick={() => {
-                    void ack(drawerFor);
+                    void ack(drawerFor, "real");
                     setDrawerFor(null);
                   }}
                   disabled={busy}
                   className="tactile-btn mt-4 w-full bg-[#0B0C0B] px-4 py-2 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-white ring-1 ring-white/25 hover:ring-white/50 disabled:opacity-40"
                 >
-                  Acknowledge — quiet for this window
+                  Acknowledge — real · quiet for this window (a)
                 </button>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    onClick={() => {
+                      void ack(drawerFor, "false_positive");
+                      setDrawerFor(null);
+                    }}
+                    disabled={busy}
+                    className="tactile-btn cc-ghost flex-1 bg-transparent px-4 py-2 font-mono text-[9.5px] uppercase tracking-[0.14em] disabled:opacity-40"
+                  >
+                    False positive (f)
+                  </button>
+                  <button
+                    onClick={() => {
+                      void ack(drawerFor, "handled");
+                      setDrawerFor(null);
+                    }}
+                    disabled={busy}
+                    className="tactile-btn cc-ghost flex-1 bg-transparent px-4 py-2 font-mono text-[9.5px] uppercase tracking-[0.14em] disabled:opacity-40"
+                  >
+                    Handled (h)
+                  </button>
+                </div>
               </div>
             )}
             {drawerFor.subjectKind !== "engagement" && (
-              <button
-                onClick={() => {
-                  void ack(drawerFor);
-                  setDrawerFor(null);
-                }}
-                disabled={busy}
-                className="tactile-btn mt-4 w-full bg-[#0B0C0B] px-4 py-2 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-white ring-1 ring-white/25 hover:ring-white/50 disabled:opacity-40"
-              >
-                Acknowledge — quiet for this window
-              </button>
+              <>
+                <button
+                  onClick={() => {
+                    void ack(drawerFor, "real");
+                    setDrawerFor(null);
+                  }}
+                  disabled={busy}
+                  className="tactile-btn mt-4 w-full bg-[#0B0C0B] px-4 py-2 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-white ring-1 ring-white/25 hover:ring-white/50 disabled:opacity-40"
+                >
+                  Acknowledge — real · quiet for this window (a)
+                </button>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    onClick={() => {
+                      void ack(drawerFor, "false_positive");
+                      setDrawerFor(null);
+                    }}
+                    disabled={busy}
+                    className="tactile-btn cc-ghost flex-1 bg-transparent px-4 py-2 font-mono text-[9.5px] uppercase tracking-[0.14em] disabled:opacity-40"
+                  >
+                    False positive (f)
+                  </button>
+                  <button
+                    onClick={() => {
+                      void ack(drawerFor, "handled");
+                      setDrawerFor(null);
+                    }}
+                    disabled={busy}
+                    className="tactile-btn cc-ghost flex-1 bg-transparent px-4 py-2 font-mono text-[9.5px] uppercase tracking-[0.14em] disabled:opacity-40"
+                  >
+                    Handled (h)
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>

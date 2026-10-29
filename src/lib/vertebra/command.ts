@@ -306,6 +306,46 @@ export interface OpsWatchAlert {
   evidence: string | null;
   etaMs: number | null;
   firedAtMs: number;
+  /**
+   * Correlation — set when this row is an explained echo of a root cause on
+   * the same deck. The operator reads the root; the echo states why it is
+   * not a separate incident. Correlation is applied after ranking and only
+   * where the math truly connects (never invented causality).
+   */
+  causedBy?: { key: string; reason: string };
+  /**
+   * Flap memory — distinct hours this watch row was live in the trailing
+   * 24h, from the OpsWatchFire ledger. Rendered as "fired N× / 24h" once N
+   * stops being 1: a watch that never leaves the deck is a tuning problem,
+   * not a crisis.
+   */
+  fires24h?: number;
+  /** Escalation ladder — set on crit rows unacked past 15 minutes. */
+  escalated?: { unackedMs: number };
+}
+
+/** The morning brief — one honest sentence with the numbers behind it. */
+export interface OpsBriefing {
+  /** Distinct (watch, subject) conditions live in the trailing 24h. */
+  fired24h: number;
+  /** Acks recorded in the trailing 24h. */
+  acked24h: number;
+  /** Rows on the deck right now. */
+  liveNow: number;
+  /** Soonest predicted time-to-impact across the deck — null when nothing is predictive. */
+  nextBreachMs: number | null;
+  /** Sum of at-risk dollars across the engine stages. */
+  atRiskDollars: number;
+}
+
+/** Per-watch ack accuracy — the tuning loop's read-out. */
+export interface WatchHealth {
+  watchId: string;
+  acked7d: number;
+  real7d: number;
+  falsePositive7d: number;
+  /** real / (real + false_positive), as a percent — null when no verdicts yet. */
+  realSharePct: number | null;
 }
 
 /** One stage of the document turnaround engine — counts + dwell + risk. */
@@ -314,14 +354,36 @@ export interface EngineStageStat {
   label: string;
   count: number;
   medianDwellMs: number | null;
+  /** 90th-percentile dwell — the tail where money bleeds. Null under n=4:
+   *  a percentile needs a sample; below that the oldest column already speaks. */
+  p90DwellMs: number | null;
   maxDwellMs: number | null;
   atRisk: number;
   atRiskDollars: number;
 }
 
+/** Little's Law drain read-out for one stage — the queue measured against
+ *  its own outflow. Completions come from the real stage-change trail over
+ *  the trailing 7 days; when no completion exists the forecast says so
+ *  instead of inventing a rate. */
+export interface EngineDrainStat {
+  stage: string;
+  label: string;
+  /** Queue depth in the stage right now. */
+  depth: number;
+  /** Stage completions in the trailing 7d (real trail events). */
+  completions7d: number;
+  /** completions7d / 168h — null when no completion is on record. */
+  drainPerHour: number | null;
+  /** depth / drainPerHour — how long the current queue takes to clear. */
+  timeToDrainMs: number | null;
+}
+
 /** The turnaround engine read-out: stage flow + document throughput. */
 export interface EngineView {
   stages: EngineStageStat[];
+  /** Little's Law drain forecast per stage — the queue against its outflow. */
+  drain: EngineDrainStat[];
   delivered24h: number;
   docs24h: number;
   parseFull: number;
@@ -406,6 +468,10 @@ export interface OpsSnapshot {
   engine?: EngineView;
   /** External engine pulses — the engine contract's watches. */
   enginePulses?: EnginePulseRow[];
+  /** Per-watch ack accuracy over the trailing 7d — watches with ≥3 verdicts. */
+  watchHealth?: WatchHealth[];
+  /** The shift-handoff briefing — what changed, what's live, what's next. */
+  briefing?: OpsBriefing;
   outboxPending: number;
   outboxPublished: number;
   dispatchesSent24h: number;

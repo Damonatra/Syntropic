@@ -177,6 +177,28 @@ body {
     border: 1px solid rgba(216, 216, 216, 0.12);
     border-radius: 8px;
   }
+  /* Deck row — plain-CSS hover lift on the hairline. Tailwind's hover:
+     variants compile behind (hover: hover) and die in headless/touch
+     environments; the watchtower's rows must light up everywhere. */
+  .cc-row {
+    transition: border-color 140ms ease;
+  }
+  .cc-row:hover,
+  .cc-row:focus-visible {
+    border-color: rgba(255, 255, 255, 0.25);
+  }
+  /* Ghost button — hairline secondary action (drawer verdicts). Plain CSS
+     hover for the same reason: the light must come on in every environment. */
+  .cc-ghost {
+    color: #8e9194;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+    transition: color 140ms ease, box-shadow 140ms ease;
+  }
+  .cc-ghost:hover,
+  .cc-ghost:focus-visible {
+    color: #f4f5f2;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+  }
   .neu-lg {
     background: #131513;
     border: 1px solid rgba(216, 216, 216, 0.12);

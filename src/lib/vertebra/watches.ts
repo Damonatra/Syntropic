@@ -12,13 +12,30 @@
  *                       (deliverable within 5 days of payment; verdict within
  *                       3 days of opening forensics), with dwell-based
  *                       severity so the alarm rings before the breach.
- *   · trend sentinels — least-squares slope + z-score over the hourly
- *                       CommandBaseline history; a metric rising 2σ above its
- *                       24h window with positive slope fires WARN with an ETA
- *                       to threshold; crossing the threshold fires CRIT.
+ *   · trend sentinels — least-squares slope + seasonal z-score over the
+ *                       hourly CommandBaseline history; the baseline reads
+ *                       same-hour-of-day peers across the trailing week (a
+ *                       funnel is not stationary — nights and weekends look
+ *                       like failures to a flat window), falling back to the
+ *                       flat 24h window when that history is thin. A metric
+ *                       rising 2σ above its baseline with positive slope
+ *                       fires WARN with an ETA to threshold; crossing the
+ *                       threshold fires CRIT.
+ *
+ * correlateDeck then groups the echoes: a threshold alarm and its sentinel
+ * are one signal, stalled capture explains the sentinels that read it, and a
+ * verdict clock sits inside its engagement's deliverable clock. One incident,
+ * not twelve rows — and causality is never invented.
  *
  * The watchtower never fires an alarm it cannot show the math for: every
  * alert carries an evidence line, and predictive alerts carry etaMs.
+ *
+ * The full roster, eight watches deep:
+ *   SLA clocks · funnel thresholds · system vitals · trend sentinels ·
+ *   engine pulses · queue forecast (Little's Law) · watchtower self-audit
+ *   (flap) · coverage (guarantee exposure, deliverable liveness, drought) —
+ *   plus the escalation ladder: a crit unacked 15 minutes names itself and
+ *   re-pages through configured channels, honestly or not at all.
  *
  * Acks are keyed `${watchId}:${subjectId ?? "system"}:${windowBucket}` —
  * suppression lasts one window (6h); a condition that clears and refires
@@ -28,6 +45,7 @@
 
 import type {
   EngagementShape,
+  EngineDrainStat,
   EnginePulseRow,
   EngineStageStat,
   EngineView,
@@ -93,6 +111,102 @@ export function rankAlerts(alerts: OpsWatchAlert[]): OpsWatchAlert[] {
 }
 
 // --------------------------------------------------------------------------- //
+// Correlation — one incident, not twelve rows
+// --------------------------------------------------------------------------- //
+
+/**
+ * Cascade noise is how monitoring systems train their operators to ignore
+ * them: one failure lights five watches, the deck reads "five crises", and
+ * the operator learns to skim. correlateDeck marks the echoes.
+ *
+ * Only where the math truly connects — causality is never invented:
+ *   1. same-signal echo    a threshold alarm and its trend sentinel are the
+ *                          same metric; the one with impact now is the root,
+ *                          the other rides as its trend view.
+ *   2. frozen history      when KPI capture stalls, the sentinels' "latest"
+ *                          point is stale — they are explained by the stale
+ *                          capture, not separate incidents.
+ *   3. one clock inside    a verdict clock on an engagement sits inside that
+ *                          engagement's deliverable clock — the verdict
+ *                          decision gates the deliverable.
+ *
+ * Echoes keep their severity chip, their math, and their own ack key —
+ * correlation changes reading order and attribution, never suppressibility.
+ * Ordering: roots ranked first, each root immediately followed by its echoes.
+ */
+export function correlateDeck(alerts: OpsWatchAlert[]): OpsWatchAlert[] {
+  if (alerts.length < 2) return rankAlerts(alerts);
+
+  const sevRank: Record<WatchSeverity, number> = { crit: 0, warn: 1, info: 2 };
+  const caused = new Map<string, { key: string; reason: string }>();
+  const free = (a: OpsWatchAlert) => !caused.has(a.key);
+  const worst = (rows: OpsWatchAlert[]) =>
+    rows.reduce((a, b) => (sevRank[a.severity] <= sevRank[b.severity] ? a : b));
+
+  // Rule 1 — a threshold alarm and its sentinel are one signal, twice told.
+  for (const pair of [
+    { threshold: "outbox_backlog", sentinel: "sentinel_outbox", label: "outbox backlog" },
+    { threshold: "dispatch_failures", sentinel: "sentinel_failures", label: "dispatch failure" },
+  ]) {
+    const tRows = alerts.filter((a) => a.watchId === pair.threshold && free(a));
+    const sRows = alerts.filter((a) => a.watchId === pair.sentinel && free(a));
+    if (!tRows.length || !sRows.length) continue;
+    const root = worst([...tRows, ...sRows]);
+    const echoes = root.watchId === pair.threshold ? sRows : tRows;
+    const reason =
+      root.watchId === pair.threshold
+        ? `same signal — the ${pair.label} threshold alarm is already live`
+        : `the ${pair.label} sentinel crossed first — the threshold breach is riding the same trend`;
+    for (const e of echoes) caused.set(e.key, { key: root.key, reason });
+  }
+
+  // Rule 2 — stalled capture freezes the trend math the sentinels read.
+  const stale = alerts.find((a) => a.watchId === "baseline_stale" && free(a));
+  if (stale) {
+    for (const s of alerts.filter(
+      (a) => (a.watchId === "sentinel_outbox" || a.watchId === "sentinel_failures") && free(a),
+    )) {
+      caused.set(s.key, {
+        key: stale.key,
+        reason: "trend math reads a frozen history — KPI capture has stalled",
+      });
+    }
+  }
+
+  // Rule 3 — the verdict clock lives inside the deliverable clock.
+  for (const d of alerts.filter((a) => a.watchId === "sla_deliverable")) {
+    const v = alerts.find(
+      (a) => a.watchId === "sla_verdict" && a.subjectId === d.subjectId && free(a),
+    );
+    if (v && free(d)) {
+      caused.set(v.key, {
+        key: d.key,
+        reason: "same engagement — the verdict decision gates the deliverable clock",
+      });
+    }
+  }
+
+  if (caused.size === 0) return rankAlerts(alerts);
+
+  const out: OpsWatchAlert[] = [];
+  const placed = new Set<string>();
+  for (const root of rankAlerts(alerts.filter(free))) {
+    out.push(root);
+    placed.add(root.key);
+    for (const echo of rankAlerts(alerts.filter((a) => caused.get(a.key)?.key === root.key))) {
+      out.push({ ...echo, causedBy: caused.get(echo.key) });
+      placed.add(echo.key);
+    }
+  }
+  // Defensive: an echo whose root left the deck between derivations stays
+  // readable as a root rather than vanishing.
+  for (const a of rankAlerts(alerts.filter((a) => !placed.has(a.key)))) {
+    out.push(caused.has(a.key) ? { ...a, causedBy: caused.get(a.key) } : a);
+  }
+  return out;
+}
+
+// --------------------------------------------------------------------------- //
 // Time helpers — every duration rendered for humans
 // --------------------------------------------------------------------------- //
 
@@ -109,6 +223,14 @@ const median = (xs: number[]): number | null => {
   const s = [...xs].sort((a, b) => a - b);
   const mid = Math.floor(s.length / 2);
   return s.length % 2 ? s[mid] : Math.round((s[mid - 1] + s[mid]) / 2);
+};
+
+/** Nearest-rank p90. Needs a sample of 4+ — a percentile of 3 points is a
+ *  costume; below that the max column already tells the tail's story. */
+const p90 = (xs: number[]): number | null => {
+  if (xs.length < 4) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.ceil(0.9 * s.length) - 1];
 };
 
 // --------------------------------------------------------------------------- //
@@ -414,14 +536,23 @@ const SENTINELS: SentinelSpec[] = [
 /**
  * The predictive layer. For each sentinel metric: need ≥ 4 captures inside
  * the trailing 24h with non-null values and σ > 0. Fires when the latest
- * value sits ≥ 2σ above the window mean with positive slope, and ≥ floor.
+ * value sits ≥ 2σ above its baseline with positive slope, and ≥ floor.
  * Evidence carries the full math: μ, σ, latest, slope, and the ETA to the
  * hard threshold at the current rate. Crossing the threshold promotes to CRIT.
+ *
+ * The baseline itself is seasonal: μ and σ come from same-hour-of-day peers
+ * across the trailing 7 days whenever ≥ 4 such peers exist, because a B2B
+ * funnel is not stationary — nights and weekends look like failures to a
+ * flat window, and a Monday 09:00 surge is not an anomaly. When the same-hour
+ * history is too thin, the flat trailing-24h window is used and the evidence
+ * line says so. Slope and ETA always read the trailing 24h — momentum, not
+ * season, decides how fast the line is being crossed.
  */
 export function deriveBaselineSentinels(rows: BaselineRow[], nowMs: number): OpsWatchAlert[] {
   const out: OpsWatchAlert[] = [];
   const cutoff = nowMs - DAY;
-  const recent = rows.filter((r) => r.capturedAtMs >= cutoff);
+  const week = rows.filter((r) => r.capturedAtMs >= nowMs - 7 * DAY);
+  const recent = week.filter((r) => r.capturedAtMs >= cutoff);
   if (recent.length < 4) return out;
 
   for (const spec of SENTINELS) {
@@ -430,22 +561,35 @@ export function deriveBaselineSentinels(rows: BaselineRow[], nowMs: number): Ops
       .filter((p): p is { t: number; v: number } => typeof p.v === "number");
     if (pts.length < 4) continue;
 
-    const values = pts.map((p) => p.v);
-    const mean = values.reduce((a, b) => a + b, 0) / values.length;
-    const variance = values.reduce((a, b) => a + (b - mean) ** 2, 0) / values.length;
+    const latest = pts[pts.length - 1].v;
+
+    // Flat trailing-24h baseline — the fallback when seasonal history is thin.
+    const flat = pts.map((p) => p.v);
+
+    // Seasonal baseline — same UTC hour-of-day peers across the trailing week.
+    const latestHour = new Date(pts[pts.length - 1].t).getUTCHours();
+    const peers = week
+      .map((r) => ({ t: r.capturedAtMs, v: r.metrics[spec.metric] }))
+      .filter(
+        (p): p is { t: number; v: number } =>
+          typeof p.v === "number" && new Date(p.t).getUTCHours() === latestHour,
+      );
+
+    const useSeasonal = peers.length >= 4;
+    const sample = useSeasonal ? peers.map((p) => p.v) : flat;
+    const mean = sample.reduce((a, b) => a + b, 0) / sample.length;
+    const variance = sample.reduce((a, b) => a + (b - mean) ** 2, 0) / sample.length;
     const sigma = Math.sqrt(variance);
     if (sigma <= 0) continue;
-
-    const latest = values[values.length - 1];
     if (latest < Math.max(spec.floor, mean + 2 * sigma)) continue;
 
-    // Least-squares slope in units/hour over the window.
+    // Least-squares slope in units/hour over the trailing 24h.
     const t0 = pts[0].t;
     const xs = pts.map((p) => (p.t - t0) / HOUR);
-    const ys = values;
+    const ys = flat;
     const n = xs.length;
     const mx = xs.reduce((a, b) => a + b, 0) / n;
-    const my = mean;
+    const my = flat.reduce((a, b) => a + b, 0) / flat.length;
     const cov = xs.reduce((a, x, i) => a + (x - mx) * (ys[i] - my), 0);
     const varX = xs.reduce((a, x) => a + (x - mx) ** 2, 0);
     const slope = varX > 0 ? cov / varX : 0; // units per hour
@@ -458,6 +602,10 @@ export function deriveBaselineSentinels(rows: BaselineRow[], nowMs: number): Ops
       severity === "crit"
         ? `Sentinel: ${spec.subjectLabel} crossed ${spec.threshold} ${spec.unit} — ${latest} and climbing +${Math.round(slope * 10) / 10}/h`
         : `Sentinel: ${spec.subjectLabel} trending ${latest} ${spec.unit} — threshold ~${spec.threshold} in ${humanDuration(etaMs ?? 0)} at current rate`;
+    const math = `μ=${Math.round(mean * 10) / 10} σ=${Math.round(sigma * 10) / 10} · latest=${latest} z=${Math.round(z * 10) / 10}σ · slope=+${Math.round(slope * 100) / 100}/h`;
+    const sampleLabel = useSeasonal
+      ? `n=${sample.length} same-hour/7d`
+      : `n=${sample.length} captures/24h · flat window (thin seasonal history)`;
     out.push({
       key: alertKey(spec.watchId, null, nowMs),
       watchId: spec.watchId,
@@ -468,7 +616,7 @@ export function deriveBaselineSentinels(rows: BaselineRow[], nowMs: number): Ops
       subjectLabel: spec.subjectLabel,
       title,
       action: spec.action,
-      evidence: `n=${n} captures/24h · μ=${Math.round(mean * 10) / 10} σ=${Math.round(sigma * 10) / 10} · latest=${latest} z=${Math.round(z * 10) / 10}σ · slope=+${Math.round(slope * 100) / 100}/h`,
+      evidence: `${sampleLabel} · ${math}`,
       etaMs,
       firedAtMs: nowMs,
     });
@@ -560,6 +708,7 @@ const ACTIVE_STAGES: Array<{ stage: string; label: string }> = [
 
 export function deriveEngineView(engagements: EngagementShape[], nowMs: number): EngineView {
   const dayAgo = nowMs - DAY;
+  const weekAgo = nowMs - 7 * DAY;
   const stages: EngineStageStat[] = ACTIVE_STAGES.map(({ stage, label }) => {
     const rows = engagements.filter((e) => e.status === stage);
     const dwells = rows
@@ -577,15 +726,40 @@ export function deriveEngineView(engagements: EngagementShape[], nowMs: number):
       label,
       count: rows.length,
       medianDwellMs: median(dwells),
+      p90DwellMs: p90(dwells),
       maxDwellMs: dwells.length ? Math.max(...dwells) : null,
       atRisk: atRiskRows.length,
       atRiskDollars: atRiskRows.reduce((sum, e) => sum + e.amountUsd, 0),
     };
   });
 
+  // Little's Law drain — completions read from the real stage-change trail
+  // ("{Label} → next" events) over the trailing 7 days. A stage with no
+  // completion on record has no measurable rate: the forecast reports null
+  // rather than inventing throughput.
+  const drain: EngineDrainStat[] = ACTIVE_STAGES.map(({ stage, label }) => {
+    const depth = engagements.filter((e) => e.status === stage).length;
+    const completions7d = engagements.flatMap((e) => e.events).filter(
+      (ev) =>
+        (ev.kind === "stage_changed" || ev.kind === "delivered") &&
+        ev.detail?.startsWith(`${label} →`) &&
+        ev.createdAtMs >= weekAgo,
+    ).length;
+    const drainPerHour = completions7d > 0 ? completions7d / (7 * 24) : null;
+    return {
+      stage,
+      label,
+      depth,
+      completions7d,
+      drainPerHour,
+      timeToDrainMs: drainPerHour != null && drainPerHour > 0 ? Math.round((depth / drainPerHour) * HOUR) : null,
+    };
+  });
+
   const docs = engagements.flatMap((e) => e.documents ?? []);
   return {
     stages,
+    drain,
     delivered24h: engagements.filter((e) => e.deliveredAtMs != null && e.deliveredAtMs >= dayAgo).length,
     docs24h: docs.filter((d) => d.createdAtMs >= dayAgo).length,
     parseFull: docs.filter((d) => d.extraction === "full_text").length,
@@ -600,8 +774,239 @@ export function deriveEngineView(engagements: EngagementShape[], nowMs: number):
 }
 
 // --------------------------------------------------------------------------- //
-// Vitals — measured heartbeats for the strip
+// Watch 6 — queue forecast: the promise priced against the drain rate
 // --------------------------------------------------------------------------- //
+
+/**
+ * The SLA clock says how much promise an engagement has left. The drain rate
+ * says how fast the stage actually clears. This watch joins them BEFORE the
+ * breach: an engagement waiting behind others in a slow stage can be
+ * projected out of time while its own clock still looks healthy.
+ *
+ * Math per active engagement: everyone ahead of it in its stage (same stage,
+ * entered earlier) must clear first — wait = ahead / stage drain rate. When
+ * wait > remaining deliverable promise, the queue outlasts the promise and
+ * the forecast fires with the full arithmetic in the evidence line.
+ *
+ * Honest limits: no drain rate (no completions in 7d) → no forecast; nobody
+ * ahead → the SLA clock already owns that case. Zero rows today; this watch
+ * earns its keep the day the turnaround engine brings volume.
+ */
+export function deriveQueueForecastAlerts(engagements: EngagementShape[], nowMs: number): OpsWatchAlert[] {
+  const out: OpsWatchAlert[] = [];
+  const drain = new Map<string, { drainPerHour: number; completions7d: number }>();
+  for (const { stage, label } of ACTIVE_STAGES) {
+    const completions7d = engagements.flatMap((e) => e.events).filter(
+      (ev) =>
+        (ev.kind === "stage_changed" || ev.kind === "delivered") &&
+        ev.detail?.startsWith(`${label} →`) &&
+        ev.createdAtMs >= nowMs - 7 * DAY,
+    ).length;
+    if (completions7d > 0) drain.set(stage, { drainPerHour: completions7d / (7 * 24), completions7d });
+  }
+
+  for (const e of engagements) {
+    if (e.status === "sow" || e.status === "closed" || e.status === "delivered" || e.deliveredAtMs != null) continue;
+    const rate = drain.get(e.status);
+    if (!rate) continue;
+
+    const entered = stageEnteredAtMs(e, e.status);
+    const enteredMs =
+      entered ?? (e.status === "paid" ? e.paidAtMs : null);
+    if (enteredMs == null) continue;
+    const ahead = engagements.filter((o) => {
+      if (o.id === e.id || o.status !== e.status) return false;
+      const oEntered = stageEnteredAtMs(o, o.status);
+      return oEntered != null ? oEntered < enteredMs! : o.paidAtMs < e.paidAtMs;
+    }).length;
+    if (ahead === 0) continue;
+
+    const waitMs = (ahead / rate.drainPerHour) * HOUR;
+    const remaining = SLA.deliverableMs - (nowMs - e.paidAtMs);
+    if (remaining >= waitMs) continue;
+
+    const overrun = waitMs - remaining;
+    out.push({
+      key: alertKey("queue_forecast", e.id, nowMs),
+      watchId: "queue_forecast",
+      watch: "Queue forecast — drain vs promise",
+      severity: overrun > 12 * HOUR ? "crit" : "warn",
+      subjectKind: "engagement",
+      subjectId: e.id,
+      subjectLabel: e.clientName,
+      title: `${e.clientName} waits behind ${ahead} in ${e.status} — the queue outlasts the promise`,
+      action: "clear the queue ahead — parallelize or escalate the stage before the clock lands",
+      evidence: `drain ${Math.round(rate.drainPerHour * 100) / 100}/h (n=${rate.completions7d} completions/7d) · ${ahead} ahead · wait ${humanDuration(waitMs)} · clock ${humanDuration(remaining)} · projected overrun ${humanDuration(overrun)}`,
+      etaMs: Math.max(0, Math.round(remaining)),
+      firedAtMs: nowMs,
+    });
+  }
+  return out;
+}
+
+// --------------------------------------------------------------------------- //
+// Watch 7 — the watchtower watching itself (chronic watches)
+// --------------------------------------------------------------------------- //
+
+/** A watch live in this many distinct hours of the trailing 24 is chronic. */
+export const FLAP_HOURS_24H = 12;
+
+export interface FireCountRow {
+  watchKey: string;
+  fires24h: number;
+}
+
+/**
+ * Flap alarms — the deck's own accuracy report. A watch row that has been
+ * live for half a day or more is not alerting anymore; it is decoration the
+ * operator has learned to skim past. This watch names it so the threshold
+ * gets tuned instead of trusted. watch_flap never flags itself: a meta
+ * watch that flags its own chronicness would chase its tail forever.
+ */
+export function deriveFlapAlerts(fireCounts: FireCountRow[], nowMs: number): OpsWatchAlert[] {
+  const out: OpsWatchAlert[] = [];
+  for (const f of fireCounts) {
+    if (f.fires24h < FLAP_HOURS_24H) continue;
+    const [watchId, subjectId] = f.watchKey.split(":");
+    if (watchId === "watch_flap") continue;
+    const label = subjectId && subjectId !== "system" ? `${watchId} on ${subjectId.slice(0, 12)}` : watchId;
+    out.push({
+      key: alertKey("watch_flap", watchId, nowMs),
+      watchId: "watch_flap",
+      watch: "Watchtower self-audit — chronic watch",
+      severity: "info",
+      subjectKind: "system",
+      subjectId: watchId,
+      subjectLabel: label,
+      title: `Watch "${label}" has been live ${f.fires24h} of the last 24 hours — chronic, not acute`,
+      action: "tune the threshold or fix the cause — an alert the operator skims past is worse than silence",
+      evidence: `live in ${f.fires24h}/24 distinct hourly sweeps · chronic past ${FLAP_HOURS_24H}/24`,
+      etaMs: null,
+      firedAtMs: nowMs,
+    });
+  }
+  return out;
+}
+
+// --------------------------------------------------------------------------- //
+// Watch 8 — coverage: the money and pipeline surfaces nothing watched yet
+// --------------------------------------------------------------------------- //
+
+export interface CoverageInput {
+  /** Active engagements (same shape as the engine view reads). */
+  engagements: EngagementShape[];
+  /** Prospects created in the trailing 7d / the 21d before that. */
+  newLeads7d: number;
+  newLeadsPrior21d: number;
+}
+
+/**
+ * The recon sweep — surfaces the earlier watches never covered. Three rules,
+ * each priced in real rows:
+ *   · guarantee exposure  undecided verdicts each sit on the $10,000
+ *                         recovery promise; two or more undecided is a
+ *                         liability the balance sheet cannot hide.
+ *   · deliverable missing delivered engagements whose artifact link is null
+ *                         — the promise was kept but the money room points
+ *                         at nothing.
+ *   · lead drought        no new prospects for a week when the book's own
+ *                         28-day rhythm says there should have been —
+ *                         pipeline starvation is visible weeks ahead.
+ */
+export function deriveCoverageAlerts(input: CoverageInput, nowMs: number): OpsWatchAlert[] {
+  const out: OpsWatchAlert[] = [];
+
+  const undecided = input.engagements.filter(
+    (e) => e.status === "verdict" && e.guaranteeCleared == null,
+  );
+  const exposure = undecided.length * LEAKAGE_MODEL.guaranteeFloorUsd;
+  if (undecided.length >= 2) {
+    out.push({
+      key: alertKey("guarantee_exposure", null, nowMs),
+      watchId: "guarantee_exposure",
+      watch: "Guarantee exposure",
+      severity: "warn",
+      subjectKind: "system",
+      subjectId: null,
+      subjectLabel: "verdict stage",
+      title: `Guarantee exposure at ${usdFloor(exposure)} — ${undecided.length} verdicts undecided`,
+      action: "record the verdicts — every undecided clock sits on the $10,000 promise",
+      evidence: `${undecided.length} undecided × ${usdFloor(LEAKAGE_MODEL.guaranteeFloorUsd)} floor = ${usdFloor(exposure)} exposure`,
+      etaMs: null,
+      firedAtMs: nowMs,
+    });
+  }
+
+  for (const e of input.engagements) {
+    const terminal = e.status === "delivered" || e.status === "sow" || e.status === "closed";
+    if (!terminal || e.deliveredAtMs == null || e.deliverableUrl) continue;
+    out.push({
+      key: alertKey("deliverable_missing", e.id, nowMs),
+      watchId: "deliverable_missing",
+      watch: "Deliverable liveness",
+      severity: "warn",
+      subjectKind: "engagement",
+      subjectId: e.id,
+      subjectLabel: e.clientName,
+      title: `${e.clientName} was delivered but the artifact link is empty`,
+      action: "seal the deliverable — the close ledger links to it and the client was promised the readout",
+      evidence: `delivered ${humanDuration(Math.max(0, nowMs - e.deliveredAtMs))} ago · deliverableUrl null`,
+      etaMs: null,
+      firedAtMs: nowMs,
+    });
+  }
+
+  const weeksPrior = 3; // the 21d comparison window
+  const priorPerWeek = input.newLeadsPrior21d / weeksPrior;
+  if (input.newLeads7d === 0 && priorPerWeek >= 1) {
+    out.push({
+      key: alertKey("lead_drought", null, nowMs),
+      watchId: "lead_drought",
+      watch: "Pipeline drought",
+      severity: "info",
+      subjectKind: "funnel",
+      subjectId: null,
+      subjectLabel: "channel A+B",
+      title: "No new prospects in 7 days — the pipeline has gone dry",
+      action: "run a territory sweep — starvation now is an empty desk next month",
+      evidence: `0 new in 7d · prior 3 weeks averaged ${Math.round(priorPerWeek * 10) / 10}/wk`,
+      etaMs: null,
+      firedAtMs: nowMs,
+    });
+  }
+
+  return out;
+}
+
+const usdFloor = (v: number) => `$${Math.round(v).toLocaleString("en-US")}`;
+
+// --------------------------------------------------------------------------- //
+// Escalation — crit unacked too long stops whispering
+// --------------------------------------------------------------------------- //
+
+/** A crit alarm unacked this long is escalated on the deck. */
+export const ESCALATE_AFTER_MS = 15 * 60_000;
+
+/**
+ * The escalation ladder, in-app layer: a crit row that has been live for 15
+ * minutes without an ack stops being a quiet line and names itself. The
+ * pager layer rides the same signal (see the route) and delivers honestly —
+ * attempted only when a channel is configured, never faked.
+ */
+export function escalateDeck(
+  deck: OpsWatchAlert[],
+  firstSeenByKey: Map<string, number | null>,
+  nowMs: number,
+): OpsWatchAlert[] {
+  return deck.map((a) => {
+    if (a.severity !== "crit") return a;
+    const firstSeen = firstSeenByKey.get(`${a.watchId}:${a.subjectId ?? "system"}`);
+    if (firstSeen == null) return a;
+    const unackedMs = nowMs - firstSeen;
+    if (unackedMs < ESCALATE_AFTER_MS) return a;
+    return { ...a, escalated: { unackedMs } };
+  });
+}
 
 export function deriveVitals(input: {
   snapshotBuildMs: number;

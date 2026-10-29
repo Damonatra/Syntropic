@@ -384,13 +384,34 @@ model PainSignal {
 /// (watch, subject, window) key it named. The window bucket in the key means
 /// a condition that clears and refires later comes back as a new key — the
 /// operator is never nagged within a window, never silenced forever.
+/// The reason is the tuning loop's raw material: false-positive acks roll up
+/// into per-watch hit rates, so threshold tuning becomes data, not opinion.
 model OpsAlertAck {
   id        String   @id @default(cuid())
   alertKey  String   @unique
   actor     String   @default("operator")
+  /// "real" | "false_positive" | "handled" — operator's verdict on the fire.
+  reason    String   @default("real")
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+}
+
+/// Flap ledger — one row per (watch, subject, hour) the condition was live.
+/// Alerts are derived, so presence in a snapshot build is the only fire
+/// signal; recording distinct hour buckets gives honest refire counts
+/// ("fired 4× / 24h") without ever double-counting a single sweep. A watch
+/// that is chronically live becomes its own alarm: the watchtower watching
+/// its own accuracy.
+model OpsWatchFire {
+  id         String   @id @default(cuid())
+  watchKey   String // `${watchId}:${subjectId ?? "system"}`
+  hourBucket Int // floor(epochMs / 3_600_000)
+  lastFireAt DateTime @default(now())
+
+  @@unique([watchKey, hourBucket])
+  @@index([watchKey])
+  @@index([lastFireAt])
 }
 
 /// Heartbeat pulses from external engines — the engine contract's ingress
