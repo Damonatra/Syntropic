@@ -37,6 +37,9 @@ export interface TriageEdits {
   body?: string;
 }
 
+/** Funnel collapse preference — the operator's density choice survives reloads. */
+const FUNNEL_KEY = "vertebra:pipeline-funnel";
+
 export function PipelineView({
   snap,
   now,
@@ -48,6 +51,7 @@ export function PipelineView({
   suspended = false,
   focusReplyId = null,
   onFocusConsumed,
+  onCursorMeta,
 }: {
   snap: CommandSnapshot;
   now: number;
@@ -61,6 +65,8 @@ export function PipelineView({
   /** Palette deep-link — the reply the operator jumped to. */
   focusReplyId?: string | null;
   onFocusConsumed?: () => void;
+  /** Header readout — reports the gate cursor for the "gate 02/09 — name" line. */
+  onCursorMeta?: (meta: { name: string; idx: number; total: number } | null) => void;
 }) {
   const [tab, setTab] = useState<"triage" | "sequences">("triage");
   const [filter, setFilter] = useState<PipelineFilter>("all");
@@ -72,6 +78,10 @@ export function PipelineView({
   const [editSubject, setEditSubject] = useState("");
   const [editBody, setEditBody] = useState("");
   const [busy, setBusy] = useState<Set<string>>(new Set());
+  const [funnelOpen, setFunnelOpen] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return window.localStorage.getItem(FUNNEL_KEY) !== "collapsed";
+  });
   const subjectInputRef = useRef<HTMLInputElement | null>(null);
   const maxCount = Math.max(1, ...snap.funnel.map((f) => f.count));
 
@@ -115,6 +125,23 @@ export function PipelineView({
 
   // Filter or sort change → cursor back to the top (predictable landing).
   useEffect(() => setCursorIdx(0), [filter, sort]);
+
+  const toggleFunnel = useCallback(() => {
+    setFunnelOpen((o) => {
+      const next = !o;
+      try {
+        window.localStorage.setItem(FUNNEL_KEY, next ? "open" : "collapsed");
+      } catch {
+        /* storage unavailable — preference is best-effort */
+      }
+      return next;
+    });
+  }, []);
+
+  // Gate cursor → header readout (mirrors strike's cursor line).
+  useEffect(() => {
+    onCursorMeta?.(cursorItem ? { name: cursorItem.prospectName, idx: cursor + 1, total: pending.length } : null);
+  }, [cursorItem, cursor, pending.length, onCursorMeta]);
 
   const toggleSelect = useCallback((replyId: string) => {
     setSelected((prev) => {
@@ -210,6 +237,13 @@ export function PipelineView({
           </p>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={toggleFunnel}
+            aria-label={funnelOpen ? "Collapse funnel strip" : "Expand funnel strip"}
+            className="h-8 rounded-full border border-white/[0.12] bg-[#131513] px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] text-[#8E9194] transition-all hover:text-[#F4F5F2]"
+          >
+            funnel {funnelOpen ? "▾" : "▸"}
+          </button>
           {(
             [
               ["triage", `Triage · ${snap.triage.pending.length}`],
@@ -231,19 +265,25 @@ export function PipelineView({
         </div>
       </div>
 
-      {/* Funnel */}
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
-        {snap.funnel.map((stage) => (
-          <SoftCard key={stage.stage} className="px-4 py-3.5">
-            <p className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[#8E9194]">{stage.label}</p>
-            <p className="mt-1.5 font-display text-[24px] font-semibold leading-none tracking-[-0.03em] tabular-nums text-[#F4F5F2]">{stage.count}</p>
-            <div className="mt-2.5 h-[3px] w-full overflow-hidden rounded-full bg-[#232623]">
-              <div className="h-full rounded-full bg-[#F4F5F2]" style={{ width: `${Math.max(6, (stage.count / maxCount) * 100)}%` }} />
-            </div>
-            <p className="mt-2 font-mono text-[10.5px] tabular-nums text-[#8E9194]">{money(stage.leakageUsd)} exposed</p>
-          </SoftCard>
-        ))}
-      </div>
+      {/* Funnel — full cards when open, one honest line when collapsed */}
+      {funnelOpen ? (
+        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
+          {snap.funnel.map((stage) => (
+            <SoftCard key={stage.stage} className="px-4 py-3.5">
+              <p className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[#8E9194]">{stage.label}</p>
+              <p className="mt-1.5 font-display text-[24px] font-semibold leading-none tracking-[-0.03em] tabular-nums text-[#F4F5F2]">{stage.count}</p>
+              <div className="mt-2.5 h-[3px] w-full overflow-hidden rounded-full bg-[#232623]">
+                <div className="h-full rounded-full bg-[#F4F5F2]" style={{ width: `${Math.max(6, (stage.count / maxCount) * 100)}%` }} />
+              </div>
+              <p className="mt-2 font-mono text-[10.5px] tabular-nums text-[#8E9194]">{money(stage.leakageUsd)} exposed</p>
+            </SoftCard>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-4 truncate font-mono text-[10px] uppercase tracking-[0.12em] text-[#6E736E]">
+          {snap.funnel.map((s) => `${s.label} ${s.count}`).join(" · ")}
+        </p>
+      )}
 
       {tab === "triage" ? (
         <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">

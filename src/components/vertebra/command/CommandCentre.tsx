@@ -72,6 +72,8 @@ interface Toast {
   title: string;
   body?: string;
   prospectId?: string;
+  /** Tier-2 reply toasts deep-link the gate: click lands the cursor on this draft. */
+  replyId?: string;
 }
 
 /** M7 — the grammar overlay's single source of truth. */
@@ -136,6 +138,13 @@ export function CommandCentre() {
   const [dossierFocusCompose, setDossierFocusCompose] = useState(false);
   // Pipeline deep-link — a palette draft-jump lands the gate cursor on this reply.
   const [pipelineFocusReply, setPipelineFocusReply] = useState<string | null>(null);
+  // Header readout — mirrors strike's "cursor 02/09" line for the gate.
+  const [pipelineCursorMeta, setPipelineCursorMeta] = useState<{ name: string; idx: number; total: number } | null>(null);
+  const onPipelineCursorMeta = useCallback((meta: { name: string; idx: number; total: number } | null) => {
+    setPipelineCursorMeta((prev) =>
+      prev?.name === meta?.name && prev?.idx === meta?.idx && prev?.total === meta?.total ? prev : meta,
+    );
+  }, []);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [connected, setConnected] = useState(false);
   const [clock, setClock] = useState("");
@@ -392,9 +401,10 @@ export function CommandCentre() {
         body: [
           `${r.prospectName} — QLV ${r.qlvScore ?? "—"}`,
           `${INTENT_LABELS[r.intent as keyof typeof INTENT_LABELS] ?? r.intent} (${Math.round((r.confidence ?? 0) * 100)}% conf)`,
-          r.tier === 2 ? `Action: review the draft in Pipeline.` : `Action taken: ${r.action.replace(/_/g, " ")}.`,
+          r.tier === 2 ? `Action: tap to review the draft at the gate.` : `Action taken: ${r.action.replace(/_/g, " ")}.`,
         ].join("\n"),
         prospectId: r.prospectId,
+        replyId: r.tier === 2 ? r.replyId : undefined,
       });
       chime(r.tier === 2 ? "alert" : "info");
       void refresh();
@@ -666,6 +676,14 @@ export function CommandCentre() {
                 · cursor {String(strikeCursorIdx + 1).padStart(2, "0")}/{String(ranked.length).padStart(2, "0")} — {strikeCursorName}
               </span>
             )}
+            {view === "pipeline" && pipelineCursorMeta && (
+              <span
+                aria-live="polite"
+                className="hidden max-w-[380px] shrink-0 truncate whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.14em] text-[#F4F5F2] lg:inline-block"
+              >
+                · gate {String(pipelineCursorMeta.idx).padStart(2, "0")}/{String(pipelineCursorMeta.total).padStart(2, "0")} — {pipelineCursorMeta.name}
+              </span>
+            )}
             <span className="hidden max-w-[620px] truncate whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.14em] text-[#5F6460] xl:inline-block">
               · {activePersona.title}: {activePersona.mandate}
             </span>
@@ -765,6 +783,7 @@ export function CommandCentre() {
                   suspended={dossierOpen || paletteOpen || shortcutsOpen}
                   focusReplyId={pipelineFocusReply}
                   onFocusConsumed={() => setPipelineFocusReply(null)}
+                  onCursorMeta={onPipelineCursorMeta}
                 />
               )}
               {view === "portal" && <PortalView snap={snap} />}
@@ -818,7 +837,13 @@ export function CommandCentre() {
           <button
             key={t.id}
             onClick={() => {
-              if (t.prospectId) openDossierById(t.prospectId);
+              if (t.replyId) {
+                // Tier-2 draft toasts land the gate cursor on the exact reply.
+                setView("pipeline");
+                setPipelineFocusReply(t.replyId);
+              } else if (t.prospectId) {
+                openDossierById(t.prospectId);
+              }
               setToasts((prev) => prev.filter((x) => x.id !== t.id));
             }}
             className={`cc-toast pointer-events-auto rounded-lg px-4 py-3.5 text-left transition-transform hover:scale-[1.01] ${
