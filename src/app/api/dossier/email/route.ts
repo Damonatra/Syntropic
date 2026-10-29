@@ -48,7 +48,7 @@ export async function POST(request: Request) {
 
     const prospect = await db.prospect.findUnique({
       where: { id: prospectId },
-      select: { id: true, name: true, country: true, region: true, caslScope: true, bestEmail: true },
+      select: { id: true, name: true, country: true, region: true, caslScope: true, caslReason: true, bestEmail: true },
     });
     if (!prospect) return NextResponse.json({ error: "prospect_not_found" }, { status: 404 });
     if (!prospect.bestEmail) {
@@ -61,6 +61,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error: "casl_consent_required",
+          reason: prospect.caslReason ?? "no_consent_scope",
           hint: "Canadian prospect without an established consent basis — cold send refused by the enclave, not the operator.",
         },
         { status: 403 },
@@ -104,7 +105,7 @@ export async function POST(request: Request) {
       text: body,
       prospectId: prospect.id,
       caslScope: prospect.caslScope,
-      region: prospect.caslScope ? "ca" : "us",
+      region: prospect.region,
     });
 
     const dispatch = await db.dispatch.create({

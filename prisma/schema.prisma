@@ -223,7 +223,7 @@ model OperatorAction {
   id         String   @id @default(cuid())
   prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
   prospectId String
-  action     String // called | deferred | snoozed | booked | note
+  action     String // called | deferred | snoozed | booked | note | emailed
   note       String?
   createdAt  DateTime @default(now())
 

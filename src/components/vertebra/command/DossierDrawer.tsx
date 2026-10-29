@@ -1,7 +1,7 @@
 /** Dossier drawer — full operator context before a call. Obsidian sheet, graphite threat matrix. */
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Chip, ErpBadge, Kv, PillButton, ScoreBlock, SectionLabel, SoftCard, EmptyHint } from "./bits";
 import { EVENT_LABELS, PORTAL_LABELS, annualLeakageUsd, money, relTime, verticalLabel, type CommandLead } from "@/lib/vertebra/command";
@@ -13,6 +13,7 @@ interface DossierData {
     name: string;
     domain: string | null;
     vertical: string | null;
+    region: string | null;
     city: string | null;
     stateProvince: string | null;
     country: string | null;
@@ -37,6 +38,52 @@ interface DossierData {
   actions: Array<{ id: string; action: string; note: string | null; createdAtMs: number }>;
   replies: Array<{ id: string; intent: string; fromEmail: string; subject: string | null; body: string; receivedAtMs: number; draft: { id: string; status: string; subject: string; body: string } | null }>;
 }
+
+const ACTION_LOG_LABELS: Record<string, string> = {
+  called: "Call logged",
+  deferred: "Deferred",
+  snoozed: "Snoozed",
+  booked: "Booked",
+  note: "Operator note",
+  emailed: "Cold email",
+};
+
+const HOOK_FLAVOR_LABELS: Record<string, string> = {
+  rfq_latency: "RFQ latency",
+  spa_leakage: "SPA leakage",
+  portal_drift: "Portal drift",
+  peer_proof: "Peer proof",
+};
+
+/** Subject seed keyed off a hook's flavor — client parity with casl.ts subjectForHook. */
+function seedSubject(flavor: string, company: string): string {
+  switch (flavor) {
+    case "rfq_latency":
+      return `${company}: RFQ turnaround`;
+    case "spa_leakage":
+      return `${company}: vendor SPA gaps`;
+    case "portal_drift":
+      return `${company}: quoting through the portal`;
+    case "peer_proof":
+      return `a benchmark for ${company}`;
+    default:
+      return `${company}: quoting benchmark`;
+  }
+}
+
+function seedBody(hookBody: string, contactFirst?: string): string {
+  const hello = contactFirst ? `Hi ${contactFirst},` : "Hello,";
+  return `${hello}\n\n${hookBody}\n\nIf this is relevant, I will send a 3-slide teardown of where the leakage shows up in a quoting workflow like yours. If not, the unsubscribe link below is instant.`;
+}
+
+type SendResult =
+  | { kind: "staged"; reason: string | null }
+  | { kind: "sent"; id: string | null }
+  | { kind: "failed"; reason: string | null }
+  | { kind: "cooldown"; lastSend: { subject: string | null; atMs: number } | null }
+  | { kind: "suppressed" }
+  | { kind: "casl"; hint: string | null }
+  | { kind: "error"; reason: string | null };
 
 const FACTOR_LABELS: Record<string, string> = {
   rfq_latency: "RFQ latency",
@@ -65,13 +112,27 @@ export function DossierDrawer({
   lead: CommandLead | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onAction: (prospectId: string, action: "called" | "deferred" | "snoozed" | "booked", note?: string) => void;
+  onAction: (prospectId: string, action: "called" | "deferred" | "snoozed" | "booked" | "note", note?: string) => Promise<void> | void;
 }) {
   const [data, setData] = useState<DossierData | null>(null);
   const [loading, setLoading] = useState(false);
+  // M3 operator desk state
+  const [composeSubject, setComposeSubject] = useState("");
+  const [composeBody, setComposeBody] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendResult, setSendResult] = useState<SendResult | null>(null);
+  const [noteText, setNoteText] = useState("");
+  const [triaging, setTriaging] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const seededForRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!open || !lead) return;
+    if (!open || !lead) {
+      setSendResult(null);
+      setNoteText("");
+      seededForRef.current = null;
+      return;
+    }
     setLoading(true);
     setData(null);
     fetch(`/api/dossier?id=${lead.id}`, { cache: "no-store" })
@@ -81,7 +142,137 @@ export function DossierDrawer({
       .finally(() => setLoading(false));
   }, [open, lead]);
 
+  /** Silent post-action refetch — keeps the drawer stable, never clobbers with null. */
+  function refetchDossier() {
+    if (!lead) return;
+    fetch(`/api/dossier?id=${lead.id}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d) setData(d);
+      })
+      .catch(() => {});
+  }
+
+  // Angle seeds: prefill the compose desk once per prospect from the top hook.
+  useEffect(() => {
+    if (!data || seededForRef.current === data.prospect.id) return;
+    const top = data.prospect.score?.hooks?.[0];
+    if (!top) return;
+    seededForRef.current = data.prospect.id;
+    setComposeSubject((s) => s || seedSubject(top.flavor, data.prospect.name));
+    setComposeBody((b) => b || seedBody(top.body, data.prospect.contacts[0]?.name.split(" ")[0]));
+  }, [data]);
+
   const now = Date.now();
+  const isCanadian = Boolean(data && ((data.prospect.country ?? "").toLowerCase().includes("canada") || data.prospect.region === "ca"));
+  const gateClosed = Boolean(data && isCanadian && !data.prospect.caslScope);
+  const sendDisabled =
+    sending ||
+    !data?.prospect.bestEmail ||
+    gateClosed ||
+    sendResult?.kind === "suppressed" ||
+    sendResult?.kind === "casl" ||
+    composeSubject.trim().length === 0 ||
+    composeBody.trim().length === 0;
+  const caslNotice = gateClosed
+    ? "CASL gate closed — no consent basis on file for this Canadian prospect. The enclave will refuse the send; establish consent first."
+    : data?.prospect.caslScope
+      ? "CASL consent on file · RFC 8058 one-click unsubscribe headers attach."
+      : "Identification footer + instant unsubscribe link attach to every send.";
+  const mapUrl = data
+    ? data.prospect.latitude != null && data.prospect.longitude != null
+      ? `https://www.google.com/maps/search/?api=1&query=${data.prospect.latitude},${data.prospect.longitude}`
+      : data.prospect.city || data.prospect.stateProvince
+        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([data.prospect.city, data.prospect.stateProvince, data.prospect.country].filter(Boolean).join(" "))}`
+        : null
+    : null;
+
+  function copyEmail() {
+    if (!data?.prospect.bestEmail) return;
+    navigator.clipboard
+      ?.writeText(data.prospect.bestEmail)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1600);
+      })
+      .catch(() => {});
+  }
+
+  async function sendColdEmail(override: boolean) {
+    if (!data) return;
+    setSending(true);
+    setSendResult(null);
+    try {
+      const res = await fetch("/api/dossier/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prospectId: data.prospect.id,
+          subject: composeSubject.trim(),
+          body: composeBody.trim(),
+          ...(override ? { override: true } : {}),
+        }),
+      });
+      const j = (await res.json().catch(() => null)) as
+        | { ok?: boolean; send?: { status: string; reason: string | null; providerMsgId: string | null }; lastSend?: { subject: string | null; atMs: number }; error?: string; hint?: string; reason?: string }
+        | null;
+      if (res.ok && j?.ok && j.send) {
+        if (j.send.status === "sent") {
+          setSendResult({ kind: "sent", id: j.send.providerMsgId });
+          setComposeSubject("");
+          setComposeBody("");
+        } else if (j.send.status === "staged") {
+          setSendResult({ kind: "staged", reason: j.send.reason });
+          setComposeSubject("");
+          setComposeBody("");
+        } else {
+          setSendResult({ kind: "failed", reason: j.send.reason });
+        }
+      } else if (res.status === 409) {
+        setSendResult({ kind: "cooldown", lastSend: j?.lastSend ?? null });
+      } else if (res.status === 403 && j?.error === "suppressed") {
+        setSendResult({ kind: "suppressed" });
+      } else if (res.status === 403) {
+        setSendResult({ kind: "casl", hint: j?.hint ?? null });
+      } else {
+        setSendResult({ kind: "error", reason: j?.error ?? `http_${res.status}` });
+      }
+    } catch {
+      setSendResult({ kind: "error", reason: "network" });
+    } finally {
+      setSending(false);
+      refetchDossier();
+    }
+  }
+
+  async function triageDraft(draftId: string, decision: "approved" | "discarded") {
+    setTriaging(draftId);
+    try {
+      await fetch("/api/replies", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ draftId, decision }),
+      });
+    } catch {
+      /* honest: the refetch below shows the truth */
+    } finally {
+      setTriaging(null);
+      refetchDossier();
+    }
+  }
+
+  async function act(action: "called" | "deferred" | "snoozed" | "booked" | "note", note?: string) {
+    if (!data) return;
+    await onAction(data.prospect.id, action, note);
+    refetchDossier();
+  }
+
+  function logNote() {
+    const trimmed = noteText.trim();
+    if (!trimmed) return;
+    setNoteText("");
+    void act("note", trimmed);
+  }
   const score = data?.prospect.score ?? (lead?.score ? { ...lead.score } : null);
   const leakage = data ? annualLeakageUsd(data.prospect.revenueEstimateUsd, score?.qlvScore ?? null) : lead?.leakageUsd ?? null;
   const erp = erpDoc(data?.prospect.erpMetadata ?? null);
@@ -149,6 +340,108 @@ export function DossierDrawer({
                 <Kv k="Email" v={data.prospect.bestEmail ?? "unverified"} mono={false} />
                 <Kv k="Pattern" v={data.prospect.emailPattern ?? "—"} />
                 <Kv k="Revenue" v={`${money(data.prospect.revenueEstimateUsd)} · ${data.prospect.employeeCount ?? "—"} empl`} />
+                <div className="mt-2 flex flex-wrap items-center gap-3 border-t border-white/[0.08] pt-2.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[#8E9194]">
+                  <button type="button" onClick={copyEmail} disabled={!data.prospect.bestEmail} className="transition-colors hover:text-[#F4F5F2] disabled:opacity-40">
+                    copy email
+                  </button>
+                  {data.prospect.domain && (
+                    <a href={`https://${data.prospect.domain}`} target="_blank" rel="noreferrer" className="transition-colors hover:text-[#F4F5F2]">
+                      open domain ↗
+                    </a>
+                  )}
+                  {mapUrl && (
+                    <a href={mapUrl} target="_blank" rel="noreferrer" className="transition-colors hover:text-[#F4F5F2]">
+                      map ↗
+                    </a>
+                  )}
+                  {copied && <span className="text-[#F4F5F2]">copied ✓</span>}
+                </div>
+              </SoftCard>
+            </section>
+
+            {/* Cold email desk (M3) — compose, angle seeds, honest send states */}
+            <section>
+              <SectionLabel className="mb-2">Cold email desk · channel A</SectionLabel>
+              <SoftCard className="px-5 py-4">
+                <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-[#8E9194]">
+                  to · <span className="normal-case tracking-normal text-[#E9EBE7]">{data.prospect.bestEmail ?? "unverified — no send path"}</span>
+                </div>
+                <p className={`mt-2.5 rounded-md border px-3 py-2 font-mono text-[10.5px] leading-relaxed ${gateClosed ? "border-white/[0.24] bg-white/[0.04] text-[#F4F5F2]" : "border-white/[0.08] text-[#8E9194]"}`}>
+                  {caslNotice}
+                </p>
+                {score?.hooks && score.hooks.length > 0 && (
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                    <span className="font-mono text-[9.5px] uppercase tracking-[0.18em] text-[#6E736E]">angle seeds</span>
+                    {score.hooks.map((h) => (
+                      <button
+                        key={h.flavor}
+                        type="button"
+                        onClick={() => {
+                          setComposeSubject(seedSubject(h.flavor, data.prospect.name));
+                          setComposeBody(seedBody(h.body, data.prospect.contacts[0]?.name.split(" ")[0]));
+                          setSendResult(null);
+                        }}
+                        className="rounded-full border border-white/[0.12] px-2.5 py-1 font-mono text-[10px] text-[#8E9194] transition-colors hover:border-white/[0.3] hover:text-[#F4F5F2]"
+                      >
+                        {HOOK_FLAVOR_LABELS[h.flavor] ?? h.flavor}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <input
+                  value={composeSubject}
+                  onChange={(e) => setComposeSubject(e.target.value)}
+                  placeholder="subject"
+                  maxLength={200}
+                  disabled={!data.prospect.bestEmail}
+                  className="mt-3 h-9 w-full rounded-md border border-white/[0.10] bg-[#131513] px-3 font-mono text-[12px] text-[#F4F5F2] placeholder:text-[#6E736E] focus:border-white/[0.28] focus:outline-none disabled:opacity-40"
+                />
+                <textarea
+                  value={composeBody}
+                  onChange={(e) => setComposeBody(e.target.value)}
+                  rows={7}
+                  maxLength={8000}
+                  placeholder="body"
+                  disabled={!data.prospect.bestEmail}
+                  className="mt-2 w-full resize-y rounded-md border border-white/[0.10] bg-[#131513] px-3 py-2.5 font-mono text-[12px] leading-relaxed text-[#F4F5F2] placeholder:text-[#6E736E] focus:border-white/[0.28] focus:outline-none disabled:opacity-40"
+                />
+                <div className="mt-1 text-right font-mono text-[9.5px] tabular-nums text-[#6E736E]">{composeBody.length} / 8000</div>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <PillButton tone="dark" onClick={() => void sendColdEmail(false)} disabled={sendDisabled}>
+                    {sending ? "sending…" : "send cold email"}
+                  </PillButton>
+                  {sendResult?.kind === "cooldown" && (
+                    <PillButton tone="well" onClick={() => void sendColdEmail(true)} disabled={sending}>
+                      force resend
+                    </PillButton>
+                  )}
+                  <span className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[#6E736E]">24h cooldown · honest dispatch</span>
+                </div>
+                {sendResult && (
+                  <div className="mt-3 rounded-md border border-white/[0.14] bg-white/[0.03] px-3 py-2.5">
+                    <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-[#F4F5F2]">
+                      {sendResult.kind === "staged" && "● mail: staged — no provider"}
+                      {sendResult.kind === "sent" && "● mail: sent — via resend"}
+                      {sendResult.kind === "failed" && "● send failed"}
+                      {sendResult.kind === "cooldown" && "● cooldown active — manual send inside 24h"}
+                      {sendResult.kind === "suppressed" && "● suppressed — the enclave will not send"}
+                      {sendResult.kind === "casl" && "● casl gate — enclave refused"}
+                      {sendResult.kind === "error" && "● send failed — enclave error"}
+                    </p>
+                    <p className="mt-1 text-[11.5px] leading-relaxed text-[#8E9194]">
+                      {sendResult.kind === "staged" &&
+                        "Accepted into the ledger and visible in dispatch history. It leaves the building the moment RESEND_API_KEY is configured — nothing pretends an email went out."}
+                      {sendResult.kind === "sent" && `Provider message ${sendResult.id ?? "accepted"}. CASL footer attached.`}
+                      {sendResult.kind === "failed" && (sendResult.reason ?? "Transport refused the message.")}
+                      {sendResult.kind === "cooldown" &&
+                        sendResult.lastSend &&
+                        `“${sendResult.lastSend.subject ?? "(no subject)"}” went out ${relTime(sendResult.lastSend.atMs, now) === "" ? "just now" : relTime(sendResult.lastSend.atMs, now)}. Force resend only if you are sure.`}
+                      {sendResult.kind === "suppressed" && "This address opted out — every send path is closed, no exceptions."}
+                      {sendResult.kind === "casl" && (sendResult.hint ?? "No consent basis on file.")}
+                      {sendResult.kind === "error" && "The enclave did not acknowledge — try again."}
+                    </p>
+                  </div>
+                )}
               </SoftCard>
             </section>
 
@@ -288,6 +581,26 @@ export function DossierDrawer({
               )}
             </section>
 
+            {/* Operator log (M3) — the decision ledger, previously fetched but never rendered */}
+            <section>
+              <SectionLabel className="mb-2">Operator log</SectionLabel>
+              {data.actions.length === 0 ? (
+                <EmptyHint>No operator decisions logged yet</EmptyHint>
+              ) : (
+                <SoftCard className="px-5 py-3">
+                  {data.actions.map((a) => (
+                    <div key={a.id} className="flex items-baseline justify-between gap-4 py-2 not-last:border-b not-last:border-white/[0.07]">
+                      <div className="min-w-0">
+                        <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-[#E9EBE7]">{ACTION_LOG_LABELS[a.action] ?? a.action}</p>
+                        {a.note && <p className="mt-0.5 truncate text-[11.5px] text-[#8E9194]">{a.note}</p>}
+                      </div>
+                      <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-[#6E736E]">{relTime(a.createdAtMs, now)}</span>
+                    </div>
+                  ))}
+                </SoftCard>
+              )}
+            </section>
+
             {/* Replies */}
             {data.replies.length > 0 && (
               <section>
@@ -301,7 +614,23 @@ export function DossierDrawer({
                       </div>
                       <p className="mt-1 line-clamp-2 text-[11.5px] leading-relaxed text-[#8E9194]">{r.body}</p>
                       {r.draft && (
-                        <p className="mt-1 font-mono text-[10.5px] uppercase tracking-[0.1em] text-[#6E736E]">draft: {r.draft.status.replace(/_/g, " ")}</p>
+                        <div className="mt-1.5 rounded-md border border-white/[0.10] bg-[#131513] px-3 py-2.5">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-[#6E736E]">draft · {r.draft.status.replace(/_/g, " ")}</p>
+                            {r.draft.status === "pending_human_review" && (
+                              <div className="flex shrink-0 gap-2">
+                                <PillButton tone="dark" disabled={triaging === r.draft.id} onClick={() => void triageDraft(r.draft!.id, "approved")}>
+                                  {triaging === r.draft.id ? "…" : "approve"}
+                                </PillButton>
+                                <PillButton tone="well" disabled={triaging === r.draft.id} onClick={() => void triageDraft(r.draft!.id, "discarded")}>
+                                  discard
+                                </PillButton>
+                              </div>
+                            )}
+                          </div>
+                          <p className="mt-1.5 text-[12px] text-[#E9EBE7]">{r.draft.subject}</p>
+                          <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-[11.5px] leading-relaxed text-[#8E9194]">{r.draft.body}</p>
+                        </div>
                       )}
                     </div>
                   ))}
@@ -311,19 +640,37 @@ export function DossierDrawer({
 
             {/* Action footer */}
             <section className="sticky bottom-0 -mx-6 mt-2 border-t border-white/[0.10] bg-[#0B0C0B] px-6 pb-2 pt-4">
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2">
+                <input
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") logNote();
+                  }}
+                  placeholder="operator note — context, objections, next step"
+                  maxLength={280}
+                  className="h-9 min-w-0 flex-1 rounded-full border border-white/[0.10] bg-[#131513] px-4 font-mono text-[11.5px] text-[#F4F5F2] placeholder:text-[#6E736E] focus:border-white/[0.28] focus:outline-none"
+                />
+                <PillButton tone="ghost" disabled={!noteText.trim()} onClick={logNote}>
+                  Log note
+                </PillButton>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
                 {phone && (
                   <PillButton tone="dark" href={`tel:${phone.replace(/\s/g, "")}`}>
                     Call {phone}
                   </PillButton>
                 )}
-                <PillButton tone="ghost" onClick={() => onAction(data.prospect.id, "called", "Logged from dossier")}>
+                <PillButton tone="ghost" onClick={() => void act("called", "Logged from dossier")}>
                   Log call
                 </PillButton>
-                <PillButton tone="well" onClick={() => onAction(data.prospect.id, "deferred")}>
+                <PillButton tone="dark" onClick={() => void act("booked")}>
+                  Booked
+                </PillButton>
+                <PillButton tone="well" onClick={() => void act("deferred")}>
                   Defer
                 </PillButton>
-                <PillButton tone="well" onClick={() => onAction(data.prospect.id, "snoozed", undefined)}>
+                <PillButton tone="well" onClick={() => void act("snoozed", undefined)}>
                   Snooze 24h
                 </PillButton>
                 {data.prospect.score && (

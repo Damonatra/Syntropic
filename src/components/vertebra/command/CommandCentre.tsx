@@ -70,7 +70,7 @@ interface Toast {
   id: string;
   kind: "alert" | "info";
   title: string;
-  body: string;
+  body?: string;
   prospectId?: string;
 }
 
@@ -379,7 +379,7 @@ export function CommandCentre() {
 
   // ---- operator actions -------------------------------------------------- //
   const doAction = useCallback(
-    async (prospectId: string, action: "called" | "deferred" | "snoozed" | "booked", note?: string) => {
+    async (prospectId: string, action: "called" | "deferred" | "snoozed" | "booked" | "note", note?: string) => {
       const lead = snap?.leads.find((l) => l.id === prospectId);
       try {
         const res = await fetch("/api/actions", {
@@ -394,8 +394,9 @@ export function CommandCentre() {
             action === "called" ? `Call logged — ${lead?.name ?? "prospect"}`
             : action === "deferred" ? `Deferred — ${lead?.name ?? "prospect"}`
             : action === "booked" ? `Booked — ${lead?.name ?? "prospect"}`
+            : action === "note" ? `Note logged — ${lead?.name ?? "prospect"}`
             : `Snoozed 24h — ${lead?.name ?? "prospect"}`,
-          body: action === "deferred" ? "Returns to the queue on the next high-signal event." : undefined ?? "",
+          body: action === "deferred" ? "Returns to the queue on the next high-signal event." : undefined,
           prospectId,
         });
         void refresh();
@@ -614,9 +615,11 @@ export function CommandCentre() {
                 {t.title}
               </p>
             </div>
-            <p className={`mt-1.5 whitespace-pre-line text-[12px] leading-relaxed ${t.kind === "alert" ? "text-white/90" : "text-[#C9CCC7]"}`}>
-              {t.body}
-            </p>
+            {t.body && (
+              <p className={`mt-1.5 whitespace-pre-line text-[12px] leading-relaxed ${t.kind === "alert" ? "text-white/90" : "text-[#C9CCC7]"}`}>
+                {t.body}
+              </p>
+            )}
           </button>
         ))}
       </div>
