@@ -74,7 +74,7 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
 
   const display = input.fromDisplayName ?? process.env.VERTEBRA_FROM_DISPLAY ?? "Syntropic Industrial Growth";
   const from = senderAddress(input.fromDomain, display);
-  const footer = buildCaslFooter(input.prospectId ?? "anon", input.to, input.region);
+  const footer = buildCaslFooter(input.prospectId ?? "anon", input.to, input.region ?? null);
   const headers = buildEmailHeaders(input.prospectId ?? "anon", input.to, Boolean(input.caslScope));
   const text = `${input.text.trim()}\n\n— ${display}\n\n${footer}`;
 

@@ -56,6 +56,7 @@ export async function GET(request: Request) {
         emailPattern: prospect.emailPattern,
         detectedErp: prospect.detectedErp,
         quotePortalType: prospect.quotePortalType,
+        rawExcerpt: prospect.rawExcerpt,
         erpMetadata: prospect.erpMetadata,
         auditImageUrl: prospect.auditImageUrl,
         latitude: prospect.latitude,

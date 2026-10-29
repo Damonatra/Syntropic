@@ -17,7 +17,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { guardWrite } from "@/lib/vertebra/guard";
-import { buildBrief, verifyDraft, draftUserPrompt, DraftOut } from "@/lib/vertebra/evidence";
+import { buildBrief, verifyDraft, draftUserPrompt, DraftOut, CLOSE_CTA } from "@/lib/vertebra/evidence";
 
 const BodySchema = z.object({ prospectId: z.string().min(1) });
 
@@ -87,6 +87,7 @@ export async function POST(request: Request) {
       })),
       hookBodies: score ? (JSON.parse(score.hooksJson) as Array<{ body: string }>).map((h) => h.body) : [],
       rationale: score?.rationale ?? null,
+      boilerplate: [CLOSE_CTA],
     });
 
     // ---- LLM draft, one regenerate with violation feedback ----------------- //

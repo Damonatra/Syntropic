@@ -34,7 +34,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { guardWrite } from "@/lib/vertebra/guard";
 import { isSuppressed, mailProvider, sendEmail } from "@/lib/vertebra/mailer";
-import { buildBrief, verifyDraft } from "@/lib/vertebra/evidence";
+import { buildBrief, verifyDraft, CLOSE_CTA } from "@/lib/vertebra/evidence";
 
 const EmailSchema = z.object({
   prospectId: z.string().min(1),
@@ -151,6 +151,9 @@ export async function POST(request: Request) {
       })),
       hookBodies: score ? (JSON.parse(score.hooksJson) as Array<{ body: string }>).map((h) => h.body) : [],
       rationale: score?.rationale ?? null,
+      // The standard CTA is sender boilerplate, not a prospect claim — the
+      // "3-slide teardown" must never trip the number fact-trace.
+      boilerplate: [CLOSE_CTA],
     });
     const verify = verifyDraft(subject, body, brief, { requireSignalEcho: false });
     if (!verify.ok) {

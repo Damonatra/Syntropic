@@ -120,6 +120,15 @@ const NOUN_ALLOWLIST = new Set([
   "q1", "q2", "q3", "q4", "llc", "inc", "ltd", "co",
 ]);
 
+/**
+ * The standard closing every Syntropic cold email may carry. Canonical,
+ * client-safe definition (casl.ts re-exports it for server callers). Listed
+ * as brief boilerplate so the fact-trace never mistakes our own fixed copy
+ * — "3-slide teardown" — for a fabricated claim about the prospect.
+ */
+export const CLOSE_CTA =
+  "If this is relevant, I will send a 3-slide teardown of where the leakage shows up in a quoting workflow like yours. If not, the unsubscribe link below is instant.";
+
 // --------------------------------------------------------------------------- //
 // Brief construction (deterministic)
 // --------------------------------------------------------------------------- //
@@ -140,6 +149,8 @@ export interface BriefMaterial {
   signals: BriefSignal[];
   hookBodies?: string[];
   rationale?: string | null;
+  /** Fixed sender copy (the standard CTA) — legal ground, never a hallucination. */
+  boilerplate?: string[];
 }
 
 function fnv1a64(text: string): string {
@@ -168,6 +179,7 @@ export function buildBrief(m: BriefMaterial): EvidenceBrief {
     m.rawExcerpt,
     m.rationale,
     ...(m.hookBodies ?? []),
+    ...(m.boilerplate ?? []),
     ...m.signals.flatMap((s) => [s.verbatim, s.context, s.sourceNote, s.kind]),
   ].filter((x): x is string => Boolean(x && x.trim()));
 
@@ -240,6 +252,28 @@ function isSentenceInitialAt(text: string, index: number): boolean {
   if (index === 0) return true;
   const before = text.slice(Math.max(0, index - 3), index);
   return /[.!?\n:]["'’”)}\]]*\s*$/.test(before);
+}
+
+/**
+ * Contiguous-window echo test — the "feel seen" contract. A draft echoes a
+ * signal when a 6-word window from its opening, middle or tail appears in
+ * the body. Shared by verifyDraft, the drawer's live rails and tests so the
+ * echo math exists in exactly one place.
+ */
+export function signalEchoed(bodyNorm: string, verbatim: string): boolean {
+  const allWords = normalizeForTrace(verbatim).split(/\s+/).filter(Boolean);
+  if (allWords.filter((w) => w.length > 3).length < 3) return false;
+  for (const start of [0, 3, Math.max(0, allWords.length - 6)]) {
+    const window = allWords.slice(start, start + 6).join(" ");
+    if (window && bodyNorm.includes(window)) return true;
+  }
+  return false;
+}
+
+/** How many of the held signals the body actually echoes (live 1:1 depth). */
+export function countEchoedSignals(body: string, verbatims: string[]): number {
+  const bodyNorm = normalizeForTrace(body);
+  return verbatims.reduce((n, v) => (signalEchoed(bodyNorm, v) ? n + 1 : n), 0);
 }
 
 /** True when every significant word of `phrase` appears in `haystack`. */
@@ -319,26 +353,22 @@ export function verifyDraft(
   // 4. structural caps
   if (bodyWords > 200) hard.push({ code: "body_word_cap", detail: `${bodyWords} words — far past the 1:1 ceiling` });
   if (questions > 2) hard.push({ code: "question_cap", detail: `${questions} questions — one ask, maximum two` });
-  if (/unsubscribe|opt.?out|list-unsubscribe/i.test(body)) {
+  // Pasted unsubscribe mechanics (a link, an anchor tag, header text) conflict
+  // with the footer the platform appends. Prose that merely mentions the
+  // unsubscribe link — including the standard CTA — is legal.
+  const pastedUnsub =
+    /list-unsubscribe/i.test(body) ||
+    /<a\s/i.test(body) ||
+    /\b(unsub\w*|opt.?out)\b[^.\n]{0,80}(https?:\/\/|www\.)/i.test(body) ||
+    /(https?:\/\/|www\.)\S{0,80}\b(unsub|opt.?out)/i.test(body);
+  if (pastedUnsub) {
     hard.push({ code: "manual_unsub_link", detail: "the footer is appended at send — never paste unsubscribe text into the body" });
   }
 
   // 5. draft profile: the echo requirement (this is the "feel seen" contract)
   if (options.requireSignalEcho) {
     const verbatims = options.signalVerbatims ?? brief.signals.map((s) => s.verbatim);
-    const bodyNorm = normalizeForTrace(body);
-    const echoed = verbatims.some((v) => {
-      const allWords = normalizeForTrace(v).split(/\s+/).filter(Boolean);
-      if (allWords.filter((w) => w.length > 3).length < 3) return false;
-      // Contiguous windows from the verbatim — the draft may echo the opening,
-      // the middle or the tail of the quote. Filtered-word windows would break
-      // contiguity and miss legitimate echoes.
-      for (const start of [0, 3, Math.max(0, allWords.length - 6)]) {
-        const window = allWords.slice(start, start + 6).join(" ");
-        if (window && bodyNorm.includes(window)) return true;
-      }
-      return false;
-    });
+    const echoed = countEchoedSignals(body, verbatims) > 0;
     if (!echoed) {
       hard.push({ code: "no_signal_echo", detail: "draft echoes none of the verbatim pain signals — it is not 1:1" });
     }

@@ -91,8 +91,8 @@ export function subjectForHook(flavor: string, company: string): string {
   }
 }
 
-export const CLOSE_CTA =
-  "If this is relevant, I will send a 3-slide teardown of where the leakage shows up in a quoting workflow like yours. If not, the unsubscribe link below is instant.";
+/** Canonical CLOSE_CTA lives in evidence.ts (client-safe) — re-exported for server callers. */
+export { CLOSE_CTA } from "./evidence";
 
 /** Google Calendar "create event" template link used by Channel B follow-ups. */
 export function calendarFollowupUrl(params: {

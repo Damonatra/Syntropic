@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildBrief, verifyDraft, type BriefMaterial } from "@/lib/vertebra/evidence";
+import { buildBrief, verifyDraft, countEchoedSignals, CLOSE_CTA, type BriefMaterial } from "@/lib/vertebra/evidence";
 
 const SIGNALS = [
   {
@@ -58,6 +58,16 @@ describe("buildBrief", () => {
     expect(a).toBe(b);
     expect(a).not.toBe(c);
   });
+
+  it("treats the standard CTA boilerplate as legal ground, not a fabricated number", () => {
+    // Regression: the drawer seeds compose with CLOSE_CTA ("3-slide teardown");
+    // the wall refused it because "3" had no basis in the brief.
+    const brief = buildBrief(material({ boilerplate: [CLOSE_CTA] }));
+    const body = `Hi Marcus,\n\nA review says quotes at Gulf Coast Valve "took four days just to get a quote back on valve packages". ${CLOSE_CTA}`;
+    const r = verifyDraft("four days to quote", body, brief, { requireSignalEcho: false });
+    expect(r.hard).toEqual([]);
+    expect(r.ok).toBe(true);
+  });
 });
 
 describe("verifyDraft — the integrity wall", () => {
@@ -66,6 +76,18 @@ describe("verifyDraft — the integrity wall", () => {
   it("passes a grounded, echoing draft", () => {
     const subject = "four days to quote";
     const body = `Hi Marcus,\n\nA contractor review says quotes at Gulf Coast Valve "took four days just to get a quote back on valve packages" — meanwhile your own site promises "5-7 business days".\n\nMost PVF houses we work with lose 6-14 hours a week re-keying RFQs. Worth a look at where the delay concentrates?\n\n— sent by Syntropic`;
+    const r = verifyDraft(subject, body, brief, { requireSignalEcho: true, signalVerbatims: SIGNALS.map((s) => s.verbatim) });
+    expect(r.hard).toEqual([]);
+    expect(r.ok).toBe(true);
+  });
+
+  // Regression: the live phase-2 verify run flagged two false positives on an
+  // honest LLM draft — (1) "Gulf Coast\nNoted", a proper-noun phrase straddling
+  // the subject/body boundary, and (2) "Also", a sentence-initial connector
+  // following `QuickBooks.' `. Both must pass.
+  it("passes the exact draft that tripped the live fact-trace (straddle + Also)", () => {
+    const subject = "Quote process at Gulf Coast";
+    const body = `Noted your team 'quotes pile up every Friday and someone hand-types them into QuickBooks.' Also saw a review mentioning it 'took four days just to get a quote back on valve packages.' Your site says responses take 5-7 business days. That's a tight window for contractors. How much time weekly goes into re-keying RFQs between fax, email and your system?`;
     const r = verifyDraft(subject, body, brief, { requireSignalEcho: true, signalVerbatims: SIGNALS.map((s) => s.verbatim) });
     expect(r.hard).toEqual([]);
     expect(r.ok).toBe(true);
@@ -98,6 +120,13 @@ describe("verifyDraft — the integrity wall", () => {
     expect(r.hard.map((v) => v.code)).toContain("no_signal_echo");
     const r2 = verifyDraft("quoting benchmark", body, brief, { requireSignalEcho: false });
     expect(r2.ok).toBe(true);
+  });
+
+  it("counts echoed signals for the live rails", () => {
+    const verbatims = SIGNALS.map((s) => s.verbatim);
+    const body = `Hi Marcus,\n\nA contractor review says quotes "took four days just to get a quote back on valve packages" — while your site says the inside sales team will respond within 5-7 business days. Worth a look?`;
+    expect(countEchoedSignals(body, verbatims)).toBe(2);
+    expect(countEchoedSignals("Hi Marcus, worth a look at your quoting?", verbatims)).toBe(0);
   });
 
   it("caps questions and refuses manual unsubscribe text", () => {

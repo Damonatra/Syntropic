@@ -1,11 +1,12 @@
 /** Dossier drawer — full operator context before a call. Obsidian sheet, graphite threat matrix. */
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Chip, ErpBadge, Kv, PillButton, ScoreBlock, SectionLabel, SoftCard, EmptyHint } from "./bits";
 import { EVENT_LABELS, PORTAL_LABELS, annualLeakageUsd, money, relTime, verticalLabel, type CommandLead } from "@/lib/vertebra/command";
 import { NET_MARGIN_ASSUMPTION, EXPOSURE_CEILING } from "@/lib/vertebra/command";
+import { buildBrief, verifyDraft, countEchoedSignals, CLOSE_CTA } from "@/lib/vertebra/evidence";
 
 interface DossierData {
   prospect: {
@@ -24,6 +25,7 @@ interface DossierData {
     emailPattern: string | null;
     detectedErp: string | null;
     quotePortalType: string | null;
+    rawExcerpt: string | null;
     erpMetadata: string | null;
     latitude: number | null;
     longitude: number | null;
@@ -74,7 +76,7 @@ function seedSubject(flavor: string, company: string): string {
 
 function seedBody(hookBody: string, contactFirst?: string): string {
   const hello = contactFirst ? `Hi ${contactFirst},` : "Hello,";
-  return `${hello}\n\n${hookBody}\n\nIf this is relevant, I will send a 3-slide teardown of where the leakage shows up in a quoting workflow like yours. If not, the unsubscribe link below is instant.`;
+  return `${hello}\n\n${hookBody}\n\n${CLOSE_CTA}`;
 }
 
 type SendResult =
@@ -258,6 +260,49 @@ export function DossierDrawer({
   // M5 — the dispatch ledger is the truth source for the persistent staged badge
   const lastManual = data?.dispatches.find((d) => d.channel === "operator_manual_email") ?? null;
   const lastManualHours = lastManual ? (now - lastManual.createdAtMs) / 3_600_000 : null;
+
+  // M7 — compose rails: the exact deterministic engine the send wall runs, live
+  // on every keystroke against a brief built from the same dossier material.
+  // Advisory by design — the wall at /api/dossier/email remains the law; these
+  // rails exist so the operator never discovers a violation after clicking.
+  const liveBrief = useMemo(() => {
+    if (!data) return null;
+    const active = data.prospect.painSignals.filter((s) => s.status === "active");
+    if (active.length === 0) return null;
+    return buildBrief({
+      prospectId: data.prospect.id,
+      companyName: data.prospect.name,
+      contactFirstName: data.prospect.contacts[0]?.name.split(" ")[0] ?? null,
+      contactFullName: data.prospect.contacts[0]?.name ?? null,
+      city: data.prospect.city,
+      stateProvince: data.prospect.stateProvince,
+      region: data.prospect.region,
+      vertical: data.prospect.vertical,
+      detectedErp: data.prospect.detectedErp,
+      quotePortalType: data.prospect.quotePortalType,
+      portalHint: (data.prospect.erpMetadata ?? "").includes("portal") ? "portal signals present in ERP metadata" : null,
+      rawExcerpt: data.prospect.rawExcerpt,
+      signals: active.map((s) => ({
+        id: s.id,
+        kind: s.kind,
+        verbatim: s.verbatim,
+        context: s.context,
+        sourceUrl: s.sourceUrl,
+        sourceNote: s.sourceNote,
+        confidence: s.confidence,
+      })),
+      hookBodies: data.prospect.score?.hooks.map((h) => h.body) ?? [],
+      rationale: data.prospect.score?.rationale ?? null,
+      boilerplate: [CLOSE_CTA],
+    });
+  }, [data]);
+  const rails = useMemo(() => {
+    if (!liveBrief) return null;
+    if (composeSubject.trim().length === 0 && composeBody.trim().length === 0) return null;
+    const report = verifyDraft(composeSubject, composeBody, liveBrief, { requireSignalEcho: false });
+    const echoed = countEchoedSignals(composeBody, liveBrief.signals.map((s) => s.verbatim));
+    return { report, echoed, total: liveBrief.signals.length };
+  }, [liveBrief, composeSubject, composeBody]);
 
   function copyEmail() {
     if (!data?.prospect.bestEmail) return;
@@ -742,6 +787,39 @@ export function DossierDrawer({
                   className="mt-2 w-full resize-y rounded-md border border-white/[0.10] bg-[#131513] px-3 py-2.5 font-mono text-[12px] leading-relaxed text-[#F4F5F2] placeholder:text-[#6E736E] focus:border-white/[0.28] focus:outline-none disabled:opacity-40"
                 />
                 <div className="mt-1 text-right font-mono text-[9.5px] tabular-nums text-[#6E736E]">{composeBody.length} / 8000</div>
+                {rails && (
+                  <div
+                    className={`mt-1.5 rounded-md border px-3 py-2 font-mono text-[9.5px] uppercase tracking-[0.14em] leading-relaxed ${
+                      rails.report.ok ? "border-white/[0.08] text-[#6E736E]" : "border-white/[0.24] bg-white/[0.04] text-[#F4F5F2]"
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span>live rails</span>
+                      <span className={rails.report.stats.bodyWords > 200 ? "text-[#F4F5F2]" : undefined}>
+                        {rails.report.stats.bodyWords} words
+                      </span>
+                      <span>{rails.report.stats.questions} ask</span>
+                      <span>
+                        banned {rails.report.hard.filter((v) => v.code === "banned_phrase").length}
+                      </span>
+                      <span>
+                        trace {rails.report.hard.some((v) => v.code.startsWith("fact_trace")) ? "off" : "clean"}
+                      </span>
+                      <span className={rails.echoed === 0 ? "text-[#F4F5F2]" : undefined}>echo {rails.echoed}/{rails.total}</span>
+                      <span className="normal-case tracking-normal">· advisory — the send wall is the law</span>
+                    </div>
+                    {rails.report.hard.length > 0 && (
+                      <ul className="mt-1 list-disc pl-4 normal-case tracking-normal">
+                        {rails.report.hard.slice(0, 2).map((v, i) => (
+                          <li key={i}>
+                            {v.code}: {v.detail}
+                          </li>
+                        ))}
+                        {rails.report.hard.length > 2 && <li>…and {rails.report.hard.length - 2} more</li>}
+                      </ul>
+                    )}
+                  </div>
+                )}
                 {draftReport && (
                   <div className={`mt-2 rounded-md border px-3 py-2 font-mono text-[10px] leading-relaxed ${draftReport.ok ? "border-white/[0.08] text-[#8E9194]" : "border-white/[0.24] bg-white/[0.04] text-[#F4F5F2]"}`}>
                     {draftReport.ok ? (
