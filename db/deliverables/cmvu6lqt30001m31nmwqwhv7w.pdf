@@ -1,0 +1,70 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [5 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 6 0 R >>
+endobj
+6 0 obj
+<< /Length 3384 >>
+stream
+BT /F2 17 Tf 1 0 0 1 54 738.0 Tm (MARGIN DEFENSE AUDIT) Tj ET
+BT /F2 13 Tf 1 0 0 1 54 709.9 Tm (Harbor Line Industrial Supply) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 689.4 Tm (ref ENGINE-RT-1793316939  diagnostic audit  sealed 2026-10-29  seal 5c2bae973ee3ba2b) Tj ET
+BT /F2 11 Tf 1 0 0 1 54 661.2 Tm (1. ENGAGEMENT) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 641.6 Tm (client        Harbor Line Industrial Supply) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 627.4 Tm (domain        harborline.example) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 613.2 Tm (contact       Dana Ruiz  dana@harborline.example  ) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 599.0 Tm (fee paid      $3,500  \(paid 2026-10-29\)) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 584.8 Tm (channel       manual booking) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 570.6 Tm (matched book  not linked at time of audit) Tj ET
+BT /F2 11 Tf 1 0 0 1 54 542.4 Tm (2. INTAKE PROFILE) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 522.8 Tm (rfq volume    40 RFQ / month) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 508.6 Tm (line items    12 lines / RFQ) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 494.4 Tm (annual lines  5,760) Tj ET
+BT /F2 11 Tf 1 0 0 1 54 466.2 Tm (3. LEAKAGE MODEL - LM-2025-Q4-r1) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 446.5 Tm (book-audit derivation  not derivable - matched prospect lacks revenue estimate or QLV score) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 424.3 Tm (assumptions   net margin 21%  exposure ceiling 35%  line value $420) Tj ET
+BT /F2 11 Tf 1 0 0 1 54 396.1 Tm (4. VERDICT - THE $10,000 GUARANTEE) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 376.5 Tm (confirmed recoverable   $34,382) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 362.3 Tm (guarantee               CLEARED - confirmed recoverable exceeds the $10,000 floor) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 344.1 Tm (operator record         round-trip: engine model accepted, operator records the guarantee) Tj ET
+BT /F2 11 Tf 1 0 0 1 54 315.9 Tm (5. EVIDENCE INVENTORY - 1 document) Tj ET
+BT /F1 10 Tf 1 0 0 1 66 296.3 Tm (q4-quote-ledger.pdf  0.1 kb  3p  12 line items  full text  sha256 15951ed1a42c1ddb) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 280.1 Tm () Tj ET
+BT /F2 11 Tf 1 0 0 1 54 253.9 Tm (6. LEDGER TRAIL - verbatim, append-only) Tj ET
+BT /F1 10 Tf 1 0 0 1 66 234.3 Tm ([2026-10-29 23:35Z] ingested  diagnostic_audit  $3,500  ref ENGINE-RT-1793316939 \(manual\)) Tj ET
+BT /F1 10 Tf 1 0 0 1 66 218.1 Tm ([2026-10-29 23:35Z] stage_changed  Paid -> intake  engine advance - contacts and quote volume on the ledger \(40 RFQ/mo  12 lines\) \(engine\)) Tj ET
+BT /F1 10 Tf 1 0 0 1 66 201.9 Tm ([2026-10-29 23:35Z] stage_changed  Intake -> forensics  engine advance - quote volume confirmed \(40 RFQ/mo  12 lines\) \(engine\)) Tj ET
+BT /F1 10 Tf 1 0 0 1 66 185.7 Tm ([2026-10-29 23:36Z] stage_changed  Forensics -> verdict  engine modeled LM-2025-Q4-r1 - annual $62,512 \(band $53,135-$71,889\)  recoverable $34,382 yr-one \(engine\)) Tj ET
+BT /F1 10 Tf 1 0 0 1 66 169.5 Tm ([2026-10-29 23:36Z] verdict_recorded  confirmed $34,382 recoverable  guarantee CLEARED  round-trip: engine model accepted, operator records the guarantee \(operator\)) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 153.3 Tm () Tj ET
+BT /F2 11 Tf 1 0 0 1 54 125.1 Tm (COMMERCIAL TERMS) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 105.5 Tm (diagnostic audit $3,500, credited to any engagement SOW  guarantee floor $10,000  enterprise SOW from $50,000) Tj ET
+BT /F1 10 Tf 1 0 0 1 54 89.3 Tm (rev-share 20% of recovered margin only  model LM-2025-Q4-r1  sealed 5c2bae973ee3ba2b) Tj ET
+endstream
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000121 00000 n 
+0000000218 00000 n 
+0000000320 00000 n 
+0000000456 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R >>
+startxref
+3891
+%%EOF
