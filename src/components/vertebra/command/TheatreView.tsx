@@ -20,14 +20,19 @@
  * real row), local call windows per territory (08:00–18:00 local, Mon–Fri) and
  * honest 24h deltas that arm only once the ledger has genuinely accumulated.
  *
+ * Layout doctrine: one grouped control toolbar (theatre / filter / lens) rides
+ * above the board — every chip there drives the map. Everything that displays
+ * data on click stacks directly beneath it; the pulse runs as the foot tape.
+ * Nothing decorative sits above the map.
+ *
  * Honest ledger: leads with no coordinates land in the uncharted tray,
  * leads outside the US+CA frame (East Africa expansion accounts) land in
  * the off-board tray. Nothing silently disappears from the board.
  */
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Chip, EmptyHint, GeoBadge, HudMeta, SectionLabel, SoftCard } from "./bits";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Chip, EmptyHint, SectionLabel, SoftCard } from "./bits";
 import { STRIKE_FILTERS, computeFilterCounts, filterMatch, type StrikeFilter } from "./StrikeView";
 import { TerritoryDrawer } from "./TerritoryDrawer";
 import {
@@ -64,7 +69,6 @@ import {
   type TerritoryStat,
 } from "@/lib/vertebra/theatre";
 
-const GEO_NODES = ["Houston", "Chicago", "Toronto", "Vancouver"] as const;
 const MAX_K = 18;
 const NAME_ZOOM = 2.2; // k at which full territory names replace codes
 
@@ -100,6 +104,19 @@ function intersectsViewport(
 ): boolean {
   const [[sx0, sy0], [sx1, sy1]] = screenBounds(bounds, view);
   return sx1 >= 0 && sx0 <= BOARD_W && sy1 >= 0 && sy0 <= BOARD_H;
+}
+
+/** Toolbar row — fixed micro label plus a wrapping pool of control chips.
+ * One shared grid keeps every map control in a single visual system. */
+function ControlRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <span className="w-full shrink-0 font-mono text-[9px] uppercase tracking-[0.16em] text-[#3F433F] sm:w-16">
+        {label}
+      </span>
+      <div className="flex flex-wrap items-center gap-2">{children}</div>
+    </div>
+  );
 }
 
 export function TheatreView({
@@ -470,113 +487,96 @@ export function TheatreView({
 
   return (
     <div className="flex h-full flex-col overflow-y-auto cc-scroll p-6">
-      {/* header */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <SectionLabel>Theatre board — US + Canada spatial operations</SectionLabel>
-          <p className="mt-2 font-display text-[22px] font-semibold tracking-[-0.03em] text-[#F4F5F2]">
-            {census.plotted.length} plotted · {money(plottedLeakage)} exposure on the board
-          </p>
-          <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[#5F6460]">
-            50 states · District of Columbia · 10 provinces · 3 territories — {census.uncharted.length} uncharted ·{" "}
-            {census.offBoard.length} off-board
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <HudMeta node="AST-07" hash="41c9" />
-        </div>
+      {/* header — identity plus one honest count line; nothing else */}
+      <div>
+        <SectionLabel>Theatre — US + Canada spatial operations</SectionLabel>
+        <p className="mt-2 font-display text-[20px] font-semibold tracking-[-0.03em] text-[#F4F5F2]">
+          {census.plotted.length} plotted · {money(plottedLeakage)} exposure
+          {census.offBoard.length > 0 ? ` · ${census.offBoard.length} off-board` : ""}
+          {census.uncharted.length > 0 ? ` · ${census.uncharted.length} uncharted` : ""}
+        </p>
       </div>
 
-      {/* geo-ip ring + cluster filter */}
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        {GEO_NODES.map((city) => (
-          <GeoBadge key={city} city={city} />
-        ))}
-        <span className="ml-2 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#5F6460]">
-          geo-ip ingress · 4 regional nodes
-        </span>
-      </div>
-      <div className="mt-2 flex flex-wrap gap-2">
-        <button
-          onClick={() => setSelectedCluster(null)}
-          className={`h-8 rounded-full px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-all ${
-            selectedCluster == null
-              ? "bg-[#F4F5F2] text-[#0B0C0B]"
-              : "border border-white/[0.12] bg-[#131513] text-[#8E9194] hover:text-[#F4F5F2]"
-          }`}
-        >
-          All theatres
-        </button>
-        {snap.clusters.map((c) => (
-          <button
-            key={c.id}
-            onClick={() => setSelectedCluster(c.id === selectedCluster ? null : c.id)}
-            className={`h-8 rounded-full px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-all ${
-              selectedCluster === c.id
-                ? "bg-[#F4F5F2] text-[#0B0C0B]"
-                : "border border-white/[0.12] bg-[#131513] text-[#8E9194] hover:text-[#F4F5F2]"
-            }`}
-          >
-            {c.clusterName}
-          </button>
-        ))}
-      </div>
-
-      {/* M1 filter — bound to the strike queue's own state, one source of truth */}
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <span className="mr-1 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#3F433F]">
-          m1 filter · bound to strike queue
-        </span>
-        {STRIKE_FILTERS.map(([key, label]) => {
-          const active = filter === key;
-          const count = filterCounts[key];
-          return (
+      {/* map controls — one grouped toolbar; every chip here drives the board */}
+      <SoftCard className="mt-4 px-5 py-4">
+        <div className="flex flex-col gap-3">
+          <ControlRow label="theatre">
             <button
-              key={key}
-              onClick={() => onFilter?.(key)}
-              aria-pressed={active}
-              title={`${count} target${count === 1 ? "" : "s"} match this filter — shared with the strike queue`}
+              onClick={() => setSelectedCluster(null)}
               className={`h-8 rounded-full px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-all ${
-                active
-                  ? "bg-[#F4F5F2] text-[#0B0C0B]"
-                  : `border border-white/[0.12] bg-[#131513] text-[#8E9194] hover:text-[#F4F5F2] ${count === 0 ? "opacity-45" : ""}`
-              }`}
-            >
-              {label}
-              <span className={`ml-1.5 tabular-nums ${active ? "text-[#0B0C0B]/55" : "text-[#5F6460]"}`}>
-                {count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* lens switcher — one metric per board state; all six read real data */}
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <span className="mr-1 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#3F433F]">lens</span>
-        {LENSES.map((l) => {
-          const active = lens === l.id;
-          return (
-            <button
-              key={l.id}
-              onClick={() => setLens(l.id)}
-              aria-pressed={active}
-              title={l.hint}
-              className={`h-8 rounded-full px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-all ${
-                active
+                selectedCluster == null
                   ? "bg-[#F4F5F2] text-[#0B0C0B]"
                   : "border border-white/[0.12] bg-[#131513] text-[#8E9194] hover:text-[#F4F5F2]"
               }`}
             >
-              {l.label}
+              All theatres
             </button>
-          );
-        })}
-      </div>
-      <p className="mt-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#5F6460]">
-        {activeLens ? `${activeLens.id} // ${activeLens.hint}` : ""}
-        {leader ? ` — leader: ${leader.name} (${leader.readout})` : ""}
-      </p>
+            {snap.clusters.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => setSelectedCluster(c.id === selectedCluster ? null : c.id)}
+                className={`h-8 rounded-full px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-all ${
+                  selectedCluster === c.id
+                    ? "bg-[#F4F5F2] text-[#0B0C0B]"
+                    : "border border-white/[0.12] bg-[#131513] text-[#8E9194] hover:text-[#F4F5F2]"
+                }`}
+              >
+                {c.clusterName}
+              </button>
+            ))}
+          </ControlRow>
+
+          <ControlRow label="filter">
+            {STRIKE_FILTERS.map(([key, label]) => {
+              const active = filter === key;
+              const count = filterCounts[key];
+              return (
+                <button
+                  key={key}
+                  onClick={() => onFilter?.(key)}
+                  aria-pressed={active}
+                  title={`${count} target${count === 1 ? "" : "s"} match this filter — shared with the strike queue`}
+                  className={`h-8 rounded-full px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-all ${
+                    active
+                      ? "bg-[#F4F5F2] text-[#0B0C0B]"
+                      : `border border-white/[0.12] bg-[#131513] text-[#8E9194] hover:text-[#F4F5F2] ${count === 0 ? "opacity-45" : ""}`
+                  }`}
+                >
+                  {label}
+                  <span className={`ml-1.5 tabular-nums ${active ? "text-[#0B0C0B]/55" : "text-[#5F6460]"}`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </ControlRow>
+
+          <ControlRow label="lens">
+            {LENSES.map((l) => {
+              const active = lens === l.id;
+              return (
+                <button
+                  key={l.id}
+                  onClick={() => setLens(l.id)}
+                  aria-pressed={active}
+                  title={l.hint}
+                  className={`h-8 rounded-full px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-all ${
+                    active
+                      ? "bg-[#F4F5F2] text-[#0B0C0B]"
+                      : "border border-white/[0.12] bg-[#131513] text-[#8E9194] hover:text-[#F4F5F2]"
+                  }`}
+                >
+                  {l.label}
+                </button>
+              );
+            })}
+          </ControlRow>
+        </div>
+        <p className="mt-3.5 border-t border-white/[0.06] pt-2.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#5F6460]">
+          {activeLens ? `${activeLens.id} // ${activeLens.hint}` : ""}
+          {leader ? ` — leader: ${leader.name} (${leader.readout})` : ""}
+        </p>
+      </SoftCard>
 
       {/* the board */}
       <SoftCard className="relative mt-4 shrink-0 overflow-hidden p-2.5">
@@ -820,91 +820,7 @@ export function TheatreView({
         </div>
       </SoftCard>
 
-      {/* pulse — territory movement ledger + call windows (Map-4) */}
-      <SoftCard className="mt-4 px-6 py-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <SectionLabel>Pulse — territory movement · 48h ledger</SectionLabel>
-          <div className="flex items-center gap-3">
-            {callWindows.length > 0 && (
-              <span className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#5F6460]">
-                {callWindows.filter((x) => x.cw.open).length}/{callWindows.length} call windows open
-              </span>
-            )}
-            <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#3F433F]">[P] toggles</span>
-          </div>
-        </div>
-        {pulseOpen && (
-          <>
-            {/* call windows — one chip per territory with plotted leads, sorted by reachability */}
-            {callWindows.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {callWindows.slice(0, 10).map(({ code, cw }) => (
-                  <button
-                    key={code}
-                    onClick={() => focusTerritory(code)}
-                    title={`${cw.tz} — ${cw.label}`}
-                    className={`h-8 rounded-full px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-all ${
-                      cw.open
-                        ? "border border-white/[0.24] bg-[#1A1D1A] text-[#F4F5F2]"
-                        : "border border-white/[0.08] bg-[#131513] text-[#8E9194] hover:text-[#F4F5F2]"
-                    }`}
-                  >
-                    {code.split("-")[1]} <span className="tabular-nums">{cw.clock}</span>
-                    {cw.open ? " · open" : ""}
-                  </button>
-                ))}
-                {callWindows.length > 10 && (
-                  <span className="self-center font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#3F433F]">
-                    +{callWindows.length - 10} more
-                  </span>
-                )}
-              </div>
-            )}
-            {/* 24h movement — only when the ledger has a real prior window */}
-            {pulseSummary.mature && (
-              <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-[#8E9194]">
-                24h movement —{" "}
-                {pulseSummary.deltas
-                  .filter((d) => d.last24h > 0)
-                  .slice(0, 3)
-                  .map((d) => `${d.code.split("-")[1]} ${d.readout}`)
-                  .join(" · ") || "quiet board"}
-              </p>
-            )}
-            {/* ticker — the latest entries, scoped to the focused territory */}
-            <div className="mt-3 flex flex-col gap-1.5">
-              {visiblePulse.length === 0 ? (
-                <EmptyHint>
-                  No movement in the trailing ledger{focusedCode ? ` for ${focusedCode}` : ""} — the strip stays silent
-                  until something actually moves.
-                </EmptyHint>
-              ) : (
-                visiblePulse.map((e) => (
-                  <div
-                    key={e.id}
-                    className="flex items-baseline gap-3 overflow-hidden font-mono text-[11px] leading-relaxed"
-                  >
-                    <span className="shrink-0 tabular-nums text-[#5F6460]">{relTime(e.atMs, nowMs)}</span>
-                    <span className="shrink-0 text-[#8E9194]">{e.territory ?? "——"}</span>
-                    <span className="shrink-0 text-[#E9EBE7]">{e.prospectName}</span>
-                    <span className="min-w-0 truncate text-[#8E9194]">{e.detail}</span>
-                    <span className="ml-auto shrink-0 text-[9px] uppercase tracking-[0.12em] text-[#3F433F]">
-                      {e.kind}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-            {focusedCode && (
-              <p className="mt-2 font-mono text-[9px] uppercase tracking-[0.14em] text-[#3F433F]">
-                scoped to {focusedCode} — reset the territory to see the whole ledger
-              </p>
-            )}
-          </>
-        )}
-      </SoftCard>
-
-      {/* readout */}
+      {/* readout — the click-driven data layer, directly beneath the board */}
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <SoftCard className="px-6 py-5">
           {focusedStat && focusedMeta ? (
@@ -1085,6 +1001,92 @@ export function TheatreView({
           ))}
         </div>
       )}
+
+      {/* pulse — territory movement ledger + call windows (Map-4). The ambient
+          tape runs at the foot of the stack: click-driven readouts hug the map,
+          the ledger reads as the running log beneath everything else. */}
+      <SoftCard className="mt-4 px-6 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <SectionLabel>Pulse — territory movement · 48h ledger</SectionLabel>
+          <div className="flex items-center gap-3">
+            {callWindows.length > 0 && (
+              <span className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#5F6460]">
+                {callWindows.filter((x) => x.cw.open).length}/{callWindows.length} call windows open
+              </span>
+            )}
+            <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#3F433F]">[P] toggles</span>
+          </div>
+        </div>
+        {pulseOpen && (
+          <>
+            {/* call windows — one chip per territory with plotted leads, sorted by reachability */}
+            {callWindows.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {callWindows.slice(0, 10).map(({ code, cw }) => (
+                  <button
+                    key={code}
+                    onClick={() => focusTerritory(code)}
+                    title={`${cw.tz} — ${cw.label}`}
+                    className={`h-8 rounded-full px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-all ${
+                      cw.open
+                        ? "border border-white/[0.24] bg-[#1A1D1A] text-[#F4F5F2]"
+                        : "border border-white/[0.08] bg-[#131513] text-[#8E9194] hover:text-[#F4F5F2]"
+                    }`}
+                  >
+                    {code.split("-")[1]} <span className="tabular-nums">{cw.clock}</span>
+                    {cw.open ? " · open" : ""}
+                  </button>
+                ))}
+                {callWindows.length > 10 && (
+                  <span className="self-center font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#3F433F]">
+                    +{callWindows.length - 10} more
+                  </span>
+                )}
+              </div>
+            )}
+            {/* 24h movement — only when the ledger has a real prior window */}
+            {pulseSummary.mature && (
+              <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-[#8E9194]">
+                24h movement —{" "}
+                {pulseSummary.deltas
+                  .filter((d) => d.last24h > 0)
+                  .slice(0, 3)
+                  .map((d) => `${d.code.split("-")[1]} ${d.readout}`)
+                  .join(" · ") || "quiet board"}
+              </p>
+            )}
+            {/* ticker — the latest entries, scoped to the focused territory */}
+            <div className="mt-3 flex flex-col gap-1.5">
+              {visiblePulse.length === 0 ? (
+                <EmptyHint>
+                  No movement in the trailing ledger{focusedCode ? ` for ${focusedCode}` : ""} — the strip stays silent
+                  until something actually moves.
+                </EmptyHint>
+              ) : (
+                visiblePulse.map((e) => (
+                  <div
+                    key={e.id}
+                    className="flex items-baseline gap-3 overflow-hidden font-mono text-[11px] leading-relaxed"
+                  >
+                    <span className="shrink-0 tabular-nums text-[#5F6460]">{relTime(e.atMs, nowMs)}</span>
+                    <span className="shrink-0 text-[#8E9194]">{e.territory ?? "——"}</span>
+                    <span className="shrink-0 text-[#E9EBE7]">{e.prospectName}</span>
+                    <span className="min-w-0 truncate text-[#8E9194]">{e.detail}</span>
+                    <span className="ml-auto shrink-0 text-[9px] uppercase tracking-[0.12em] text-[#3F433F]">
+                      {e.kind}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+            {focusedCode && (
+              <p className="mt-2 font-mono text-[9px] uppercase tracking-[0.14em] text-[#3F433F]">
+                scoped to {focusedCode} — reset the territory to see the whole ledger
+              </p>
+            )}
+          </>
+        )}
+      </SoftCard>
 
       {/* L1 depth — the full territory sheet */}
       <TerritoryDrawer
