@@ -125,7 +125,19 @@ export async function GET(request: Request) {
       orderBy: { receivedAt: "desc" },
       take: 40,
       include: {
-        prospect: { select: { id: true, name: true, scores: { take: 1, orderBy: { createdAt: "desc" } } } },
+        prospect: {
+          select: {
+            id: true,
+            name: true,
+            city: true,
+            region: true,
+            country: true,
+            detectedErp: true,
+            revenueEstimateUsd: true,
+            cluster: { select: { clusterName: true } },
+            scores: { take: 1, orderBy: { createdAt: "desc" } },
+          },
+        },
         drafts: { orderBy: { createdAt: "desc" } },
       },
     });
@@ -290,16 +302,20 @@ export async function GET(request: Request) {
 
     // ---- triage ----------------------------------------------------------- //
     const triageMap = (r: (typeof replies)[number]): TriageItem => {
-      const draft = r.drafts[0] ?? null;
+      // The winning draft is the newest pending one when the thread is pending,
+      // else the newest overall — multi-draft replies must surface the row the
+      // operator actually has to judge.
+      const draft = r.drafts.find((d) => d.status === "pending_human_review") ?? r.drafts[0] ?? null;
       const rescheduled = r.extractedJson
         ? (JSON.parse(r.extractedJson).return_date as string | undefined)
         : undefined;
+      const p = r.prospect;
       return {
         draftId: draft?.id ?? null,
         replyId: r.id,
-        prospectId: r.prospect?.id ?? "",
-        prospectName: r.prospect?.name ?? "Unknown",
-        qlvScore: r.prospect?.scores[0]?.qlvScore ?? null,
+        prospectId: p?.id ?? "",
+        prospectName: p?.name ?? "Unknown",
+        qlvScore: p?.scores[0]?.qlvScore ?? null,
         intent: r.intent as ReplyIntent,
         confidence: r.intentConfidence,
         fromEmail: r.fromEmail,
@@ -311,6 +327,14 @@ export async function GET(request: Request) {
         receivedAtMs: r.receivedAt.getTime(),
         rationale: r.rationale,
         rescheduledToMs: rescheduled ? new Date(rescheduled).getTime() : null,
+        erpName: p?.detectedErp ?? null,
+        city: p?.city ?? null,
+        region: p?.region ?? null,
+        country: p?.country ?? null,
+        leakageUsd: annualLeakageUsd(p?.revenueEstimateUsd ?? null, p?.scores[0]?.qlvScore ?? null),
+        draftCount: r.drafts.length,
+        sentAtMs: draft?.sentAt?.getTime() ?? null,
+        reviewerNote: draft?.reviewerNote ?? null,
       };
     };
     const triage = {

@@ -210,6 +210,18 @@ export interface TriageItem {
   receivedAtMs: number;
   rationale: string | null;
   rescheduledToMs: number | null;
+  /** Pipeline frictionless field set — context the operator needs without opening the dossier. */
+  erpName: string | null;
+  city: string | null;
+  region: string | null;
+  country: string | null;
+  leakageUsd: number | null;
+  /** How many drafts the reply thread carries (multi-draft replies exist). */
+  draftCount: number;
+  /** When the winning draft was sent/approved — null while pending. */
+  sentAtMs: number | null;
+  /** Reviewer note verbatim — the honesty trail ("staged (console)" etc.). */
+  reviewerNote: string | null;
 }
 
 export interface AlertItem {

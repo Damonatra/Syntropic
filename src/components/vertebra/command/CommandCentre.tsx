@@ -87,6 +87,13 @@ const SHORTCUTS: Array<[string, string, string]> = [
   ["strike", "s", "snooze 24h"],
   ["strike", "f", "cycle filter"],
   ["strike", "esc", "close / dismiss"],
+  ["pipeline", "j / k", "walk the gate"],
+  ["pipeline", "a", "approve & send"],
+  ["pipeline", "x", "discard"],
+  ["pipeline", "e", "edit draft in place"],
+  ["pipeline", "enter", "open dossier"],
+  ["pipeline", "space", "select for bulk"],
+  ["pipeline", "f", "cycle intent filter"],
 ];
 
 const VIEW_TITLES: Record<ViewKey, string> = {
@@ -127,6 +134,8 @@ export function CommandCentre() {
   // M7 — keyboard grammar surface
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [dossierFocusCompose, setDossierFocusCompose] = useState(false);
+  // Pipeline deep-link — a palette draft-jump lands the gate cursor on this reply.
+  const [pipelineFocusReply, setPipelineFocusReply] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [connected, setConnected] = useState(false);
   const [clock, setClock] = useState("");
@@ -472,25 +481,107 @@ export function CommandCentre() {
   );
 
   const doTriage = useCallback(
-    async (draftId: string, decision: "approved" | "discarded") => {
+    async (draftId: string, decision: "approved" | "discarded", edits?: { subject?: string; body?: string }) => {
       try {
         const res = await fetch("/api/replies", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ draftId, decision }),
+          body: JSON.stringify({ draftId, decision, ...edits }),
         });
         if (!res.ok) throw new Error(String(res.status));
+        const out = (await res.json().catch(() => null)) as { delivery?: { status: string } } | null;
+        const staged = out?.delivery?.status === "staged";
         pushToast({
-          kind: decision === "approved" ? "info" : "info",
-          title: decision === "approved" ? "Draft approved & sent" : "Draft discarded",
-          body: decision === "approved" ? "Logged against the prospect timeline." : "The agent will not reuse this angle.",
+          kind: "info",
+          title: decision === "approved" ? (staged ? "Draft approved — staged" : "Draft approved & sent") : "Draft discarded",
+          body:
+            decision === "approved"
+              ? staged
+                ? "No mail provider configured — the send is queued honestly, not faked."
+                : "Logged against the prospect timeline."
+              : "The agent will not reuse this angle.",
         });
         void refresh();
+        return out;
       } catch {
         pushToast({ kind: "info", title: "Triage failed", body: "The enclave did not acknowledge — try again." });
       }
     },
     [pushToast, refresh],
+  );
+
+  /** Bulk triage — sequential PATCHes (rail guardrails apply per-request), one honest summary. */
+  const doBulkTriage = useCallback(
+    async (decisions: Array<{ draftId: string; decision: "approved" | "discarded" }>, label: string) => {
+      if (decisions.length === 0) return;
+      let approved = 0;
+      let discarded = 0;
+      let staged = 0;
+      let failed = 0;
+      for (const d of decisions) {
+        try {
+          const res = await fetch("/api/replies", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(d),
+          });
+          if (!res.ok) throw new Error(String(res.status));
+          const out = (await res.json().catch(() => null)) as { delivery?: { status: string } } | null;
+          if (d.decision === "approved") {
+            approved += 1;
+            if (out?.delivery?.status === "staged") staged += 1;
+          } else {
+            discarded += 1;
+          }
+        } catch {
+          failed += 1;
+        }
+      }
+      pushToast({
+        kind: failed > 0 ? "alert" : "info",
+        title: `Bulk triage — ${label}`,
+        body: `${approved} approved${staged > 0 ? ` (${staged} staged)` : ""} · ${discarded} discarded${failed > 0 ? ` · ${failed} refused` : ""}`,
+      });
+      void refresh();
+    },
+    [pushToast, refresh],
+  );
+
+  /** Channel A tick from the pipeline deck. */
+  const doRunTick = useCallback(async () => {
+    try {
+      const res = await fetch("/api/ops/tick", { method: "POST" });
+      if (!res.ok) throw new Error(String(res.status));
+      const out = (await res.json()) as { due: number; sent: number; stopped: number; deferred: number; failed: number; provider: string };
+      pushToast({
+        kind: "info",
+        title: `Tick — ${out.due} due`,
+        body: `${out.sent} sent · ${out.stopped} stopped · ${out.deferred} deferred · ${out.failed} failed (${out.provider})`,
+      });
+      void refresh();
+    } catch {
+      pushToast({ kind: "info", title: "Tick failed", body: "The enclave did not acknowledge — try again." });
+    }
+  }, [pushToast, refresh]);
+
+  /** Channel B — export a high-touch account to the Josias queue, honestly. */
+  const doExportHighTouch = useCallback(
+    async (prospectId: string) => {
+      const lead = snap?.leads.find((l) => l.id === prospectId);
+      try {
+        const res = await fetch("/api/high-touch/export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prospectId }),
+        });
+        if (!res.ok) throw new Error(String(res.status));
+        pushToast({ kind: "info", title: `Exported — ${lead?.name ?? "account"}`, body: "Handed to the Josias queue · outbox event published." });
+        void refresh();
+      } catch {
+        pushToast({ kind: "info", title: "Export failed", body: "The enclave did not acknowledge — try again." });
+      }
+    },
+    [snap, pushToast, refresh],
   );
 
   // ---- keyboard loop ----------------------------------------------------- //
@@ -551,14 +642,11 @@ export function CommandCentre() {
         const idx = STRIKE_FILTERS.findIndex(([k]) => k === filter);
         const next = STRIKE_FILTERS[(idx + 1) % STRIKE_FILTERS.length][0];
         handleFilter(next);
-      } else if (e.key === "a") {
-        const first = snap?.triage.pending[0];
-        if (first?.draftId) void doTriage(first.draftId, "approved");
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [view, rankedIds, cursorId, snap, paletteOpen, dossierOpen, shortcutsOpen, filter, doAction, doTriage, openDossier, handleFilter]);
+  }, [view, rankedIds, cursorId, snap, paletteOpen, dossierOpen, shortcutsOpen, filter, doAction, openDossier, handleFilter]);
 
   // ---- render ------------------------------------------------------------ //
   return (
@@ -666,7 +754,18 @@ export function CommandCentre() {
                 <TheatreView snap={snap} onOpenDossier={openDossier} filter={filter} onFilter={handleFilter} />
               )}
               {view === "pipeline" && (
-                <PipelineView snap={snap} now={now} onOpenDossierId={openDossierById} onTriage={doTriage} />
+                <PipelineView
+                  snap={snap}
+                  now={now}
+                  onOpenDossierId={openDossierById}
+                  onTriage={doTriage}
+                  onBulkTriage={doBulkTriage}
+                  onRunTick={doRunTick}
+                  onExportHighTouch={doExportHighTouch}
+                  suspended={dossierOpen || paletteOpen || shortcutsOpen}
+                  focusReplyId={pipelineFocusReply}
+                  onFocusConsumed={() => setPipelineFocusReply(null)}
+                />
               )}
               {view === "portal" && <PortalView snap={snap} />}
               {view === "ops" && <OpsView snap={snap} />}
@@ -794,6 +893,7 @@ export function CommandCentre() {
                       key={t.replyId}
                       onSelect={() => {
                         setView("pipeline");
+                        setPipelineFocusReply(t.replyId);
                         setPaletteOpen(false);
                       }}
                       className="rounded-lg px-3 py-2.5 text-[13px] text-[#E9EBE7] data-[selected=true]:bg-[#222522] data-[selected=true]:text-[#F4F5F2]"
