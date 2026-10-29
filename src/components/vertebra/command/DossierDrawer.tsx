@@ -89,7 +89,12 @@ export function DossierDrawer({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="cc-scroll w-full overflow-y-auto border-l border-white/[0.10] bg-[#0B0C0B] p-0 sm:max-w-[560px]">
+      {/* command-root scopes the Enclave font system (Inter Tight · Space Grotesk · JetBrains Mono)
+          + achromatic tokens onto this portal — otherwise the sheet inherits body's plain Inter. */}
+      <SheetContent
+        side="right"
+        className="command-root cc-scroll w-full overflow-y-auto border-l border-white/[0.10] bg-[#0B0C0B] p-0 text-[#F4F5F2] antialiased sm:max-w-[560px]"
+      >
         {loading || !data ? (
           <div className="flex h-full flex-col items-center justify-center gap-3">
             <SheetHeader className="sr-only">

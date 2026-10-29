@@ -448,33 +448,15 @@ export function CommandCentre() {
       <CommandRail view={view} onView={setView} snap={snap} clock={clock || "--:--:--"} connected={connected} personaCode={activePersona.code} />
 
       <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-white/[0.08] px-6">
-          <div className="flex min-w-0 items-center gap-3">
+        <header className="flex h-14 shrink-0 items-center justify-between gap-6 border-b border-white/[0.08] px-7">
+          <div className="flex min-w-0 items-center gap-4">
             <LiveDot level={connected ? "live" : "warn"} />
             <p className="truncate font-mono text-[11px] uppercase tracking-[0.2em] text-[#8E9194]">{VIEW_TITLES[view]}</p>
-            <span className="hidden max-w-[430px] truncate whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.14em] text-[#5F6460] xl:inline-block">
+            <span className="hidden max-w-[620px] truncate whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.14em] text-[#5F6460] xl:inline-block">
               · {activePersona.title}: {activePersona.mandate}
             </span>
           </div>
-          <div className="flex shrink-0 items-center gap-3">
-            {/* persona switcher */}
-            <div className="hidden items-center gap-1 rounded-full border border-white/[0.10] bg-[#131513] p-1 md:flex" role="tablist" aria-label="Persona view">
-              {PERSONAS.map((p) => (
-                <button
-                  key={p.id}
-                  role="tab"
-                  aria-selected={persona === p.id}
-                  onClick={() => onPersona(p.id)}
-                  className={`h-7 rounded-full px-3 font-mono text-[9.5px] font-medium uppercase tracking-[0.1em] transition-all ${
-                    persona === p.id
-                      ? "bg-[#F4F5F2] text-[#0B0C0B]"
-                      : "text-[#8E9194] hover:text-[#F4F5F2]"
-                  }`}
-                >
-                  {p.code}
-                </button>
-              ))}
-            </div>
+          <div className="flex shrink-0 items-center gap-6">
             <HudMeta node="AST-00" hash="0a11" className="hidden xl:inline-flex" />
             <button
               onClick={() => setPaletteOpen(true)}
@@ -603,6 +585,24 @@ export function CommandCentre() {
                     className="rounded-lg px-3 py-2.5 text-[13px] text-[#E9EBE7] data-[selected=true]:bg-[#222522] data-[selected=true]:text-[#F4F5F2]"
                   >
                     {VIEW_TITLES[v]}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+              <CommandGroup heading="Persona view">
+                {PERSONAS.map((p) => (
+                  <CommandItem
+                    key={p.id}
+                    value={`persona ${p.code} ${p.title}`}
+                    onSelect={() => {
+                      onPersona(p.id);
+                      setPaletteOpen(false);
+                    }}
+                    className="rounded-lg px-3 py-2.5 text-[13px] text-[#E9EBE7] data-[selected=true]:bg-[#222522] data-[selected=true]:text-[#F4F5F2]"
+                  >
+                    View as {p.code}
+                    <span className="ml-auto font-mono text-[10px] uppercase text-[#6E736E]">
+                      {persona === p.id ? "active" : p.title}
+                    </span>
                   </CommandItem>
                 ))}
               </CommandGroup>
