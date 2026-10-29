@@ -12,13 +12,14 @@ import {
   type FeedItem,
 } from "@/lib/vertebra/command";
 
-import { personaMetrics, type PersonaId } from "@/lib/vertebra/persona";
+import { PERSONAS, personaDef, personaMetrics, type PersonaId } from "@/lib/vertebra/persona";
 
 export function RadarView({
   snap,
   now,
   freshEventIds,
   persona,
+  onPersona,
   onOpenDossier,
   onGoStrike,
   onGoPipeline,
@@ -28,6 +29,7 @@ export function RadarView({
   now: number;
   freshEventIds: Set<string>;
   persona: PersonaId;
+  onPersona: (p: PersonaId) => void;
   onOpenDossier: (lead: CommandLead) => void;
   onGoStrike: () => void;
   onGoPipeline: () => void;
@@ -64,19 +66,47 @@ export function RadarView({
         </div>
       </SoftCard>
 
-      {/* Persona KPI strip */}
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        {metrics.map((m, i) => (
-          <KpiCard
-            key={m.label}
-            label={m.label}
-            value={m.value}
-            sub={m.sub}
-            hot={m.hot}
-            node={`AST-0${i + 2}`}
-            onClick={i === 0 ? onGoStrike : i === 2 ? onGoPipeline : undefined}
-          />
-        ))}
+      {/* Persona lens — sits directly under the entry anchor; the switch recomposes the strip below */}
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-4">
+          <div
+            className="flex items-center gap-1 rounded-full border border-white/[0.10] bg-[#131513] p-1"
+            role="tablist"
+            aria-label="Persona view"
+          >
+            {PERSONAS.map((p) => (
+              <button
+                key={p.id}
+                role="tab"
+                aria-selected={persona === p.id}
+                onClick={() => onPersona(p.id)}
+                className={`tactile-btn h-7 rounded-full px-3.5 font-mono text-[9.5px] font-medium uppercase tracking-[0.1em] transition-all ${
+                  persona === p.id
+                    ? "bg-[#F4F5F2] text-[#0B0C0B]"
+                    : "text-[#8E9194] hover:text-[#F4F5F2]"
+                }`}
+              >
+                {p.code}
+              </button>
+            ))}
+          </div>
+          <span className="hidden truncate font-mono text-[9.5px] uppercase tracking-[0.18em] text-[#5F6460] md:inline-block">
+            viewing as · {personaDef(persona).title}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+          {metrics.map((m, i) => (
+            <KpiCard
+              key={m.label}
+              label={m.label}
+              value={m.value}
+              sub={m.sub}
+              hot={m.hot}
+              node={`AST-0${i + 2}`}
+              onClick={i === 0 ? onGoStrike : i === 2 ? onGoPipeline : undefined}
+            />
+          ))}
+        </div>
       </div>
 
       <div className="grid flex-1 grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">

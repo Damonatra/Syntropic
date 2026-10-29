@@ -501,6 +501,7 @@ export function CommandCentre() {
                   now={now}
                   freshEventIds={new Set([...fresh.entries()].filter(([, until]) => until > Date.now()).map(([id]) => id))}
                   persona={persona}
+                  onPersona={onPersona}
                   onOpenDossier={openDossier}
                   onGoStrike={() => setView("strike")}
                   onGoPipeline={() => setView("pipeline")}
