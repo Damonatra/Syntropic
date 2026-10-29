@@ -176,6 +176,11 @@ export interface TerritoryStat {
   caslTrue: number;
   inSequence: number;
   lastTouchMs: number | null;
+  /** Mail funnel — dispatch status distribution across the territory. */
+  mailQueued: number;
+  mailStaged: number;
+  mailSent: number;
+  mailFailed: number;
   leads: CommandLead[];
 }
 
@@ -226,6 +231,10 @@ export function censusBoard(leads: CommandLead[], resolver: (lead: CommandLead) 
         caslTrue: 0,
         inSequence: 0,
         lastTouchMs: null,
+        mailQueued: 0,
+        mailStaged: 0,
+        mailSent: 0,
+        mailFailed: 0,
         leads: [],
       };
       stats.set(code, stat);
@@ -238,6 +247,12 @@ export function censusBoard(leads: CommandLead[], resolver: (lead: CommandLead) 
     stat.leakageUsd += lead.leakageUsd ?? 0;
     if (lead.caslScope) stat.caslTrue += 1;
     if (lead.dispatch != null) stat.inSequence += 1;
+    switch (lead.dispatch?.status) {
+      case "staged": stat.mailStaged += 1; break;
+      case "sent": stat.mailSent += 1; break;
+      case "failed": stat.mailFailed += 1; break;
+      case "queued": stat.mailQueued += 1; break;
+    }
     const touch = Math.max(lead.lastActionAtMs ?? 0, lead.telemetry?.lastEventAtMs ?? 0);
     if (touch > 0) stat.lastTouchMs = Math.max(stat.lastTouchMs ?? 0, touch);
   }
@@ -256,4 +271,55 @@ export function censusBoard(leads: CommandLead[], resolver: (lead: CommandLead) 
     maxTerritoryCount: Math.max(1, ...Array.from(stats.values()).map((s) => s.count)),
     totalPlottedLeakageUsd: plotted.reduce((s, l) => s + (l.leakageUsd ?? 0), 0),
   };
+}
+
+// --------------------------------------------------------------------------- #
+// Lenses — one territory metric per board state, luminance never chroma
+// --------------------------------------------------------------------------- #
+
+export type LensId =
+  | "concentration"
+  | "momentum"
+  | "exposure"
+  | "cadence"
+  | "compliance"
+  | "mail";
+
+export interface LensDef {
+  id: LensId;
+  label: string;
+  hint: string;
+  /** "live" lenses shade the board; "planned" lenses arm in Map-3. */
+  status: "live" | "planned";
+}
+
+export const LENSES: readonly LensDef[] = [
+  { id: "concentration", label: "CONCENTRATION", hint: "accounts per territory", status: "live" },
+  { id: "momentum", label: "MOMENTUM", hint: "recent telemetry weight", status: "planned" },
+  { id: "exposure", label: "EXPOSURE", hint: "leakage at stake", status: "planned" },
+  { id: "cadence", label: "CADENCE", hint: "sequence recency", status: "planned" },
+  { id: "compliance", label: "COMPLIANCE", hint: "consent posture", status: "planned" },
+  { id: "mail", label: "MAIL", hint: "staged / sent / failed", status: "planned" },
+] as const;
+
+/**
+ * Territory fill for the active lens. Concentration is the luminance ramp
+ * that shipped with the spine — count-weighted, sqrt-eased, zero chroma.
+ * Planned lenses return the input untouched: the switcher keeps them inert
+ * until Map-3 arms them, so the board never fakes a metric it cannot read.
+ */
+export function lensFill(
+  lens: LensId,
+  stat: TerritoryStat | undefined,
+  maxCount: number,
+  focused: boolean,
+  hover: boolean,
+): string {
+  if (lens !== "concentration") {
+    return focused ? "#1A1D1A" : hover ? "#181A18" : "#161816";
+  }
+  if (!stat || stat.count === 0) return hover || focused ? "#1A1D1A" : "#161816";
+  const t = Math.sqrt(stat.count / maxCount);
+  const base = 0.05 + 0.13 * t + (focused ? 0.07 : hover ? 0.03 : 0);
+  return `rgba(244,245,242,${base.toFixed(3)})`;
 }

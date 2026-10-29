@@ -19,6 +19,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chip, EmptyHint, GeoBadge, HudMeta, SectionLabel, SoftCard } from "./bits";
+import { STRIKE_FILTERS, computeFilterCounts, filterMatch, type StrikeFilter } from "./StrikeView";
+import { TerritoryDrawer } from "./TerritoryDrawer";
 import {
   HEAT_FILL,
   heatLevel,
@@ -32,13 +34,16 @@ import { classifyLeadGeo, inNaFrame } from "@/lib/vertebra/geo";
 import {
   BOARD_H,
   BOARD_W,
+  LENSES,
   buildBoardGeometry,
   censusBoard,
+  lensFill,
   loadGeoBundle,
   makeTerritoryResolver,
   type BoardCensus,
   type BoardGeometry,
   type GeoBundle,
+  type LensId,
   type TerritoryStat,
 } from "@/lib/vertebra/theatre";
 
@@ -61,18 +66,6 @@ function easeInOutCubic(t: number): number {
 }
 
 /** Concentration ink — luminance ramp, never chroma. */
-function territoryFill(
-  stat: TerritoryStat | undefined,
-  maxCount: number,
-  focused: boolean,
-  hover: boolean,
-): string {
-  if (!stat || stat.count === 0) return hover || focused ? "#1A1D1A" : "#161816";
-  const t = Math.sqrt(stat.count / maxCount);
-  const base = 0.05 + 0.13 * t + (focused ? 0.07 : hover ? 0.03 : 0);
-  return `rgba(244,245,242,${base.toFixed(3)})`;
-}
-
 function screenBounds(
   bounds: [[number, number], [number, number]],
   view: View,
@@ -95,9 +88,14 @@ function intersectsViewport(
 export function TheatreView({
   snap,
   onOpenDossier,
+  filter = "all",
+  onFilter,
 }: {
   snap: CommandSnapshot;
   onOpenDossier: (lead: CommandLead) => void;
+  /** M1 filter — same source of truth as the strike queue (bidirectional). */
+  filter?: StrikeFilter;
+  onFilter?: (f: StrikeFilter) => void;
 }) {
   // ---------------------------------------------------------------- geometry
   const [bundle, setBundle] = useState<GeoBundle | null>(null);
@@ -116,10 +114,24 @@ export function TheatreView({
 
   const geometry: BoardGeometry | null = useMemo(() => (bundle ? buildBoardGeometry(bundle) : null), [bundle]);
   const resolver = useMemo(() => (bundle ? makeTerritoryResolver(bundle) : null), [bundle]);
-  const census: BoardCensus = useMemo(
-    () => censusBoard(snap.leads, resolver ?? (() => null)),
-    [snap.leads, resolver],
+
+  // M1 filter binding — the strike queue's bucket predicate decides which
+  // leads exist on the board at all. One state, two views.
+  const boardLeads = useMemo(
+    () => (filter === "all" ? snap.leads : snap.leads.filter((l) => filterMatch(l, filter))),
+    [snap.leads, filter],
   );
+  const census: BoardCensus = useMemo(
+    () => censusBoard(boardLeads, resolver ?? (() => null)),
+    [boardLeads, resolver],
+  );
+
+  const filterCounts = useMemo(() => computeFilterCounts(snap, snap.generatedAtMs), [snap]);
+  const pendingReplies = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of snap.triage.pending) m.set(t.prospectId, (m.get(t.prospectId) ?? 0) + 1);
+    return m;
+  }, [snap.triage.pending]);
 
   const leadTerritory = useMemo(() => {
     const m = new Map<string, string>();
@@ -133,12 +145,27 @@ export function TheatreView({
   const [hoverCode, setHoverCode] = useState<string | null>(null);
   const [view, setView] = useState<View>(IDENTITY);
   const [dragging, setDragging] = useState(false);
+  const [lens, setLens] = useState<LensId>("concentration");
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const viewRef = useRef(view);
-  viewRef.current = view;
+  // sync after render — the drag/glide/zoom handlers already keep ref and
+  // state in lock-step; this only guards external setView paths
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const glideRaf = useRef<number | null>(null);
-  const dragState = useRef<{ lastX: number; lastY: number; scale: number; moved: boolean } | null>(null);
+  const dragState = useRef<{
+    lastX: number;
+    lastY: number;
+    downX: number;
+    downY: number;
+    scale: number;
+    moved: boolean;
+    pid: number;
+    captured: boolean;
+  } | null>(null);
 
   const cluster = selectedCluster ? snap.clusters.find((c) => c.id === selectedCluster) ?? null : null;
   const focusedStat = focusedCode ? census.territoryStats.get(focusedCode) ?? null : null;
@@ -190,6 +217,7 @@ export function TheatreView({
 
   const resetView = useCallback(() => {
     setFocusedCode(null);
+    setDrawerOpen(false);
     glide(IDENTITY);
   }, [glide]);
 
@@ -227,17 +255,22 @@ export function TheatreView({
     return () => el.removeEventListener("wheel", onWheel);
   }, [zoomAt, geometry]);
 
-  // pointer drag — pan; a >4px drag suppresses the click that follows
+  // pointer drag — pan. Capture is withheld until the pointer actually moves
+  // (~3px): capturing on pointerdown would retarget the browser's follow-up
+  // click to the svg root and every territory/pin click would die silently.
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (e.button !== 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     dragState.current = {
       lastX: e.clientX,
       lastY: e.clientY,
+      downX: e.clientX,
+      downY: e.clientY,
       scale: BOARD_W / rect.width,
       moved: false,
+      pid: e.pointerId,
+      captured: false,
     };
-    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
     cancelGlide();
     setDragging(true);
   };
@@ -246,6 +279,16 @@ export function TheatreView({
     if (!d) return;
     const dx = (e.clientX - d.lastX) * d.scale;
     const dy = (e.clientY - d.lastY) * d.scale;
+    if (!d.captured && Math.hypot(e.clientX - d.downX, e.clientY - d.downY) > 3) {
+      // capture can throw if the pointer vanished (synthetic events, release
+      // races) — never let it kill the pan; skip retrying once failed
+      try {
+        (e.currentTarget as Element).setPointerCapture?.(d.pid);
+      } catch {
+        /* pan continues without capture while the pointer stays over the board */
+      }
+      d.captured = true;
+    }
     if (Math.abs(dx) + Math.abs(dy) > 1) d.moved = true;
     d.lastX = e.clientX;
     d.lastY = e.clientY;
@@ -265,6 +308,11 @@ export function TheatreView({
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "Escape") {
+        // A Radix sheet/dialog owns Escape while it is open — and it closes
+        // synchronously, before this window listener runs. DOM-truth check:
+        // ESC peels one layer at a time (drawer first), the camera only
+        // resets once no dialog remains.
+        if (document.querySelector('[role="dialog"]')) return;
         if (viewRef.current.k !== 1 || viewRef.current.x !== 0 || viewRef.current.y !== 0) resetView();
       } else if (e.key === "+" || e.key === "=") {
         zoomCenter(1.4);
@@ -292,13 +340,11 @@ export function TheatreView({
   const clusterLeads = cluster ? snap.leads.filter((l) => l.clusterId === cluster.id) : [];
   const memberLeads = focusedStat ? focusedMemberLeads : clusterLeads;
 
-  const topFocusedLead = useMemo(
-    () =>
-      focusedMemberLeads.length
-        ? focusedMemberLeads.reduce((a, b) => ((b.priority ?? 0) > (a.priority ?? 0) ? b : a))
-        : null,
-    [focusedMemberLeads],
-  );
+  // inline reduce — census arrays are mutated by censusBoard, so the compiler
+  // cannot preserve a useMemo here; the pool is small enough to not need one
+  const topFocusedLead = focusedMemberLeads.length
+    ? focusedMemberLeads.reduce((a, b) => ((b.priority ?? 0) > (a.priority ?? 0) ? b : a))
+    : null;
 
   const nowMs = snap.generatedAtMs;
 
@@ -381,6 +427,63 @@ export function TheatreView({
         ))}
       </div>
 
+      {/* M1 filter — bound to the strike queue's own state, one source of truth */}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <span className="mr-1 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#3F433F]">
+          m1 filter · bound to strike queue
+        </span>
+        {STRIKE_FILTERS.map(([key, label]) => {
+          const active = filter === key;
+          const count = filterCounts[key];
+          return (
+            <button
+              key={key}
+              onClick={() => onFilter?.(key)}
+              aria-pressed={active}
+              title={`${count} target${count === 1 ? "" : "s"} match this filter — shared with the strike queue`}
+              className={`h-8 rounded-full px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-all ${
+                active
+                  ? "bg-[#F4F5F2] text-[#0B0C0B]"
+                  : `border border-white/[0.12] bg-[#131513] text-[#8E9194] hover:text-[#F4F5F2] ${count === 0 ? "opacity-45" : ""}`
+              }`}
+            >
+              {label}
+              <span className={`ml-1.5 tabular-nums ${active ? "text-[#0B0C0B]/55" : "text-[#5F6460]"}`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* lens switcher — one metric per board state; planned lenses stay inert until Map-3 */}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <span className="mr-1 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#3F433F]">lens</span>
+        {LENSES.map((l) => {
+          const active = lens === l.id;
+          const planned = l.status === "planned";
+          return (
+            <button
+              key={l.id}
+              onClick={() => !planned && setLens(l.id)}
+              disabled={planned}
+              aria-pressed={active}
+              title={planned ? `${l.hint} — arms in Map-3` : `${l.hint}`}
+              className={`h-8 rounded-full px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-all ${
+                active
+                  ? "bg-[#F4F5F2] text-[#0B0C0B]"
+                  : planned
+                    ? "cursor-not-allowed border border-white/[0.06] bg-[#101210] text-[#3F433F]"
+                    : "border border-white/[0.12] bg-[#131513] text-[#8E9194] hover:text-[#F4F5F2]"
+              }`}
+            >
+              {l.label}
+              {planned && <span className="ml-1.5 text-[8.5px] text-[#333732]">m3</span>}
+            </button>
+          );
+        })}
+      </div>
+
       {/* the board */}
       <SoftCard className="relative mt-4 shrink-0 overflow-hidden p-2.5">
         <svg
@@ -418,7 +521,7 @@ export function TheatreView({
                 <path
                   key={t.code}
                   d={t.d}
-                  fill={territoryFill(stat, census.maxTerritoryCount, focused, hovered)}
+                  fill={lensFill(lens, stat, census.maxTerritoryCount, focused, hovered)}
                   stroke={focused ? "#8E9194" : hovered ? "#4B514D" : "#2A2D2A"}
                   strokeWidth={sw(focused ? 1.4 : 0.8)}
                   opacity={dimmed ? 0.45 : 1}
@@ -430,6 +533,7 @@ export function TheatreView({
                     } else {
                       setFocusedCode(t.code);
                       glideToBounds(t.bounds);
+                      setDrawerOpen(true);
                     }
                   }}
                   onMouseEnter={() => !dragging && setHoverCode(t.code)}
@@ -571,21 +675,30 @@ export function TheatreView({
 
         {/* overlay — zoom controls */}
         <div className="absolute bottom-4 right-4 flex flex-col gap-1.5">
-          {[
-            { label: "+", fn: () => zoomCenter(1.4), title: "Zoom in" },
-            { label: "−", fn: () => zoomCenter(1 / 1.4), title: "Zoom out" },
-            { label: "⌂", fn: resetView, title: "Reset view" },
-          ].map((b) => (
-            <button
-              key={b.label}
-              onClick={b.fn}
-              title={b.title}
-              aria-label={b.title}
-              className="tactile-btn size-8 bg-[#131513] text-[13px] text-[#C9CCC7] hover:bg-[#222522] hover:text-[#F4F5F2]"
-            >
-              {b.label}
-            </button>
-          ))}
+          <button
+            onClick={() => zoomCenter(1.4)}
+            title="Zoom in"
+            aria-label="Zoom in"
+            className="tactile-btn size-8 bg-[#131513] text-[13px] text-[#C9CCC7] hover:bg-[#222522] hover:text-[#F4F5F2]"
+          >
+            +
+          </button>
+          <button
+            onClick={() => zoomCenter(1 / 1.4)}
+            title="Zoom out"
+            aria-label="Zoom out"
+            className="tactile-btn size-8 bg-[#131513] text-[13px] text-[#C9CCC7] hover:bg-[#222522] hover:text-[#F4F5F2]"
+          >
+            −
+          </button>
+          <button
+            onClick={resetView}
+            title="Reset view"
+            aria-label="Reset view"
+            className="tactile-btn size-8 bg-[#131513] text-[13px] text-[#C9CCC7] hover:bg-[#222522] hover:text-[#F4F5F2]"
+          >
+            ⌂
+          </button>
         </div>
 
         {/* overlay — projection honesty note */}
@@ -642,6 +755,14 @@ export function TheatreView({
                 <p className="mt-1.5 font-mono text-[13px] tabular-nums text-[#E9EBE7]">
                   {focusedStat.lastTouchMs ? relTime(focusedStat.lastTouchMs, nowMs) : "—"}
                 </p>
+              </div>
+              <div className="self-center">
+                <button
+                  onClick={() => setDrawerOpen(true)}
+                  className="h-8 rounded-full border border-white/[0.14] bg-[#131513] px-4 font-mono text-[10px] uppercase tracking-[0.14em] text-[#8E9194] transition-colors hover:border-white/30 hover:text-[#F4F5F2]"
+                >
+                  depth drawer →
+                </button>
               </div>
             </div>
           ) : cluster ? (
@@ -767,6 +888,17 @@ export function TheatreView({
           ))}
         </div>
       )}
+
+      {/* L1 depth — the full territory sheet */}
+      <TerritoryDrawer
+        stat={drawerOpen ? focusedStat : null}
+        nowMs={nowMs}
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        onOpenDossier={onOpenDossier}
+        pendingReplies={pendingReplies}
+        filterLabel={filter !== "all" ? STRIKE_FILTERS.find(([k]) => k === filter)?.[1] ?? null : null}
+      />
     </div>
   );
 }

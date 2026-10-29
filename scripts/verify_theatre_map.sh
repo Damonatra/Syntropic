@@ -113,6 +113,73 @@ echo "== 7. Gate posture — unauthenticated fetch of the bundle (expect redirec
 code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/geo/us-ca-territories.json")
 if [ "$code" = "307" ] || [ "$code" = "302" ]; then ok "geometry stays behind the enclave gate ($code)"; else bad "bundle reachable unauthenticated ($code)"; fi
 
+echo "== 8. Map-2 — lens registry, concentration ramp, funnel counters, census honesty"
+bun -e "
+import { censusBoard, lensFill, LENSES, type BoardCensus } from './src/lib/vertebra/theatre';
+import type { CommandLead } from './src/lib/vertebra/command';
+let bad = 0;
+const fail = (m: string) => { console.log('  FAIL:', m); bad++; };
+
+// 8a — exactly one live lens (concentration), five planned shells
+const live = LENSES.filter((l) => l.status === 'live');
+if (LENSES.length !== 6) fail('six lenses expected');
+if (live.length !== 1 || live[0].id !== 'concentration') fail('concentration must be the only live lens');
+
+// 8b — concentration ramp is monotonic in count; planned lenses stay inert
+const stat = (n: number) => ({ count: n } as never);
+const a = parseFloat(lensFill('concentration', stat(1), 9, false, false).match(/([\d.]+)\)$/)![1]);
+const b = parseFloat(lensFill('concentration', stat(9), 9, false, false).match(/([\d.]+)\)$/)![1]);
+if (!(b > a)) fail('concentration ramp not monotonic');
+if (lensFill('momentum', stat(9), 9, false, false) !== '#161816') fail('planned lens must stay inert');
+
+// 8c — censusBoard: funnel counters + honest trays on synthetic leads
+const mk = (over: Partial<CommandLead>): CommandLead => ({
+  id: 'x', name: 'X', domain: null, vertical: null, city: null, stateProvince: null,
+  country: null, region: null, revenueEstimateUsd: null, employeeCount: null, ingestion: 'ingested',
+  caslScope: false, bestEmail: null, contact: null, score: null, erp: null, quotePortalType: null,
+  auditImageUrl: null, latitude: null, longitude: null, clusterId: null, clusterName: null,
+  lastIntentHeat: 0, telemetry: { lastEventAtMs: null, lastEventType: null, events24h: 0 } as never,
+  dispatch: null, highTouch: null, leakageUsd: null, priority: 0, highIntentNow: false,
+  pendingDrafts: 0, snoozedUntilMs: null, lastActionAtMs: null, ...over,
+});
+const resolve = (l: CommandLead) => {
+  const c = l.country; const sp = l.stateProvince;
+  if (c === 'United States' && sp === 'TX') return 'US-TX';
+  if (c === 'Canada' && sp === 'BC') return 'CA-BC';
+  return null;
+};
+const leads = [
+  mk({ id: 'a', name: 'Gulf', country: 'United States', stateProvince: 'TX', latitude: 29.76, longitude: -95.37,
+       caslScope: false, dispatch: { channel: 'channel_a_automated_email', status: 'staged', scheduledAtMs: null, steps: 1 },
+       score: { qlvScore: 91, band: 'critical', factors: [], hooks: [], rationale: '', model: '', createdAt: '' } as never,
+       leakageUsd: 48000 }),
+  mk({ id: 'b', name: 'Bayou', country: 'United States', stateProvince: 'TX', latitude: 30.45, longitude: -91.19,
+       dispatch: { channel: 'channel_a_automated_email', status: 'sent', scheduledAtMs: null, steps: 1 }, leakageUsd: 12000 }),
+  mk({ id: 'c', name: 'Maple', country: 'Canada', stateProvince: 'BC', latitude: 48.43, longitude: -123.36,
+       caslScope: true }),
+  mk({ id: 'd', name: 'NoGeo', country: 'United States', stateProvince: 'TX' }),
+  mk({ id: 'e', name: 'LAPPSET', country: 'Kenya', latitude: -2.27, longitude: 40.9 }),
+];
+const census: BoardCensus = censusBoard(leads, resolve);
+const tx = census.territoryStats.get('US-TX')!;
+if (tx.count !== 2) fail('US-TX count');
+if (tx.critical !== 1) fail('US-TX critical band');
+if (tx.mailStaged !== 1 || tx.mailSent !== 1 || tx.mailQueued !== 0 || tx.mailFailed !== 0) fail('US-TX funnel');
+if (tx.leakageUsd !== 60000) fail('US-TX leakage');
+if (census.territoryStats.get('CA-BC')!.caslTrue !== 1) fail('CA-BC consent-true');
+if (census.uncharted.length !== 1 || census.uncharted[0].name !== 'NoGeo') fail('uncharted tray');
+if (census.offBoard.length !== 1 || census.offBoard[0].name !== 'LAPPSET') fail('off-board tray');
+if (census.plotted.length !== 3) fail('plotted pool');
+
+// 8d — M1 binding math: filtering to critical leaves only the 91-QLV row on the board
+const criticalBoard = censusBoard(leads.filter((l) => (l.score?.qlvScore ?? 0) >= 85), resolve);
+if (criticalBoard.territoryStats.get('US-TX')!.count !== 1) fail('M1 filter does not bind the census');
+
+if (bad === 0) console.log('  PASS: lenses + funnel + trays + M1 binding all resolve');
+process.exit(bad ? 1 : 0);
+"
+[ $? -eq 0 ] && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
+
 rm -f "$JAR" /tmp/gate.json /tmp/geo.json /tmp/lakes.json /tmp/cmd.json
 echo
 echo "theatre map verification: $PASS passed, $FAIL failed"

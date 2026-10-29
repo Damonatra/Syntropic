@@ -653,7 +653,9 @@ export function CommandCentre() {
                   acted={acted}
                 />
               )}
-              {view === "theatre" && <TheatreView snap={snap} onOpenDossier={openDossier} />}
+              {view === "theatre" && (
+                <TheatreView snap={snap} onOpenDossier={openDossier} filter={filter} onFilter={handleFilter} />
+              )}
               {view === "pipeline" && (
                 <PipelineView snap={snap} now={now} onOpenDossierId={openDossierById} onTriage={doTriage} />
               )}
