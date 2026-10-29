@@ -1,7 +1,7 @@
-/** RADAR — home surface: guarantee anchor with live receipt, persona KPI strip, alert backlog, watchdog-gated feed with hold-buffer + filters, actionable strike rail. */
+/** RADAR — home surface: guarantee anchor with live receipt, persona KPI strip, alert backlog, territory corridors, watchdog-gated feed with hold-buffer + filters, recovery funnel spine, actionable strike rail with ops heartbeat. */
 "use client";
 
-import { useMemo, useState, type MouseEvent } from "react";
+import { Fragment, useMemo, useState, type MouseEvent } from "react";
 import {
   ArrowButton,
   Chip,
@@ -20,10 +20,14 @@ import {
   isHighSignal,
   money,
   relTime,
+  verticalLabel,
   type AlertItem,
+  type ClusterShape,
   type CommandLead,
   type CommandSnapshot,
   type FeedItem,
+  type FunnelStage,
+  type OpsSnapshot,
 } from "@/lib/vertebra/command";
 
 import { PERSONAS, personaDef, personaMetrics, type PersonaId } from "@/lib/vertebra/persona";
@@ -53,6 +57,7 @@ export function RadarView({
   onGoStrike,
   onGoPipeline,
   onGoPortal,
+  onGoTheatre,
 }: {
   snap: CommandSnapshot;
   now: number;
@@ -66,8 +71,9 @@ export function RadarView({
   onGoStrike: () => void;
   onGoPipeline: () => void;
   onGoPortal: () => void;
+  onGoTheatre: () => void;
 }) {
-  const { leads, feed, alerts, ops } = snap;
+  const { leads, feed, alerts, clusters, funnel, ops } = snap;
 
   const metrics = useMemo(() => personaMetrics(persona, snap), [persona, snap]);
 
@@ -149,9 +155,9 @@ export function RadarView({
         <div className="h-px w-full shrink-0 bg-white/[0.08]" />
         <div className="flex flex-wrap items-stretch">
           <AnchorStat className="min-w-[190px] flex-1" label="Recoverable pool" value={money(criticalPool)} note="QLV ≥ 85 band" />
-          <span aria-hidden className="hidden w-px shrink-0 self-stretch bg-white/25 md:block" />
+          <span aria-hidden className="hidden w-px shrink-0 self-stretch bg-white/25 mx-4 md:block" />
           <AnchorStat className="min-w-[190px] flex-1" label="Briefs exported" value={String(briefsExported).padStart(2, "0")} note="channel b" />
-          <span aria-hidden className="hidden w-px shrink-0 self-stretch bg-white/25 md:block" />
+          <span aria-hidden className="hidden w-px shrink-0 self-stretch bg-white/25 mx-4 md:block" />
           <AnchorStat
             className="min-w-[190px] flex-1"
             label="Rep touches 24h"
@@ -235,6 +241,9 @@ export function RadarView({
           })}
         </div>
       )}
+
+      {/* Territory corridors — Module 7 spatial clusters as a one-glance geography band */}
+      <CorridorStrip clusters={clusters} onGoTheatre={onGoTheatre} />
 
       <div className="grid flex-1 grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
         {/* Live feed */}
@@ -339,6 +348,9 @@ export function RadarView({
               ))}
             </div>
           )}
+
+          {/* Recovery spine — the funnel's contraction, money concentrating at the tail */}
+          <FunnelSpine funnel={funnel} />
         </section>
 
         {/* Strike rail */}
@@ -366,6 +378,7 @@ export function RadarView({
               />
             ))}
           </div>
+          <OpsHeartbeat ops={ops} />
         </aside>
       </div>
     </div>
@@ -384,7 +397,7 @@ function AnchorStat({
   className?: string;
 }) {
   return (
-    <div className={`pr-6 ${className}`}>
+    <div className={`${className}`}>
       <p className="font-mono text-[8.5px] font-medium uppercase tracking-[0.18em] text-white/60">{label}</p>
       <p className="mt-1.5 font-display text-[19px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-white">{value}</p>
       {note && <p className="mt-1.5 font-mono text-[8.5px] uppercase tracking-[0.14em] text-white/45">{note}</p>}
@@ -515,5 +528,162 @@ function MiniBtn({ label, onClick }: { label: string; onClick: () => void }) {
     >
       {label}
     </button>
+  );
+}
+
+/* ------------------------------------------------------------- tier C ---- */
+
+/** Territory corridors — Module 7 spatial clusters as a one-glance geography band. */
+function CorridorStrip({ clusters, onGoTheatre }: { clusters: ClusterShape[]; onGoTheatre: () => void }) {
+  if (clusters.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <SectionLabel>Territory corridors — Module 7 · spatial clustering</SectionLabel>
+        <button
+          onClick={onGoTheatre}
+          className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-[#8E9194] transition-colors hover:text-[#F4F5F2]"
+        >
+          Open Theatre →
+        </button>
+      </div>
+      <SoftCard className="ink flex flex-wrap items-stretch px-6 py-4" interactive onClick={onGoTheatre}>
+        {clusters.map((c, i) => (
+          <Fragment key={c.id}>
+            {i > 0 && <span aria-hidden className="hidden w-px shrink-0 self-stretch bg-white/25 mx-4 md:block" />}
+            <div className="min-w-[200px] flex-1">
+              <div className="flex items-center gap-2">
+                <p className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#E9EBE7]">{c.clusterName}</p>
+                <span
+                  title={`${c.hotCount} hot lead${c.hotCount === 1 ? "" : "s"} in this corridor`}
+                  className={`inline-flex shrink-0 items-center gap-1.5 font-mono text-[9px] font-medium uppercase tracking-[0.12em] ${
+                    c.hotCount > 0 ? "text-[#F4F5F2]" : "text-[#5F6460]"
+                  }`}
+                >
+                  <LiveDot level={c.hotCount > 0 ? "live" : "idle"} />
+                  {c.hotCount} hot
+                </span>
+              </div>
+              <p className="mt-2.5 font-display text-[19px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-white">
+                {money(c.leakageUsd)}
+              </p>
+              <p className="mt-1.5 truncate font-mono text-[8.5px] uppercase tracking-[0.14em] text-white/45">
+                {c.anchorCity ?? "—"} · {c.memberIds.length} members · {verticalLabel(c.verticalFocus)}
+              </p>
+            </div>
+          </Fragment>
+        ))}
+      </SoftCard>
+    </div>
+  );
+}
+
+/**
+ * Recovery spine — the seven-stage funnel as one continuous track. Bar width
+ * carries volume (count share of the head), luminance carries progress: the
+ * spine brightens as accounts flow toward the high-touch tail where the
+ * recoverable money concentrates.
+ */
+function FunnelSpine({ funnel }: { funnel: FunnelStage[] }) {
+  if (funnel.length === 0) return null;
+  const maxCount = Math.max(...funnel.map((f) => f.count), 1);
+  const first = funnel[0];
+  const last = funnel[funnel.length - 1];
+  return (
+    <div className="flex flex-col gap-3 pt-2">
+      <div className="flex items-center justify-between">
+        <SectionLabel>Recovery spine — ingest to high-touch</SectionLabel>
+        <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#5F6460]">
+          {last.count} of {first.count} reach {last.label.toLowerCase()} · {money(last.leakageUsd)} concentrated
+        </span>
+      </div>
+      <SoftCard className="px-5 pb-4 pt-3.5">
+        <div className="flex flex-wrap gap-y-3">
+          {funnel.map((st, i) => {
+            const share = Math.max(0.06, st.count / maxCount);
+            const luma = funnel.length > 1 ? 0.3 + 0.7 * (i / (funnel.length - 1)) : 1;
+            return (
+              <div
+                key={st.stage}
+                className="min-w-[76px] flex-1 pr-4"
+                title={`${st.label} — ${st.count} accounts · ${money(st.leakageUsd)} exposure`}
+              >
+                <p
+                  className="font-display text-[17px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-[#F4F5F2]"
+                  style={{ opacity: luma }}
+                >
+                  {st.count}
+                </p>
+                <p className="mt-1.5 truncate font-mono text-[8px] uppercase tracking-[0.14em] text-[#5F6460]">{st.label}</p>
+                <div className="mt-1.5 h-[3px] w-full rounded-full bg-[#1F221F]">
+                  <div className="h-full rounded-full bg-[#F4F5F2]" style={{ width: `${share * 100}%`, opacity: luma }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </SoftCard>
+    </div>
+  );
+}
+
+/**
+ * Ops heartbeat — engine vitals under the strike rail: EKG microline with a
+ * ping at the apex, one luminance segment per module (bright = attention),
+ * and the 24h throughput counters.
+ */
+function OpsHeartbeat({ ops }: { ops: OpsSnapshot }) {
+  const fail = ops.modules.find((m) => m.status === "fail");
+  const warn = ops.modules.find((m) => m.status === "warn");
+  return (
+    <SoftCard className="mt-auto px-4 py-3.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <LiveDot level={fail ? "fail" : warn ? "warn" : "live"} />
+          <span className="font-mono text-[10.5px] font-medium uppercase tracking-[0.22em] text-[#8E9194]">Ops heartbeat</span>
+        </div>
+        <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#5F6460]">
+          {fail ? "module failure" : warn ? "1 module degraded" : "M1–M9 nominal"}
+        </span>
+      </div>
+      <svg viewBox="0 0 300 28" preserveAspectRatio="none" className="mt-3 h-7 w-full" aria-hidden="true">
+        <path
+          d="M0 20 H88 L96 20 L104 5 L112 26 L118 20 H300"
+          fill="none"
+          stroke="#F4F5F2"
+          strokeWidth="1.25"
+          opacity="0.85"
+          vectorEffect="non-scaling-stroke"
+        />
+        <circle cx="104" cy="5" r="4" fill="none" stroke="#F4F5F2" strokeWidth="1" className="cc-svg-pulse" />
+      </svg>
+      <div className="mt-1 flex items-center gap-1" role="img" aria-label="Engine module status, M1 through M9">
+        {ops.modules.map((m) => (
+          <span
+            key={m.id}
+            title={`${m.module} — ${m.status.toUpperCase()} · ${m.detail}`}
+            className={`h-[3px] flex-1 rounded-full ${
+              m.status === "fail" ? "bg-[#F4F5F2] cc-blink" : m.status === "warn" ? "bg-[#8E9194]" : "bg-[#333732]"
+            }`}
+          />
+        ))}
+      </div>
+      <div className="mt-2.5 flex flex-col gap-1 font-mono text-[9px] uppercase tracking-[0.12em] text-[#5F6460]">
+        <span className="flex items-center justify-between tabular-nums">
+          <span>
+            tel {ops.telemetryEvents24h} · disp {ops.dispatchesSent24h}
+          </span>
+          <span>
+            alr {ops.alerts24h} · out {ops.outboxPending}
+          </span>
+        </span>
+        <span className="flex items-center justify-between tabular-nums">
+          <span>
+            ch-a {ops.channelACount} · ch-b {ops.channelBCount}
+          </span>
+          <span>verified {ops.verifiedEmailShare}%</span>
+        </span>
+      </div>
+    </SoftCard>
   );
 }

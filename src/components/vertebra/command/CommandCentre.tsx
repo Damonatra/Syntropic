@@ -518,6 +518,7 @@ export function CommandCentre() {
                   onGoStrike={() => setView("strike")}
                   onGoPipeline={() => setView("pipeline")}
                   onGoPortal={() => setView("portal")}
+                  onGoTheatre={() => setView("theatre")}
                 />
               )}
               {view === "strike" && (
