@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Theatre map verification — Map-1 spine · Map-2 drawer · Map-3 lens set + deep link:
+# Theatre map verification — Map-1 spine · Map-2 drawer · Map-3 lens set + deep link ·
+# Map-4 pulse (call windows, movement ledger, honest 24h deltas):
 # geo bundle, normalizer, census, six lens ramps, URL codec, gate posture.
 # Usage: bash scripts/verify_theatre_map.sh
 set -u
@@ -244,7 +245,92 @@ process.exit(bad ? 1 : 0);
 "
 [ $? -eq 0 ] && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
 
-rm -f "$JAR" /tmp/gate.json /tmp/geo.json /tmp/lakes.json /tmp/cmd.json
+echo "== 10. Map-4 — call windows, pulse ledger math, 24h deltas"
+bun -e "
+import { territoryCallWindow, pulseDeltaSummary, pulseLine, TERRITORY_TZ } from './src/lib/vertebra/theatre';
+import type { PulseEvent } from './src/lib/vertebra/command';
+let bad = 0;
+const fail = (m: string) => { console.log('  FAIL:', m); bad++ };
+const ev = (id: string, atMs: number, territory: string | null): PulseEvent =>
+  ({ id, kind: 'telemetry', atMs, prospectId: 'p' + id, prospectName: 'P' + id, territory, detail: 'pricing_view' });
+
+// 10a — the flagship clock: 14:00Z on Thu Jan 15 2026 — Houston 08:00 open, Victoria 06:00 opening in 2h
+const thu = Date.UTC(2026, 0, 15, 14, 0, 0);
+const tx = territoryCallWindow('US-TX', thu);
+if (!tx || !tx.open) fail('US-TX must be open at 14:00Z');
+if (tx && !tx.clock.startsWith('08:00')) fail('US-TX clock expected 08:00, got ' + tx.clock);
+if (tx && !tx.label.startsWith('open · closes 18:00')) fail('US-TX label: ' + tx.label);
+if (tx && tx.closesAtMs !== Date.UTC(2026, 0, 16, 0, 0)) fail('US-TX closesAtMs expected 00:00Z, got ' + (tx ? new Date(tx.closesAtMs).toISOString() : 'null'));
+const bc = territoryCallWindow('CA-BC', thu);
+if (!bc || bc.open) fail('CA-BC must be closed at 14:00Z');
+if (bc && !bc.clock.startsWith('06:00')) fail('CA-BC clock expected 06:00, got ' + bc.clock);
+if (bc && !bc.label.startsWith('opens 08:00 · in 2h')) fail('CA-BC label: ' + (bc?.label ?? 'null'));
+
+// 10b — half-hour zone honesty: Newfoundland at 14:00Z reads 10:30 NST
+const nl = territoryCallWindow('CA-NL', thu);
+if (nl && !nl.clock.startsWith('10:30')) fail('CA-NL clock expected 10:30, got ' + nl.clock);
+
+// 10c — weekends never open: Sat Jan 17 2026 names the next business day
+const sat = Date.UTC(2026, 0, 17, 14, 0, 0);
+const txSat = territoryCallWindow('US-TX', sat);
+if (!txSat || txSat.open) fail('US-TX must be closed on a Saturday');
+if (txSat && txSat.label !== 'opens Mon 08:00') fail('US-TX Saturday label: ' + (txSat?.label ?? 'null'));
+
+// 10d — the clock is total: all 64 territories resolve at any hour
+if (Object.keys(TERRITORY_TZ).length !== 64) fail('TZ table must cover all 64 territories, got ' + Object.keys(TERRITORY_TZ).length);
+for (const code of Object.keys(TERRITORY_TZ)) {
+  for (const h of [0, 6, 13, 22]) {
+    if (!territoryCallWindow(code, Date.UTC(2026, 5, 15, h, 30))) fail(code + ' window unresolved at hour ' + h);
+  }
+}
+
+// 10e — 24h deltas: a mature ledger compares, a young ledger refuses to fake history
+const now = Date.UTC(2026, 5, 15, 14, 0, 0);
+const mature = pulseDeltaSummary([
+  ev('a', now - 3_600_000, 'US-TX'), ev('b', now - 7_200_000, 'US-TX'),
+  ev('c', now - 3_600_000, 'CA-BC'), ev('d', now - 30 * 3_600_000, 'US-TX'),
+], now);
+if (!mature.mature) fail('mature ledger must arm deltas');
+const txd = mature.deltas.find((d) => d.code === 'US-TX');
+if (!txd || txd.last24h !== 2 || txd.prior24h !== 1 || txd.readout !== '+2 vs 1' || txd.direction !== 'up')
+  fail('US-TX delta ' + JSON.stringify(txd));
+const young = pulseDeltaSummary([ev('a', now - 3_600_000, 'US-TX')], now);
+if (young.mature) fail('young ledger must refuse deltas');
+if (young.deltas[0]?.direction !== 'quiet' || young.deltas[0]?.readout !== '· 1')
+  fail('young delta readout ' + JSON.stringify(young.deltas[0]));
+
+// 10f — ticker line formatting
+const line = pulseLine(ev('a', now - 90_000, 'US-TX'), now);
+if (!line.startsWith('1m ago · US-TX · Pa · pricing_view')) fail('pulseLine: ' + line);
+
+if (bad === 0) console.log('  PASS: call windows (Houston 08:00 vs Victoria 06:00) · deltas · ticker line all resolve');
+process.exit(bad ? 1 : 0);
+"
+[ $? -eq 0 ] && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
+
+echo "== 11. Map-4 live — GET /api/command carries the pulse ledger"
+code=$(curl -s -o /tmp/cmd4.json -w "%{http_code}" -b "$JAR" "$BASE/api/command")
+python3 - "$code" << 'PY'
+import json, sys
+code = sys.argv[1]
+if code != "200":
+    print(f"  FAIL: /api/command HTTP {code}"); sys.exit(1)
+d = json.load(open("/tmp/cmd4.json"))
+pulse = d.get("pulse")
+if not isinstance(pulse, list) or len(pulse) == 0 or len(pulse) > 120:
+    print(f"  FAIL: pulse ledger missing/malformed ({type(pulse).__name__}, {len(pulse) if isinstance(pulse, list) else 0} entries)"); sys.exit(1)
+if not all(("kind" in e and "atMs" in e and "detail" in e and "territory" in e) for e in pulse):
+    print("  FAIL: pulse rows missing kind/atMs/detail/territory"); sys.exit(1)
+territories = {e["territory"] for e in pulse if e.get("territory")}
+kinds = sorted({e["kind"] for e in pulse})
+if not territories:
+    print("  FAIL: no pulse row resolved to a territory"); sys.exit(1)
+print(f"  PASS: pulse ledger live — {len(pulse)} entries · territories {sorted(territories)} · kinds {kinds}")
+sys.exit(0)
+PY
+[ $? -eq 0 ] && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
+
+rm -f "$JAR" /tmp/gate.json /tmp/geo.json /tmp/lakes.json /tmp/cmd.json /tmp/cmd4.json
 echo
 echo "theatre map verification: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]

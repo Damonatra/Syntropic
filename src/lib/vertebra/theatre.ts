@@ -14,7 +14,7 @@
 import { geoConicConformal, geoContains, geoGraticule, geoPath, type GeoProjection } from "d3-geo";
 import { classifyLeadGeo, TERRITORY_BY_CODE } from "./geo";
 import { money, relTime } from "./command";
-import type { CommandLead } from "./command";
+import type { CommandLead, PulseEvent } from "./command";
 
 // --------------------------------------------------------------------------- #
 // Geometry bundle types (public/geo/*.json)
@@ -532,4 +532,291 @@ export function parseBoardState(search: string | null | undefined): BoardUrlStat
     };
   }
   return out;
+}
+
+// --------------------------------------------------------------------------- #
+// Map-4 · Pulse — call windows, movement ledger math, ticker formatting
+// --------------------------------------------------------------------------- #
+
+/**
+ * Primary IANA zone per territory. Split states resolve to their population
+ * centre (FL/TN/TX style splits go to the majority zone) — the call window is
+ * an operator scheduling aid, not a legal boundary, and the drawer prints the
+ * zone name so the operator always sees which clock is being used.
+ */
+export const TERRITORY_TZ: Readonly<Record<string, string>> = {
+  "US-AL": "America/Chicago", "US-AK": "America/Anchorage", "US-AZ": "America/Phoenix",
+  "US-AR": "America/Chicago", "US-CA": "America/Los_Angeles", "US-CO": "America/Denver",
+  "US-CT": "America/New_York", "US-DE": "America/New_York", "US-DC": "America/New_York",
+  "US-FL": "America/New_York", "US-GA": "America/New_York", "US-HI": "Pacific/Honolulu",
+  "US-ID": "America/Boise", "US-IL": "America/Chicago", "US-IN": "America/Indiana/Indianapolis",
+  "US-IA": "America/Chicago", "US-KS": "America/Chicago", "US-KY": "America/New_York",
+  "US-LA": "America/Chicago", "US-ME": "America/New_York", "US-MD": "America/New_York",
+  "US-MA": "America/New_York", "US-MI": "America/Detroit", "US-MN": "America/Chicago",
+  "US-MS": "America/Chicago", "US-MO": "America/Chicago", "US-MT": "America/Denver",
+  "US-NE": "America/Chicago", "US-NV": "America/Los_Angeles", "US-NH": "America/New_York",
+  "US-NJ": "America/New_York", "US-NM": "America/Denver", "US-NY": "America/New_York",
+  "US-NC": "America/New_York", "US-ND": "America/Chicago", "US-OH": "America/New_York",
+  "US-OK": "America/Chicago", "US-OR": "America/Los_Angeles", "US-PA": "America/New_York",
+  "US-RI": "America/New_York", "US-SC": "America/New_York", "US-SD": "America/Chicago",
+  "US-TN": "America/Chicago", "US-TX": "America/Chicago", "US-UT": "America/Denver",
+  "US-VT": "America/New_York", "US-VA": "America/New_York", "US-WA": "America/Los_Angeles",
+  "US-WV": "America/New_York", "US-WI": "America/Chicago", "US-WY": "America/Denver",
+  "CA-AB": "America/Edmonton", "CA-BC": "America/Vancouver", "CA-MB": "America/Winnipeg",
+  "CA-NB": "America/Moncton", "CA-NL": "America/St_Johns", "CA-NS": "America/Halifax",
+  "CA-NT": "America/Yellowknife", "CA-NU": "America/Iqaluit", "CA-ON": "America/Toronto",
+  "CA-PE": "America/Halifax", "CA-QC": "America/Toronto", "CA-SK": "America/Regina",
+  "CA-YT": "America/Whitehorse",
+};
+
+/** Call window in local wall-clock minutes — 08:00–18:00, Monday to Friday. */
+export const CALL_WINDOW = { startMin: 8 * 60, endMin: 18 * 60 } as const;
+
+export interface CallWindow {
+  tz: string;
+  /** "14:23" local wall clock. */
+  clock: string;
+  /** "CST" / "PDT" — the zone ink the operator sees. */
+  zoneShort: string;
+  /** "Thu" / "Sat" — local weekday where the clock is read. */
+  dayShort: string;
+  open: boolean;
+  /** UTC ms of the next opening / the current closing; null when unresolvable. */
+  opensAtMs: number | null;
+  closesAtMs: number | null;
+  /** Human line — "open · closes 18:00 in 3h 37m" / "opens 08:00 · in 1h 40m" / "opens Mon 08:00". */
+  label: string;
+}
+
+interface ZonedParts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  weekday: number; // 1 = Monday … 7 = Sunday
+}
+
+function zonedParts(tz: string, at: Date): ZonedParts {
+  const dtf = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    weekday: "short",
+  });
+  const map: Record<string, string> = {};
+  for (const p of dtf.formatToParts(at)) map[p.type] = p.value;
+  const weekdays: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
+  const hour = Number(map.hour) % 24; // "24" appears for midnight on some runtimes
+  return {
+    year: Number(map.year),
+    month: Number(map.month),
+    day: Number(map.day),
+    hour,
+    minute: Number(map.minute),
+    weekday: weekdays[map.weekday ?? ""] ?? 1,
+  };
+}
+
+/** UTC ms for a local wall-clock minute in tz — fixed-point offset search, DST-safe. */
+function zonedWallToUtcMs(tz: string, p: ZonedParts, minutes: number): number {
+  const wall = Date.UTC(p.year, p.month - 1, p.day, 0, minutes);
+  const wallAt = (utc: number) => {
+    const parts = zonedParts(tz, new Date(utc));
+    return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute);
+  };
+  const offAt = (utc: number) => wallAt(utc) - utc;
+  // U = wall − off(U): start from the naive reading, settle the offset in two
+  // passes — converges everywhere except inside a DST transition, where the
+  // round-trip check below returns NaN instead of a wrong clock
+  let utc = wall;
+  utc = wall - offAt(utc);
+  utc = wall - offAt(utc);
+  const back = zonedParts(tz, new Date(utc));
+  if (back.hour * 60 + back.minute !== minutes % 1440 || back.day !== p.day) return NaN;
+  return utc;
+}
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const hm = (min: number) => `${pad2(Math.floor(min / 60))}:${pad2(min % 60)}`;
+const spanHm = (ms: number) => {
+  const m = Math.max(0, Math.round(ms / 60_000));
+  return `${Math.floor(m / 60)}h ${pad2(m % 60)}m`;
+};
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/**
+ * The operator's calling clock for one territory. Pure and deterministic on
+ * (code, nowMs) — the flagship example: at 14:00Z on a January weekday,
+ * Houston reads 08:00 and its window just opened, while Victoria reads 06:00
+ * and opens in two hours. Weekends never open — the label names the next
+ * business day instead of pretending a window is reachable today.
+ */
+export function territoryCallWindow(
+  code: string,
+  nowMs: number,
+  window: { startMin: number; endMin: number } = CALL_WINDOW,
+): CallWindow | null {
+  const tz = TERRITORY_TZ[code];
+  if (!tz) return null;
+  const now = zonedParts(tz, new Date(nowMs));
+  const nowMin = now.hour * 60 + now.minute;
+  const isWeekday = now.weekday >= 1 && now.weekday <= 5;
+  const open = isWeekday && nowMin >= window.startMin && nowMin < window.endMin;
+
+  // zone short name ("CST") at this instant
+  const zoneShort =
+    new Intl.DateTimeFormat("en-CA", { timeZone: tz, timeZoneName: "short" })
+      .formatToParts(new Date(nowMs))
+      .find((p) => p.type === "timeZoneName")?.value ?? tz.split("/")[1] ?? tz;
+
+  const clock = `${hm(nowMin)} ${zoneShort}`;
+  const dayShort = DAY_NAMES[now.weekday % 7];
+
+  // next window opening: today (if still ahead and weekday), else next weekday
+  let opensAtMs: number | null = null;
+  let opensDayLabel = "";
+  for (let add = 0; add <= 7 && opensAtMs == null; add++) {
+    const probeDate = new Date(nowMs + add * 86_400_000);
+    const parts = zonedParts(tz, probeDate);
+    if (parts.weekday >= 6) continue;
+    if (add === 0) {
+      if (isWeekday && nowMin < window.startMin) {
+        const utc = zonedWallToUtcMs(tz, parts, window.startMin);
+        if (!Number.isNaN(utc)) {
+          opensAtMs = utc;
+          opensDayLabel = "";
+          break;
+        }
+      }
+      continue;
+    }
+    const utc = zonedWallToUtcMs(tz, parts, window.startMin);
+    if (!Number.isNaN(utc)) {
+      opensAtMs = utc;
+      opensDayLabel = DAY_NAMES[parts.weekday % 7];
+      break;
+    }
+  }
+
+  // current window closing (only meaningful while open)
+  let closesAtMs: number | null = null;
+  if (open) {
+    const utc = zonedWallToUtcMs(tz, now, window.endMin);
+    if (!Number.isNaN(utc)) closesAtMs = utc;
+  }
+
+  let label: string;
+  if (open) {
+    label =
+      closesAtMs != null
+        ? `open · closes ${hm(window.endMin)} in ${spanHm(closesAtMs - nowMs)}`
+        : "open";
+  } else if (opensAtMs != null) {
+    const until = opensAtMs - nowMs;
+    label =
+      opensDayLabel === ""
+        ? `opens ${hm(window.startMin)} · in ${spanHm(until)}`
+        : `opens ${opensDayLabel} ${hm(window.startMin)}`;
+  } else {
+    label = "no window resolvable";
+  }
+
+  return { tz, clock, zoneShort, dayShort, open, opensAtMs, closesAtMs, label };
+}
+
+// --- pulse ledger math -------------------------------------------------------
+
+const DAY_MS = 86_400_000;
+
+/** One mono ticker line — territory, actor, detail, age. Deterministic. */
+export function pulseLine(e: PulseEvent, nowMs: number): string {
+  const terr = e.territory ?? "——";
+  const who = e.prospectName || "—";
+  return `${relTime(e.atMs, nowMs)} · ${terr} · ${who} · ${e.detail}`;
+}
+
+export interface TerritoryDelta {
+  code: string;
+  name: string;
+  country: "US" | "CA";
+  /** Ledger rows inside the trailing 24h window. */
+  last24h: number;
+  /** Ledger rows inside the prior 24h window (24–48h ago). */
+  prior24h: number;
+  /** "up" | "down" | "flat" only when the ledger has genuinely accumulated. */
+  direction: "up" | "down" | "flat" | "quiet";
+  /** Mono readout — "+3 vs 1" / "· 2" (young ledger refuses a fake delta). */
+  readout: string;
+}
+
+export interface PulseDeltaSummary {
+  /**
+   * False while the ledger has no rows older than 24h — deltas refuse to
+   * compare against an empty prior window (same doctrine as CommandBaseline:
+   * deltas appear once history has genuinely accumulated).
+   */
+  mature: boolean;
+  deltas: TerritoryDelta[];
+}
+
+/**
+ * 24h territory movement from the pulse ledger. Comparison point is the
+ * prior 24h window (24–48h ago) computed from the same rows — no stored
+ * snapshot needed, so the delta is honest the moment the ledger has history.
+ */
+export function pulseDeltaSummary(pulse: PulseEvent[], nowMs: number): PulseDeltaSummary {
+  const cutoffLast = nowMs - DAY_MS;
+  const cutoffPrior = nowMs - 2 * DAY_MS;
+  const acc = new Map<
+    string,
+    { last: number; prior: number; name?: string; country?: "US" | "CA" }
+  >();
+  for (const e of pulse) {
+    if (e.territory == null || e.atMs > nowMs || e.atMs < cutoffPrior) continue;
+    let a = acc.get(e.territory);
+    if (!a) {
+      a = { last: 0, prior: 0 };
+      acc.set(e.territory, a);
+    }
+    if (e.atMs >= cutoffLast) a.last += 1;
+    else a.prior += 1;
+    if (a.name == null && e.territory) {
+      const meta = TERRITORY_BY_CODE[e.territory];
+      if (meta) {
+        a.name = meta.name;
+        a.country = meta.country;
+      }
+    }
+  }
+
+  const mature = Array.from(acc.values()).some((a) => a.prior > 0);
+  const deltas: TerritoryDelta[] = Array.from(acc.entries())
+    .map(([code, a]) => {
+      const direction: TerritoryDelta["direction"] =
+        a.last === 0 && a.prior === 0
+          ? "quiet"
+          : !mature
+            ? "quiet"
+            : a.last > a.prior
+              ? "up"
+              : a.last < a.prior
+                ? "down"
+                : "flat";
+      return {
+        code,
+        name: a.name ?? code,
+        country: a.country ?? "US",
+        last24h: a.last,
+        prior24h: a.prior,
+        direction,
+        readout: mature && a.prior > 0 ? `+${a.last} vs ${a.prior}` : `· ${a.last}`,
+      };
+    })
+    .sort((x, y) => y.last24h - x.last24h || y.prior24h - x.prior24h || x.code.localeCompare(y.code));
+  return { mature, deltas };
 }

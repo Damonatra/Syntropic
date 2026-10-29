@@ -289,6 +289,37 @@ export interface BaselineBlock {
   inputs: KpiInputs;
 }
 
+// --------------------------------------------------------------------------- //
+// Theatre pulse — territory-scoped movement ledger (Map-4)
+// --------------------------------------------------------------------------- //
+
+/** One ledger row kind per source table the aggregator already loads. */
+export type PulseKind =
+  | "telemetry" // portal / audit / pricing / session events
+  | "dispatch" // mail funnel movement — staged / sent / failed transitions
+  | "reply" // inbound reply received
+  | "draft" // reply-agent draft lifecycle
+  | "operator" // called / deferred / snoozed / booked / note
+  | "alert" // intent alert fired
+  | "high_touch"; // channel B export
+
+/**
+ * A single territory-scoped movement event. The board's pulse strip and the
+ * 24h territory deltas both read from this one ledger — every entry traces to
+ * a real row the aggregator already fetched, never synthesized.
+ */
+export interface PulseEvent {
+  id: string;
+  kind: PulseKind;
+  atMs: number;
+  prospectId: string | null;
+  prospectName: string;
+  /** Canonical territory code ("US-TX") when the prospect resolves; else null. */
+  territory: string | null;
+  /** Short human detail — "staged · channel A", "reply · interested", "pricing_view". */
+  detail: string;
+}
+
 export interface CommandSnapshot {
   generatedAtMs: number;
   leads: CommandLead[];
@@ -299,6 +330,8 @@ export interface CommandSnapshot {
   funnel: FunnelStage[];
   ops: OpsSnapshot;
   baseline: BaselineBlock | null;
+  /** 48h movement ledger — optional so older cached snapshots still parse. */
+  pulse?: PulseEvent[];
 }
 
 // --------------------------------------------------------------------------- //

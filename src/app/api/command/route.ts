@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCachedSnapshot, storeSnapshot } from "@/lib/vertebra/snapshot-cache";
 import { deriveKpiInputs } from "@/lib/vertebra/persona";
+import { classifyLeadGeo } from "@/lib/vertebra/geo";
 import {
   annualLeakageUsd,
   effectivePriority,
@@ -23,6 +24,8 @@ import {
   type KpiInputs,
   type OpsModule,
   type OpsSnapshot,
+  type PulseEvent,
+  type PulseKind,
   type ReplyIntent,
   type ScoreShape,
   type TriageItem,
@@ -416,6 +419,118 @@ export async function GET(request: Request) {
       channelBCount,
     };
 
+    // ---- pulse ledger (Map-4) ---------------------------------------------- //
+    // Territory-scoped movement across the trailing 48h, built from the same
+    // rows already fetched above — the theatre pulse strip and the 24h
+    // territory deltas both read this one ledger. Nothing synthesized: every
+    // entry traces to a real row, and events without a prospect or a
+    // resolvable territory stay out rather than being guessed.
+    const territoryOf = (q: {
+      country: string | null;
+      stateProvince: string | null;
+      region: string | null;
+      latitude: number | null;
+      longitude: number | null;
+    }): string | null => classifyLeadGeo(q).territory?.code ?? null;
+    const trimDetail = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+    const pulseRaw: PulseEvent[] = [];
+    const pushPulse = (
+      kind: PulseKind,
+      id: string,
+      atMs: number,
+      prospectId: string | null,
+      prospectName: string,
+      territory: string | null,
+      detail: string,
+    ) => {
+      pulseRaw.push({ id: `${kind}:${id}`, kind, atMs, prospectId, prospectName, territory, detail });
+    };
+
+    const cutoff24 = now - 86_400_000;
+    const cutoff48 = now - 2 * 86_400_000;
+
+    // prospectId → territory, from the lead rows that carry geo (replies,
+    // drafts and alerts only carry a prospect reference, never coordinates)
+    const terrById = new Map(
+      leads.map((l) => [
+        l.id,
+        classifyLeadGeo({
+          country: l.country,
+          stateProvince: l.stateProvince,
+          region: l.region,
+          latitude: l.latitude,
+          longitude: l.longitude,
+        }).territory?.code ?? null,
+      ]),
+    );
+
+    for (const e of telemetryRows) {
+      const at = e.occurredAt.getTime();
+      if (at < cutoff24 || !e.prospectId) continue;
+      const p = nameById.get(e.prospectId);
+      if (!p) continue;
+      pushPulse("telemetry", e.id, at, p.id, p.name, territoryOf(p), e.eventType);
+    }
+    for (const p of prospects) {
+      const terr = territoryOf(p);
+      for (const d of p.dispatches) {
+        const at = d.updatedAt.getTime();
+        if (at < cutoff48 || d.status === "suppressed") continue;
+        pushPulse(
+          "dispatch",
+          d.id,
+          at,
+          p.id,
+          p.name,
+          terr,
+          `${d.status} · ${d.channel === "channel_a_automated_email" ? "channel A" : "channel B"}`,
+        );
+      }
+      for (const a of p.operatorActions) {
+        const at = a.createdAt.getTime();
+        if (at < cutoff48) continue;
+        pushPulse("operator", a.id, at, p.id, p.name, terr, trimDetail(`${a.action}${a.note ? ` · ${a.note}` : ""}`, 56));
+      }
+      if (p.highTouch?.exportedAt) {
+        const at = p.highTouch.exportedAt.getTime();
+        if (at >= cutoff48) pushPulse("high_touch", p.highTouch.id, at, p.id, p.name, terr, "high-touch export");
+      }
+    }
+    for (const r of replies) {
+      const at = r.receivedAt.getTime();
+      if (at >= cutoff48 && r.prospect) {
+        pushPulse(
+          "reply",
+          r.id,
+          at,
+          r.prospect.id,
+          r.prospect.name,
+          terrById.get(r.prospect.id) ?? null,
+          `reply · ${r.intent}`,
+        );
+      }
+      for (const d of r.drafts) {
+        const dat = d.createdAt.getTime();
+        if (dat < cutoff48) continue;
+        pushPulse(
+          "draft",
+          d.id,
+          dat,
+          r.prospect?.id ?? null,
+          r.prospect?.name ?? "—",
+          r.prospect ? terrById.get(r.prospect.id) ?? null : null,
+          `draft · ${d.status}`,
+        );
+      }
+    }
+    for (const a of alertsRows) {
+      const at = a.createdAt.getTime();
+      if (at < cutoff48 || !a.prospectId) continue;
+      pushPulse("alert", a.id, at, a.prospectId, a.prospect?.name ?? "Unknown", terrById.get(a.prospectId) ?? null, trimDetail(a.title, 56));
+    }
+
+    const pulse = pulseRaw.sort((a, b) => b.atMs - a.atMs).slice(0, 120);
+
     const snapshot: CommandSnapshot = {
       generatedAtMs: now,
       leads,
@@ -426,6 +541,7 @@ export async function GET(request: Request) {
       funnel,
       ops,
       baseline: null,
+      pulse,
     };
 
     // ---- 24h baseline ledger ------------------------------------------------ //

@@ -18,7 +18,8 @@ import {
   verticalLabel,
   type CommandLead,
 } from "@/lib/vertebra/command";
-import type { TerritoryStat } from "@/lib/vertebra/theatre";
+import type { TerritoryDelta, TerritoryStat } from "@/lib/vertebra/theatre";
+import { territoryCallWindow } from "@/lib/vertebra/theatre";
 
 const FUNNEL_STAGES = [
   { key: "mailStaged", label: "staged" },
@@ -48,6 +49,8 @@ export function TerritoryDrawer({
   onOpenDossier,
   pendingReplies,
   filterLabel,
+  delta,
+  ledgerMature,
 }: {
   stat: TerritoryStat | null;
   nowMs: number;
@@ -58,6 +61,10 @@ export function TerritoryDrawer({
   pendingReplies: Map<string, number>;
   /** active M1 filter label when the board is filtered — printed for honesty */
   filterLabel: string | null;
+  /** 24h movement for this territory from the pulse ledger (null when quiet) */
+  delta: TerritoryDelta | null;
+  /** false while the ledger has no prior-window rows — deltas refuse to fake history */
+  ledgerMature: boolean;
 }) {
   const ladder = useMemo(
     () =>
@@ -76,6 +83,19 @@ export function TerritoryDrawer({
 
   const caslFalse = stat ? stat.count - stat.caslTrue : 0;
   const consentPct = stat && stat.count > 0 ? Math.round((stat.caslTrue / stat.count) * 100) : null;
+
+  const callWindow = useMemo(() => (stat ? territoryCallWindow(stat.code, nowMs) : null), [stat, nowMs]);
+  const movementSub = !delta
+    ? ledgerMature
+      ? "no movement logged in the ledger"
+      : "ledger young — deltas arm once 48h accumulate"
+    : delta.prior24h > 0
+      ? delta.direction === "up"
+        ? `accelerating vs prior 24h (${delta.prior24h} rows)`
+        : delta.direction === "down"
+          ? `cooling vs prior 24h (${delta.prior24h} rows)`
+          : `steady vs prior 24h (${delta.prior24h} rows)`
+      : "no prior-window comparison for this territory";
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -116,6 +136,30 @@ export function TerritoryDrawer({
                 value={stat.lastTouchMs ? relTime(stat.lastTouchMs, nowMs) : "—"}
               />
               <StatCell label="In sequence" value={String(stat.inSequence)} />
+            </div>
+
+            {/* operating clock + 24h movement (Map-4) */}
+            <div className="grid grid-cols-2 gap-x-6 border-b border-white/[0.08] pb-4">
+              <div>
+                <SectionLabel>Call window{callWindow ? ` · ${callWindow.zoneShort}` : ""}</SectionLabel>
+                <p className="mt-1.5 font-mono text-[13px] tabular-nums text-[#E9EBE7]">
+                  {callWindow ? `${callWindow.dayShort} ${callWindow.clock}` : "—"}
+                </p>
+                <p
+                  className={`mt-1 font-mono text-[9.5px] uppercase tracking-[0.13em] ${
+                    callWindow?.open ? "text-[#F4F5F2]" : "text-[#5F6460]"
+                  }`}
+                >
+                  {callWindow?.label ?? "timezone unresolved"}
+                </p>
+              </div>
+              <div>
+                <SectionLabel>24h movement</SectionLabel>
+                <p className="mt-1.5 font-mono text-[13px] tabular-nums text-[#E9EBE7]">
+                  {delta ? delta.readout : "· 0"}
+                </p>
+                <p className="mt-1 font-mono text-[9.5px] uppercase tracking-[0.13em] text-[#5F6460]">{movementSub}</p>
+              </div>
             </div>
 
             {/* mail funnel */}

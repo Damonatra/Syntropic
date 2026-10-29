@@ -16,6 +16,10 @@
  * whole board state is deep-linkable: lens, focused territory, cluster and
  * camera ride the URL (?tl= &tt= &tc= &tk/tx/ty=) and survive a reload.
  *
+ * Map-4: the pulse — a 48h territory movement ledger (every entry traces to a
+ * real row), local call windows per territory (08:00–18:00 local, Mon–Fri) and
+ * honest 24h deltas that arm only once the ledger has genuinely accumulated.
+ *
  * Honest ledger: leads with no coordinates land in the uncharted tray,
  * leads outside the US+CA frame (East Africa expansion accounts) land in
  * the off-board tray. Nothing silently disappears from the board.
@@ -49,8 +53,11 @@ import {
   loadGeoBundle,
   makeTerritoryResolver,
   parseBoardState,
+  pulseDeltaSummary,
+  territoryCallWindow,
   type BoardCensus,
   type BoardGeometry,
+  type CallWindow,
   type GeoBundle,
   type LensExtremes,
   type LensId,
@@ -160,6 +167,8 @@ export function TheatreView({
   const [dragging, setDragging] = useState(false);
   const [lens, setLens] = useState<LensId>(boot.lens);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Map-4 pulse — visible by default; a ticker you must discover is a dead ticker
+  const [pulseOpen, setPulseOpen] = useState(true);
 
   // camera-restore bookkeeping: skip the glide when the URL already carried
   // one, or when there is no territory to restore
@@ -335,6 +344,8 @@ export function TheatreView({
         zoomCenter(1.4);
       } else if (e.key === "-" || e.key === "_") {
         zoomCenter(1 / 1.4);
+      } else if ((e.key === "p" || e.key === "P") && !document.querySelector('[role="dialog"]')) {
+        setPulseOpen((v) => !v);
       } else if (e.key.startsWith("Arrow")) {
         e.preventDefault();
         const step = 70;
@@ -399,6 +410,38 @@ export function TheatreView({
     [lens, census, nowMs],
   );
   const activeLens = LENSES.find((l) => l.id === lens) ?? null;
+
+  // Map-4 pulse — movement ledger + per-territory call windows
+  const pulse = useMemo(() => snap.pulse ?? [], [snap.pulse]);
+  const pulseSummary = useMemo(() => pulseDeltaSummary(pulse, nowMs), [pulse, nowMs]);
+  const visiblePulse = useMemo(() => {
+    const scoped = focusedCode ? pulse.filter((e) => e.territory === focusedCode) : pulse;
+    return scoped.slice(0, 7);
+  }, [pulse, focusedCode]);
+  const callWindows = useMemo(() => {
+    const entries: Array<{ code: string; cw: CallWindow }> = [];
+    for (const code of census.territoryStats.keys()) {
+      const cw = territoryCallWindow(code, nowMs);
+      if (cw) entries.push({ code, cw });
+    }
+    entries.sort(
+      (a, b) =>
+        (b.cw.open ? 1 : 0) - (a.cw.open ? 1 : 0) ||
+        (a.cw.opensAtMs ?? Infinity) - (b.cw.opensAtMs ?? Infinity) ||
+        a.code.localeCompare(b.code),
+    );
+    return entries;
+  }, [census, nowMs]);
+  const focusTerritory = useCallback(
+    (code: string) => {
+      const t = geometry?.territoryDrawables.find((d) => d.code === code);
+      if (!t) return;
+      setFocusedCode(code);
+      glideToBounds(t.bounds);
+      setDrawerOpen(true);
+    },
+    [geometry, glideToBounds],
+  );
 
   // ---------------------------------------------------------------- render
   if (geoFailed) {
@@ -777,6 +820,90 @@ export function TheatreView({
         </div>
       </SoftCard>
 
+      {/* pulse — territory movement ledger + call windows (Map-4) */}
+      <SoftCard className="mt-4 px-6 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <SectionLabel>Pulse — territory movement · 48h ledger</SectionLabel>
+          <div className="flex items-center gap-3">
+            {callWindows.length > 0 && (
+              <span className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#5F6460]">
+                {callWindows.filter((x) => x.cw.open).length}/{callWindows.length} call windows open
+              </span>
+            )}
+            <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#3F433F]">[P] toggles</span>
+          </div>
+        </div>
+        {pulseOpen && (
+          <>
+            {/* call windows — one chip per territory with plotted leads, sorted by reachability */}
+            {callWindows.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {callWindows.slice(0, 10).map(({ code, cw }) => (
+                  <button
+                    key={code}
+                    onClick={() => focusTerritory(code)}
+                    title={`${cw.tz} — ${cw.label}`}
+                    className={`h-8 rounded-full px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-all ${
+                      cw.open
+                        ? "border border-white/[0.24] bg-[#1A1D1A] text-[#F4F5F2]"
+                        : "border border-white/[0.08] bg-[#131513] text-[#8E9194] hover:text-[#F4F5F2]"
+                    }`}
+                  >
+                    {code.split("-")[1]} <span className="tabular-nums">{cw.clock}</span>
+                    {cw.open ? " · open" : ""}
+                  </button>
+                ))}
+                {callWindows.length > 10 && (
+                  <span className="self-center font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#3F433F]">
+                    +{callWindows.length - 10} more
+                  </span>
+                )}
+              </div>
+            )}
+            {/* 24h movement — only when the ledger has a real prior window */}
+            {pulseSummary.mature && (
+              <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-[#8E9194]">
+                24h movement —{" "}
+                {pulseSummary.deltas
+                  .filter((d) => d.last24h > 0)
+                  .slice(0, 3)
+                  .map((d) => `${d.code.split("-")[1]} ${d.readout}`)
+                  .join(" · ") || "quiet board"}
+              </p>
+            )}
+            {/* ticker — the latest entries, scoped to the focused territory */}
+            <div className="mt-3 flex flex-col gap-1.5">
+              {visiblePulse.length === 0 ? (
+                <EmptyHint>
+                  No movement in the trailing ledger{focusedCode ? ` for ${focusedCode}` : ""} — the strip stays silent
+                  until something actually moves.
+                </EmptyHint>
+              ) : (
+                visiblePulse.map((e) => (
+                  <div
+                    key={e.id}
+                    className="flex items-baseline gap-3 overflow-hidden font-mono text-[11px] leading-relaxed"
+                  >
+                    <span className="shrink-0 tabular-nums text-[#5F6460]">{relTime(e.atMs, nowMs)}</span>
+                    <span className="shrink-0 text-[#8E9194]">{e.territory ?? "——"}</span>
+                    <span className="shrink-0 text-[#E9EBE7]">{e.prospectName}</span>
+                    <span className="min-w-0 truncate text-[#8E9194]">{e.detail}</span>
+                    <span className="ml-auto shrink-0 text-[9px] uppercase tracking-[0.12em] text-[#3F433F]">
+                      {e.kind}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+            {focusedCode && (
+              <p className="mt-2 font-mono text-[9px] uppercase tracking-[0.14em] text-[#3F433F]">
+                scoped to {focusedCode} — reset the territory to see the whole ledger
+              </p>
+            )}
+          </>
+        )}
+      </SoftCard>
+
       {/* readout */}
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <SoftCard className="px-6 py-5">
@@ -968,6 +1095,8 @@ export function TheatreView({
         onOpenDossier={onOpenDossier}
         pendingReplies={pendingReplies}
         filterLabel={filter !== "all" ? STRIKE_FILTERS.find(([k]) => k === filter)?.[1] ?? null : null}
+        delta={focusedCode ? pulseSummary.deltas.find((d) => d.code === focusedCode) ?? null : null}
+        ledgerMature={pulseSummary.mature}
       />
     </div>
   );
