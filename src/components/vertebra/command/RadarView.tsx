@@ -1,4 +1,4 @@
-/** RADAR — home surface: persona KPI strip, guarantee anchor, live telemetry feed, strike rail. */
+/** RADAR — home surface: guarantee anchor with live receipt, persona KPI strip, watchdog-gated telemetry feed, strike rail. */
 "use client";
 
 import { useMemo } from "react";
@@ -14,10 +14,14 @@ import {
 
 import { PERSONAS, personaDef, personaMetrics, type PersonaId } from "@/lib/vertebra/persona";
 
+/** The bridge posts every 9–18s — two minutes of silence means the pipe is dead, and the radar must say so. */
+const STALE_MS = 120_000;
+
 export function RadarView({
   snap,
   now,
   freshEventIds,
+  connected,
   persona,
   onPersona,
   onOpenDossier,
@@ -28,6 +32,7 @@ export function RadarView({
   snap: CommandSnapshot;
   now: number;
   freshEventIds: Set<string>;
+  connected: boolean;
   persona: PersonaId;
   onPersona: (p: PersonaId) => void;
   onOpenDossier: (lead: CommandLead) => void;
@@ -35,7 +40,7 @@ export function RadarView({
   onGoPipeline: () => void;
   onGoPortal: () => void;
 }) {
-  const { leads, feed, triage } = snap;
+  const { leads, feed, ops } = snap;
 
   const metrics = useMemo(() => personaMetrics(persona, snap), [persona, snap]);
   const strikeQueue = useMemo(
@@ -46,6 +51,20 @@ export function RadarView({
         .slice(0, 8),
     [leads, now],
   );
+
+  // ---- staleness watchdog ------------------------------------------------- //
+  // Feed recency is push-accurate (socket handler prepends to snap.feed), so
+  // the age of the newest item IS the age of the last live signal.
+  const latestFeedMs = useMemo(() => (feed.length ? Math.max(...feed.map((f) => f.occurredAtMs)) : null), [feed]);
+  const stale = !connected || (latestFeedMs != null && now - latestFeedMs > STALE_MS);
+  const lastSignalAgo = latestFeedMs != null ? relTime(latestFeedMs, now) : "—";
+
+  // ---- live receipt — the guarantee carries its own telemetry -------------- //
+  const criticalPool = useMemo(
+    () => leads.filter((l) => (l.score?.qlvScore ?? 0) >= 85).reduce((s, l) => s + (l.leakageUsd ?? 0), 0),
+    [leads],
+  );
+  const briefsExported = useMemo(() => leads.filter((l) => l.highTouch != null).length, [leads]);
 
   return (
     <div className="flex h-full flex-col gap-5 overflow-y-auto cc-scroll p-6">
@@ -59,6 +78,15 @@ export function RadarView({
             Backed by a <span className="text-white underline decoration-white/50 underline-offset-4">$10,000 Margin Leakage Recovery Guarantee</span> — or we
             keep working the recovery free.
           </p>
+        </div>
+        <div className="flex items-center">
+          <AnchorStat first label="Recoverable pool" value={money(criticalPool)} note="QLV ≥ 85 band" />
+          <AnchorStat label="Briefs exported" value={String(briefsExported).padStart(2, "0")} note="channel b" />
+          <AnchorStat
+            label="Rep touches 24h"
+            value={String(ops.dispatchesSent24h)}
+            note={`outbox ${ops.outboxPending} pending`}
+          />
         </div>
         <div className="flex items-center gap-3">
           <HudMeta node="AST-01" hash="b3f7" tone="graphite" />
@@ -114,16 +142,25 @@ export function RadarView({
         <section className="flex min-w-0 flex-col gap-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <LiveDot level="live" />
-              <SectionLabel>Live telemetry — Module 8 · distributor quote portals</SectionLabel>
+              <LiveDot level={stale ? "fail" : "live"} />
+              <SectionLabel>
+                {stale
+                  ? !connected
+                    ? `Link down — reconnecting · last signal ${lastSignalAgo}`
+                    : `Signal stale — last signal ${lastSignalAgo}`
+                  : "Live telemetry — Module 8 · distributor quote portals"}
+              </SectionLabel>
             </div>
             <HudMeta node="AST-04" hash="8f3a" />
           </div>
 
           {feed.length === 0 ? (
-            <EmptyHint>Waiting for the first signal…</EmptyHint>
+            <EmptyHint>{connected ? "Waiting for the first signal…" : "Establishing uplink — no signals yet"}</EmptyHint>
           ) : (
-            <div className="flex flex-col gap-2.5">
+            <div
+              className={`flex flex-col gap-2.5 transition-opacity duration-500 ${stale ? "opacity-40" : "opacity-100"}`}
+              aria-disabled={stale}
+            >
               {feed.slice(0, 14).map((item) => (
                 <FeedCard
                   key={item.id}
@@ -159,6 +196,26 @@ export function RadarView({
           </div>
         </aside>
       </div>
+    </div>
+  );
+}
+
+function AnchorStat({
+  label,
+  value,
+  note,
+  first = false,
+}: {
+  label: string;
+  value: string;
+  note?: string;
+  first?: boolean;
+}) {
+  return (
+    <div className={`${first ? "" : "border-l border-white/25 pl-6"} shrink-0 pr-6`}>
+      <p className="font-mono text-[8.5px] font-medium uppercase tracking-[0.18em] text-white/60">{label}</p>
+      <p className="mt-1.5 font-display text-[19px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-white">{value}</p>
+      {note && <p className="mt-1.5 font-mono text-[8.5px] uppercase tracking-[0.14em] text-white/45">{note}</p>}
     </div>
   );
 }
