@@ -26,8 +26,8 @@
  * Nothing decorative sits above the map.
  *
  * Honest ledger: leads with no coordinates land in the uncharted tray,
- * leads outside the US+CA frame (East Africa expansion accounts) land in
- * the off-board tray. Nothing silently disappears from the board.
+ * leads outside the US+CA frame land in the off-board tray. Nothing
+ * silently disappears from the board.
  */
 "use client";
 
@@ -653,7 +653,7 @@ export function TheatreView({
 
             {/* Module 7 cluster rings — geographic reach on real coastlines */}
             {snap.clusters.map((c) => {
-              if (!inNaFrame(c.centroidLat, c.centroidLng)) return null; // LAPPSET stays off-board
+              if (!inNaFrame(c.centroidLat, c.centroidLng)) return null; // non-NA clusters stay off-board
               const p = geometry.projection([c.centroidLng, c.centroidLat]);
               if (!p) return null;
               const [cx, cy] = p;

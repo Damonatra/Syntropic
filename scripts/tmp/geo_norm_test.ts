@@ -18,7 +18,7 @@ const cases: Array<[string | null, string | null, string | null]> = [
   [null, "washington dc", null],
   ["United States", "Illinois", "us"],
   [null, "Ill.", null],
-  ["Kenya", "Lamu", "intl_expansion"],
+  ["Brazil", "São Paulo", "intl_expansion"],
   [null, "Newfoundland", null],
   ["United States", "CA", "us"],       // state context: California
   ["Canada", "BC", "ca"],
@@ -38,9 +38,9 @@ console.log("richmond/CA ->", cityCentroid("Richmond", "CA")?.code);
 console.log("richmond/null ->", cityCentroid("Richmond", null)?.code);
 console.log("montréal/CA ->", cityCentroid("Montréal", "CA")?.code);
 console.log("london/CA ->", cityCentroid("London", "CA")?.code);
-console.log("nakuru/CA ->", cityCentroid("Nakuru", "CA"));
+console.log("osaka/CA ->", cityCentroid("Osaka", "CA"));
 
 console.log("\nclassify:");
 console.log(classifyLeadGeo({ country: "Canada", stateProvince: "Toronto" , region: "ca", latitude: 43.65, longitude: -79.38 }));
-console.log(classifyLeadGeo({ country: "Kenya", stateProvince: "Lamu", region: "intl_expansion", latitude: -2.27, longitude: 40.9 }));
+console.log(classifyLeadGeo({ country: "Brazil", stateProvince: "São Paulo", region: "intl_expansion", latitude: -23.55, longitude: -46.63 }));
 console.log(classifyLeadGeo({ country: null, stateProvince: null, region: null, latitude: null, longitude: null }));

@@ -25,7 +25,7 @@ SNAP=$(agent-browser snapshot 2>/dev/null)
 echo "== 1. alert backlog strip =="
 has "backlog label renders" "$SNAP" "ALERT BACKLOG"
 has "unacked alert title" "$SNAP" "HIGH-INTENT PROSPECT ON PORTAL"
-has "Lamu Fluid Power in backlog" "$SNAP" "Lamu Fluid Power"
+has "Gulf Coast Valve in backlog" "$SNAP" "Gulf Coast Valve"
 
 echo "== 2. feed controls =="
 has "ALL tab" "$SNAP" 'tab "All"'

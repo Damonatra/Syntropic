@@ -14,8 +14,7 @@ Spatial engine
 
 Seed tactical clusters include the Gulf Coast PVF belt, Chicago metro,
 Toronto/Golden Horseshoe (CASL-aware), DFW, the Great Lakes fluid-power rim,
-Atlanta, SoCal ports and the LAPPSET corridor (Lamu–Isiolo axis) for East
-Africa expansion accounts.
+Atlanta and the SoCal ports.
 
 Outputs
 -------
@@ -96,10 +95,6 @@ SEED_CLUSTERS: tuple[SeedCluster, ...] = (
     SeedCluster(
         "socal-port-complex", "SoCal Port Complex", "Los Angeles", "United States",
         34.0522, -118.2437,
-    ),
-    SeedCluster(
-        "lappset-corridor", "LAPPSET Corridor — Lamu–Isiolo Axis", "Lamu", "Kenya",
-        -2.2717, 40.9020,
     ),
 )
 

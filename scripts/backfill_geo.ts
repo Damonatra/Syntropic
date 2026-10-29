@@ -10,8 +10,8 @@
  *   1. stateProvince resolves via the alias table  -> canonical postal code
  *      ("Texas"/"texas"/"Tex." -> "TX"; "Québec"/"PQ" -> "QC")
  *   2. country normalized to "US"/"CA" when the row is clearly one of them;
- *      rows that resolve to neither (Kenya expansion accounts) are left
- *      untouched — they are off-board on the NA map by doctrine.
+ *      rows that resolve to neither are left untouched — they are off-board
+ *      on the NA map by doctrine.
  *   3. missing latitude/longitude -> static city centroid (city-level
  *      precision, no external geocoder, no egress)
  *   4. still nothing -> territory label anchor (from the geometry bundle)

@@ -3,7 +3,7 @@
  *
  * Seeds Modules 5-9 surfaces on top of the existing ingested pipeline:
  *   - LeadCluster rows (Module 7 theatres: Houston PVF, Midwest Electrical,
- *     Toronto HVAC, LAPPSET corridor)
+ *     Toronto HVAC)
  *   - erp_metadata / quote_portal_type / pitch angles (Module 5)
  *   - 48h TelemetryEvent backfill + high-intent IntentAlerts (Module 8)
  *   - InboundReply / AgentDraft triage states under tiered autonomy (Module 9)
@@ -347,82 +347,12 @@ const SPECS: ProspectSpec[] = [
     },
     heat: 28,
   },
-  {
-    name: "Lamu Fluid Power Ltd",
-    domain: "lamufluidpower.co.ke",
-    vertical: "fluid_power", city: "Lamu", stateProvince: "Lamu", country: "Kenya",
-    region: "intl_expansion", employees: 26, revenue: 12_000_000, lat: -2.2717, lng: 40.902, cluster: "lappset_corridor",
-    detectedErp: "SAP Business One", erpFamily: "sap", portal: "manual_mailto", portalLabel: "manual mailto: RFQs",
-    jobPosts: [{ board: "BrighterMonday", title: "Technical Sales Engineer — Hydraulics", keyword: "hydraulics", weeksAgo: 2 }],
-    serverHeader: "nginx/1.22.1", sslIssuer: "Let's Encrypt R3",
-    contact: { firstName: "Amina", lastName: "Ochieng", role: "managing_director", titleRaw: "Managing Director", phone: "+254 711 555 012", email: "a.ochieng@lamufluidpower.co.ke", pattern: "f.last@domain" },
-    score: {
-      points: { rfq_latency: 88, legacy_portal: 90, unapplied_spa: 84, manual_quoting_share: 86, vertical_fit: 90, size_fit: 100 },
-      evidence: {
-        rfq_latency: "LAPPSET marine works RFQs via mailbox; port projects quote weekly",
-        legacy_portal: "No intake system; WhatsApp + email quoting",
-        unapplied_spa: "SAP B1 service module unused for quoting",
-        manual_quoting_share: "Technical sales engineer builds every quote",
-        vertical_fit: "Fluid power — very high RFQ complexity fit",
-        size_fit: "revenue $12M inside the corridor",
-      },
-      rationale: "Critical band: LAPPSET corridor hydraulic distributor quoting marine-grade packages from a mailbox; every port-contract RFQ is a hand-built one-off.",
-    },
-    heat: 77,
-  },
-  {
-    name: "Rift Valley Hydraulics",
-    domain: "riftvalleyhyd.co.ke",
-    vertical: "fluid_power", city: "Nakuru", stateProvince: "Nakuru", country: "Kenya",
-    region: "intl_expansion", employees: 24, revenue: 11_000_000, lat: -0.3031, lng: 36.08, cluster: "lappset_corridor",
-    detectedErp: "Odoo", erpFamily: "odoo", portal: "manual_mailto", portalLabel: "manual mailto: RFQs",
-    jobPosts: [],
-    serverHeader: "LiteSpeed", sslIssuer: "Let's Encrypt E5",
-    contact: { firstName: "Joseph", lastName: "Kimani", role: "general_manager", titleRaw: "General Manager", phone: "+254 722 555 014", email: "jkimani@riftvalleyhyd.co.ke", pattern: "firstlastinitial@domain" },
-    score: {
-      points: { rfq_latency: 58, legacy_portal: 84, unapplied_spa: 60, manual_quoting_share: 64, vertical_fit: 90, size_fit: 100 },
-      evidence: {
-        rfq_latency: "Odoo CRM logged but quotes finalized in Excel",
-        legacy_portal: "No portal; quote PDFs emailed from Excel",
-        unapplied_spa: "Odoo sale module half-configured",
-        manual_quoting_share: "Excel is the real quoting system",
-        vertical_fit: "Fluid power — very high RFQ complexity fit",
-        size_fit: "revenue $11M inside the corridor",
-      },
-      rationale: "High band: Odoo half-deployed with Excel as the real quoting engine; agri-hydraulic RFQs lose pricing consistency between reps.",
-    },
-    heat: 22,
-  },
-  {
-    name: "Mombasa Hose & Couplings",
-    domain: "mombasahose.co.ke",
-    vertical: "fluid_power", city: "Mombasa", stateProvince: "Mombasa", country: "Kenya",
-    region: "intl_expansion", employees: 33, revenue: 15_000_000, lat: -4.0435, lng: 39.6682, cluster: "lappset_corridor",
-    detectedErp: "Epicor Kinetic", erpFamily: "epicor_kinetic", portal: "static_pdf_form", portalLabel: "static PDF quote form",
-    jobPosts: [{ board: "BrighterMonday", title: "Sales Coordinator — Hose Assemblies", keyword: "hose", weeksAgo: 5 }],
-    serverHeader: "nginx/1.24.0", sslIssuer: "Sectigo RSA Domain Validation Secure Server CA",
-    contact: { firstName: "Fatuma", lastName: "Ali", role: "operations_lead", titleRaw: "Operations Lead", phone: "+254 733 555 018", email: "f.ali@mombasahose.co.ke", pattern: "f.last@domain" },
-    score: {
-      points: { rfq_latency: 76, legacy_portal: 80, unapplied_spa: 74, manual_quoting_share: 78, vertical_fit: 90, size_fit: 100 },
-      evidence: {
-        rfq_latency: "PDF form for hose assemblies; port authority RFQs quoted in 2-3 days",
-        legacy_portal: "Static PDF form; no assembly configurator",
-        unapplied_spa: "Kinetic configure-order module unused for hose",
-        manual_quoting_share: "Sales coordinator keys every assembly",
-        vertical_fit: "Fluid power — very high RFQ complexity fit",
-        size_fit: "revenue $15M inside the corridor",
-      },
-      rationale: "High band: Kinetic license without the configurator in use; hose assemblies quoted by hand off a PDF form for port and tanker clients.",
-    },
-    heat: 47,
-  },
 ];
 
 const CLUSTERS = [
   { clusterKey: "houston_gulf_pvf", clusterName: "Gulf Coast PVF Corridor", anchorCity: "Houston", anchorCountry: "United States", centroidLat: 29.7604, centroidLng: -95.3698, radiusM: 45_000, verticalFocus: "pvf" },
   { clusterKey: "chicago_midwest_electrical", clusterName: "Midwest Electrical Belt", anchorCity: "Chicago", anchorCountry: "United States", centroidLat: 41.8781, centroidLng: -87.6298, radiusM: 60_000, verticalFocus: "electrical" },
   { clusterKey: "toronto_gta_hvac", clusterName: "Greater Toronto HVAC Arc", anchorCity: "Mississauga", anchorCountry: "Canada", centroidLat: 43.589, centroidLng: -79.6441, radiusM: 55_000, verticalFocus: "hvac" },
-  { clusterKey: "lappset_corridor", clusterName: "LAPPSET Corridor", anchorCity: "Lamu", anchorCountry: "Kenya", centroidLat: -2.2717, centroidLng: 40.902, radiusM: 320_000, verticalFocus: "fluid_power" },
 ];
 
 const EXISTING_ENRICHMENT: Record<string, { lat: number; lng: number; portal: string; portalLabel: string; erpFamily: string; cluster: string | null; heat: number }> = {
@@ -568,7 +498,7 @@ async function main() {
   }
 
   console.log("[seed] telemetry backfill (48h)…");
-  const all = await db.prospect.findMany({ include: { scores: { orderBy: { createdAt: "desc" }, take: 1 } } });
+  const all = await db.prospect.findMany({ include: { scores: { orderBy: { createdAt: "desc" }, take: 1 }, cluster: true } });
   const highSignal = new Set(["portal_visit", "audit_view", "document_download"]);
   const typeWeights: Array<[string, number]> = [
     ["portal_visit", 0.3], ["pricing_view", 0.22], ["session_end", 0.14], ["audit_view", 0.18], ["document_download", 0.16],
@@ -588,8 +518,6 @@ async function main() {
     { domain: "northlineelectric.com", type: "document_download", minutes: 41, device: "desktop" },
     { domain: "northlineelectric.com", type: "audit_view", minutes: 55, duration: 122_000, device: "desktop" },
     { domain: "northlineelectric.com", type: "portal_visit", minutes: 126, duration: 64_000 },
-    { domain: "lamufluidpower.co.ke", type: "audit_view", minutes: 22, duration: 143_000, device: "mobile" },
-    { domain: "lamufluidpower.co.ke", type: "portal_visit", minutes: 300, duration: 77_000, device: "mobile" },
     { domain: "mapleclimate.ca", type: "pricing_view", minutes: 95, duration: 58_000 },
     { domain: "bayoupipe.com", type: "portal_visit", minutes: 210, duration: 41_000 },
     { domain: "superiorvalve.com", type: "pricing_view", minutes: 320, duration: 36_000 },
@@ -652,7 +580,6 @@ async function main() {
   const alertSpecs = [
     { domain: "gulfcoastvalve.com", minutes: 6, eventType: "portal_visit" },
     { domain: "northlineelectric.com", minutes: 41, eventType: "document_download" },
-    { domain: "lamufluidpower.co.ke", minutes: 22, eventType: "audit_view" },
   ];
   for (const a of alertSpecs) {
     const pid = byDomain.get(a.domain);

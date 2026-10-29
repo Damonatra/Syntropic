@@ -69,7 +69,7 @@ const cases: Array<[string|null,string|null,string|null,string|null]> = [
   ['United States','TX','us','US-TX'], ['USA','texas',null,'US-TX'], [null,'Tex.',null,'US-TX'],
   ['Canada','Ontario',null,'CA-ON'], [null,'Québec',null,'CA-QC'], [null,'PQ',null,'CA-QC'],
   ['Canada','NWT',null,'CA-NT'], [null,'D.C.',null,'US-DC'], [null,'washington dc',null,'US-DC'],
-  ['Kenya','Lamu','intl_expansion',null], [null,null,null,null],
+  ['Brazil','São Paulo','intl_expansion',null], [null,null,null,null],
 ];
 let bad = 0;
 for (const [c, sp, r, want] of cases) {
@@ -87,8 +87,8 @@ process.exit(bad ? 1 : 0);
 echo "== 5. Backfill — dry run (expect exit 0, ledger printed, nothing forced)"
 out=$(bun scripts/backfill_geo.ts 2>&1); rc=$?
 echo "$out" | grep -E "^(ledger|changes)" | sed 's/^/  /'
-if [ $rc -eq 0 ] && echo "$out" | grep -q "^ledger: 12 prospects · 9 plotted · 0 uncharted · 3 off-board"; then
-  ok "ledger honest — 9 plotted, 3 Kenya off-board"
+if [ $rc -eq 0 ] && echo "$out" | grep -q "^ledger: 9 prospects · 9 plotted · 0 uncharted · 0 off-board"; then
+  ok "ledger honest — all 9 prospects plotted on the board"
 else bad "unexpected ledger (rc=$rc)"; fi
 
 echo "== 6. Live snapshot — GET /api/command (expect 200, geo fields on leads)"
@@ -102,12 +102,12 @@ d = json.load(open("/tmp/cmd.json"))
 leads = d.get("leads", [])
 na = [l for l in leads if (l.get("country") in ("United States", "Canada"))]
 geo = [l for l in na if l.get("latitude") is not None and l.get("longitude") is not None]
-kenya = [l for l in leads if l.get("country") == "Kenya"]
+offBoard = [l for l in leads if l.get("country") not in ("United States", "Canada")]
 tx = [l for l in leads if l.get("stateProvince") == "TX"]
-print(f"  PASS: {len(leads)} leads · {len(geo)}/{len(na)} US/CA geocoded · {len(kenya)} off-board · {len(tx)} in Texas"
-      if len(geo) == len(na) and len(na) > 0 else
-      f"  FAIL: only {len(geo)}/{len(na)} US/CA leads carry coordinates")
-sys.exit(0 if len(geo) == len(na) and len(na) > 0 else 1)
+print(f"  PASS: {len(leads)} leads · {len(geo)}/{len(na)} US/CA geocoded · {len(offBoard)} off-board · {len(tx)} in Texas"
+      if len(geo) == len(na) and len(na) > 0 and len(offBoard) == 0 else
+      f"  FAIL: only {len(geo)}/{len(na)} US/CA leads carry coordinates ({len(offBoard)} off-board)")
+sys.exit(0 if len(geo) == len(na) and len(na) > 0 and len(offBoard) == 0 else 1)
 PY
 [ $? -eq 0 ] && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
 
@@ -194,7 +194,7 @@ const leads = [
   mk({ id: 'c', name: 'Maple', country: 'Canada', stateProvince: 'BC', latitude: 48.43, longitude: -123.36,
        caslScope: true }),
   mk({ id: 'd', name: 'NoGeo', country: 'United States', stateProvince: 'TX' }),
-  mk({ id: 'e', name: 'LAPPSET', country: 'Kenya', latitude: -2.27, longitude: 40.9 }),
+  mk({ id: 'e', name: 'Offshore', country: 'Brazil', latitude: -23.55, longitude: -46.63 }),
 ];
 const census: BoardCensus = censusBoard(leads, resolve);
 const tx = census.territoryStats.get('US-TX')!;
@@ -208,7 +208,7 @@ if (census.maxMailVolume !== 2) fail('mail volume maximum');
 if (census.maxLeakageUsd !== 60000) fail('leakage maximum');
 if (census.territoryStats.get('CA-BC')!.caslTrue !== 1) fail('CA-BC consent-true');
 if (census.uncharted.length !== 1 || census.uncharted[0].name !== 'NoGeo') fail('uncharted tray');
-if (census.offBoard.length !== 1 || census.offBoard[0].name !== 'LAPPSET') fail('off-board tray');
+if (census.offBoard.length !== 1 || census.offBoard[0].name !== 'Offshore') fail('off-board tray');
 if (census.plotted.length !== 3) fail('plotted pool');
 const leadB = lensLeader('momentum', Array.from(census.territoryStats.values()), 1700000000000);
 if (!leadB || leadB.code !== 'US-TX') fail('census momentum leader');

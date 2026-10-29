@@ -245,7 +245,7 @@ export interface LeadGeoClassification {
  * Classify a lead's geography for the board. Pure and total:
  *  - plotted     — coordinates inside the US+CA frame (territory when known)
  *  - uncharted   — no coordinates at all; the tray claims it
- *  - off_board   — coordinates outside the frame (e.g. East Africa expansion)
+ *  - off_board   — coordinates outside the frame (non-NA accounts)
  */
 export function classifyLeadGeo(input: {
   country: string | null;
