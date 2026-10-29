@@ -129,29 +129,35 @@ export function RadarView({
 
   return (
     <div className="flex h-full flex-col gap-5 overflow-y-auto cc-scroll p-6">
-      {/* Guarantee anchor — the entry offer, always one glance away */}
-      <SoftCard className="ink flex flex-wrap items-center gap-x-8 gap-y-3 px-7 py-5" interactive onClick={onGoPortal}>
-        <div className="min-w-0 flex-1">
-          <p className="font-mono text-[9.5px] font-medium uppercase tracking-[0.22em] text-white/65">
-            Entry anchor // Diagnostic audit — $3,500 deposit
-          </p>
-          <p className="mt-1.5 font-display text-[19px] font-medium leading-snug tracking-[-0.02em] text-white">
-            Backed by a <span className="text-white underline decoration-white/50 underline-offset-4">$10,000 Margin Leakage Recovery Guarantee</span> — or we
-            keep working the recovery free.
-          </p>
+      {/* Guarantee anchor — entry offer stacked over its live receipt ledger */}
+      <SoftCard className="ink flex flex-col gap-5 px-7 py-5" interactive onClick={onGoPortal}>
+        <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-3">
+          <div className="min-w-0 flex-1">
+            <p className="font-mono text-[9.5px] font-medium uppercase tracking-[0.22em] text-white/65">
+              Entry anchor // Diagnostic audit — $3,500 deposit
+            </p>
+            <p className="mt-1.5 font-display text-[19px] font-medium leading-snug tracking-[-0.02em] text-white">
+              Backed by a <span className="text-white underline decoration-white/50 underline-offset-4">$10,000 Margin Leakage Recovery Guarantee</span> — or we
+              keep working the recovery free.
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-3">
+            <HudMeta node="AST-01" hash="b3f7" tone="graphite" />
+            <ArrowButton dark={false} label="Open Margin Defense Portal" />
+          </div>
         </div>
-        <div className="flex items-center">
-          <AnchorStat first label="Recoverable pool" value={money(criticalPool)} note="QLV ≥ 85 band" />
-          <AnchorStat label="Briefs exported" value={String(briefsExported).padStart(2, "0")} note="channel b" />
+        <div className="h-px w-full shrink-0 bg-white/[0.08]" />
+        <div className="flex flex-wrap items-stretch">
+          <AnchorStat className="min-w-[190px] flex-1" label="Recoverable pool" value={money(criticalPool)} note="QLV ≥ 85 band" />
+          <span aria-hidden className="hidden w-px shrink-0 self-stretch bg-white/25 md:block" />
+          <AnchorStat className="min-w-[190px] flex-1" label="Briefs exported" value={String(briefsExported).padStart(2, "0")} note="channel b" />
+          <span aria-hidden className="hidden w-px shrink-0 self-stretch bg-white/25 md:block" />
           <AnchorStat
+            className="min-w-[190px] flex-1"
             label="Rep touches 24h"
             value={String(ops.dispatchesSent24h)}
             note={`outbox ${ops.outboxPending} pending`}
           />
-        </div>
-        <div className="flex items-center gap-3">
-          <HudMeta node="AST-01" hash="b3f7" tone="graphite" />
-          <ArrowButton dark={false} label="Open Margin Defense Portal" />
         </div>
       </SoftCard>
 
@@ -370,15 +376,15 @@ function AnchorStat({
   label,
   value,
   note,
-  first = false,
+  className = "",
 }: {
   label: string;
   value: string;
   note?: string;
-  first?: boolean;
+  className?: string;
 }) {
   return (
-    <div className={`${first ? "" : "border-l border-white/25 pl-6"} shrink-0 pr-6`}>
+    <div className={`pr-6 ${className}`}>
       <p className="font-mono text-[8.5px] font-medium uppercase tracking-[0.18em] text-white/60">{label}</p>
       <p className="mt-1.5 font-display text-[19px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-white">{value}</p>
       {note && <p className="mt-1.5 font-mono text-[8.5px] uppercase tracking-[0.14em] text-white/45">{note}</p>}
