@@ -504,6 +504,17 @@ export function CommandCentre() {
                   onPersona={onPersona}
                   connected={connected}
                   onOpenDossier={openDossier}
+                  onQuickAction={(lead, action) => {
+                    if (action === "call") {
+                      const phone = lead.contact?.phone;
+                      if (phone) window.location.href = `tel:${phone.replace(/\s/g, "")}`;
+                    } else if (action === "defer") {
+                      void doAction(lead.id, "deferred");
+                    } else {
+                      void doAction(lead.id, "snoozed");
+                    }
+                  }}
+                  onAckAlerts={ackAlerts}
                   onGoStrike={() => setView("strike")}
                   onGoPipeline={() => setView("pipeline")}
                   onGoPortal={() => setView("portal")}
