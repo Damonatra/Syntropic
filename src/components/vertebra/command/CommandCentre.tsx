@@ -95,6 +95,7 @@ export function CommandCentre() {
   const [dossier, setDossier] = useState<CommandLead | null>(null);
   const [dossierOpen, setDossierOpen] = useState(false);
   const [cursorId, setCursorId] = useState<string | null>(null);
+  const [cursorScrollTick, setCursorScrollTick] = useState(0);
   const [filter, setFilter] = useState<StrikeFilter>("all");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [connected, setConnected] = useState(false);
@@ -360,6 +361,8 @@ export function CommandCentre() {
   const ranked = useMemo(() => (snap ? computeRanked(snap, filter, now) : []), [snap, filter, now]);
   const rankedIds = useMemo(() => ranked.map((l) => l.id), [ranked]);
   const activePersona = personaDef(persona);
+  const strikeCursorIdx = view === "strike" ? ranked.findIndex((l) => l.id === cursorId) : -1;
+  const strikeCursorName = strikeCursorIdx >= 0 ? ranked[strikeCursorIdx].name : null;
 
   const openDossier = useCallback((lead: CommandLead) => {
     setDossier(lead);
@@ -454,6 +457,7 @@ export function CommandCentre() {
         const idx = cursorId ? rankedIds.indexOf(cursorId) : -1;
         const next = e.key === "j" ? Math.min(rankedIds.length - 1, idx + 1) : Math.max(0, idx <= 0 ? 0 : idx - 1);
         setCursorId(rankedIds[next]);
+        setCursorScrollTick((t) => t + 1); // M2: keyboard-sourced moves scroll the card into view
       } else if (e.key === "Enter") {
         const lead = snap?.leads.find((l) => l.id === cursorId);
         if (lead) openDossier(lead);
@@ -487,6 +491,14 @@ export function CommandCentre() {
           <div className="flex min-w-0 items-center gap-4">
             <LiveDot level={connected ? "live" : "warn"} />
             <p className="truncate font-mono text-[11px] uppercase tracking-[0.2em] text-[#8E9194]">{VIEW_TITLES[view]}</p>
+            {view === "strike" && strikeCursorIdx >= 0 && (
+              <span
+                aria-live="polite"
+                className="hidden max-w-[380px] shrink-0 truncate whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.14em] text-[#F4F5F2] lg:inline-block"
+              >
+                · cursor {String(strikeCursorIdx + 1).padStart(2, "0")}/{String(ranked.length).padStart(2, "0")} — {strikeCursorName}
+              </span>
+            )}
             <span className="hidden max-w-[620px] truncate whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.14em] text-[#5F6460] xl:inline-block">
               · {activePersona.title}: {activePersona.mandate}
             </span>
@@ -567,6 +579,7 @@ export function CommandCentre() {
                   onAction={doAction}
                   filter={filter}
                   onFilter={setFilter}
+                  scrollTick={cursorScrollTick}
                 />
               )}
               {view === "theatre" && <TheatreView snap={snap} onOpenDossier={openDossier} />}

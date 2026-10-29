@@ -66,6 +66,7 @@ export function StrikeView({
   onAction,
   filter,
   onFilter,
+  scrollTick = 0,
 }: {
   snap: CommandSnapshot;
   ranked: CommandLead[];
@@ -76,12 +77,16 @@ export function StrikeView({
   onAction: (prospectId: string, action: "called" | "deferred" | "snoozed" | "booked", note?: string) => void;
   filter: StrikeFilter;
   onFilter: (f: StrikeFilter) => void;
+  /** Bumped by the keyboard loop on every j/k — the only cursor source that scrolls. */
+  scrollTick?: number;
 }) {
   const stake = useMemo(() => ranked.reduce((sum, l) => sum + (l.leakageUsd ?? 0), 0), [ranked]);
   const counts = useMemo(() => computeFilterCounts(snap, now), [snap, now]);
   const maxPriority = ranked[0]?.priority ?? 1;
   const activeLabel = STRIKE_FILTERS.find(([k]) => k === filter)?.[1] ?? "All";
+  const cursorIdx = useMemo(() => ranked.findIndex((l) => l.id === cursorId), [ranked, cursorId]);
   const listRef = useRef<HTMLDivElement>(null);
+  const listInnerRef = useRef<HTMLDivElement>(null);
 
   // M1 — a filter change resets the viewport and snaps the cursor to card #1,
   // so the J/K loop always resumes from a visible anchor.
@@ -90,6 +95,15 @@ export function StrikeView({
     if (ranked.length > 0) onCursor(ranked[0].id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter]);
+
+  // M2 — the keyboard loop bumps scrollTick on every j/k; hover-sourced cursor
+  // moves never scroll, so the wheel and the keys never fight.
+  useEffect(() => {
+    if (scrollTick === 0) return;
+    const el = listInnerRef.current?.children[cursorIdx] as HTMLElement | undefined;
+    el?.scrollIntoView({ block: "nearest" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollTick]);
 
   return (
     <div ref={listRef} className="flex h-full flex-col overflow-y-auto cc-scroll p-6">
@@ -130,7 +144,7 @@ export function StrikeView({
         </div>
       </div>
 
-      <div className="mt-5 flex flex-col gap-3 pb-6">
+      <div ref={listInnerRef} className="mt-5 flex flex-col gap-3 pb-6">
         {ranked.length === 0 && (
           <div className="flex flex-col items-start gap-3">
             <EmptyHint>Nothing matches {activeLabel} — the machine keeps working</EmptyHint>
@@ -144,10 +158,11 @@ export function StrikeView({
             )}
           </div>
         )}
-        {ranked.map((lead) => (
+        {ranked.map((lead, i) => (
           <StrikeCard
             key={lead.id}
             lead={lead}
+            rank={i + 1}
             now={now}
             maxPriority={maxPriority}
             focused={cursorId === lead.id}
@@ -163,6 +178,7 @@ export function StrikeView({
 
 function StrikeCard({
   lead,
+  rank,
   now,
   maxPriority,
   focused,
@@ -171,6 +187,7 @@ function StrikeCard({
   onAction,
 }: {
   lead: CommandLead;
+  rank: number;
   now: number;
   maxPriority: number;
   focused: boolean;
@@ -188,14 +205,28 @@ function StrikeCard({
   return (
     <SoftCard
       onClick={onFocus}
-      className={`cc-rise px-6 py-5 transition-all duration-150 ${
+      ariaCurrent={focused}
+      className={`cc-rise relative overflow-hidden px-6 py-5 transition-all duration-150 ${
         focused
           ? "border-white/45 shadow-[0_0_0_1px_rgba(244,245,242,0.55)]"
           : ""
       } ${lead.highIntentNow ? "border-white/[0.24]" : ""}`}
     >
+      {/* M2 — cursor marker: luminance edge bar, visible across the room */}
+      {focused && <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-[#F4F5F2]" />}
+
       {/* telemetry overlay */}
-      <div className="mb-4 flex items-center justify-end gap-4">
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-[#5F6460]">
+            rank {String(rank).padStart(2, "0")}
+          </span>
+          {focused && (
+            <span className="inline-flex items-center gap-1.5 font-mono text-[9.5px] uppercase tracking-[0.16em] text-[#F4F5F2]">
+              <span className="size-1.5 rounded-full bg-[#F4F5F2] cc-pulse-dot" /> cursor
+            </span>
+          )}
+        </div>
         <HudMeta node={`AST-0${(lead.id.charCodeAt(4) % 8) + 1}`} hash={lead.id.slice(0, 4)} />
       </div>
 

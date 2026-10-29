@@ -185,16 +185,19 @@ export function SoftCard({
   className = "",
   onClick,
   interactive = false,
+  ariaCurrent = false,
 }: {
   children: ReactNode;
   className?: string;
   onClick?: () => void;
   interactive?: boolean;
+  ariaCurrent?: boolean;
 }) {
   return (
     <div
       onClick={onClick}
       role={onClick ? "button" : undefined}
+      aria-current={ariaCurrent ? "true" : undefined}
       tabIndex={onClick ? 0 : undefined}
       onKeyDown={
         onClick
