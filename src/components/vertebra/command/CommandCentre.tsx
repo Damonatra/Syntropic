@@ -566,10 +566,7 @@ export function CommandCentre() {
                   onOpenDossier={openDossier}
                   onAction={doAction}
                   filter={filter}
-                  onFilter={(f) => {
-                    setFilter(f);
-                    setCursorId(null);
-                  }}
+                  onFilter={setFilter}
                 />
               )}
               {view === "theatre" && <TheatreView snap={snap} onOpenDossier={openDossier} />}

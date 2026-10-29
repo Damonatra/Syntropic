@@ -1,11 +1,33 @@
 /** STRIKE — the ranked margin-recovery queue. Luminance target cards, keyboard loop. */
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Chip, EmptyHint, ErpBadge, HudMeta, LiveDot, PillButton, PriorityBar, ScoreBlock, SectionLabel, SoftCard } from "./bits";
 import { EVENT_VERBS, PORTAL_LABELS, heatLevel, money, relTime, verticalLabel, type CommandLead, type CommandSnapshot } from "@/lib/vertebra/command";
 
 export type StrikeFilter = "all" | "critical" | "hot" | "now";
+
+/** Filter registry — drives the buttons, the echo line, and the count badges. */
+export const STRIKE_FILTERS: Array<[StrikeFilter, string]> = [
+  ["all", "All"],
+  ["critical", "QLV ≥ 85"],
+  ["hot", "QLV ≥ 70"],
+  ["now", "On board now"],
+];
+
+/** Bucket predicate — single source of truth for ranking and count badges. */
+export function filterMatch(lead: CommandLead, filter: StrikeFilter): boolean {
+  switch (filter) {
+    case "critical":
+      return (lead.score?.qlvScore ?? 0) >= 85;
+    case "hot":
+      return (lead.score?.qlvScore ?? 0) >= 70;
+    case "now":
+      return lead.highIntentNow;
+    default:
+      return true;
+  }
+}
 
 /** Shared ranking — the root uses it for the keyboard loop, the view renders it. */
 export function computeRanked(snap: CommandSnapshot, filter: StrikeFilter, now: number): CommandLead[] {
@@ -15,16 +37,23 @@ export function computeRanked(snap: CommandSnapshot, filter: StrikeFilter, now: 
     return true;
   });
   const sorted = [...eligible].sort((a, b) => b.priority - a.priority);
-  switch (filter) {
-    case "critical":
-      return sorted.filter((l) => (l.score?.qlvScore ?? 0) >= 85);
-    case "hot":
-      return sorted.filter((l) => (l.score?.qlvScore ?? 0) >= 70);
-    case "now":
-      return sorted.filter((l) => l.highIntentNow);
-    default:
-      return sorted;
+  return sorted.filter((l) => filterMatch(l, filter));
+}
+
+/** Live counts per filter over the eligible pool — drives the button badges. */
+export function computeFilterCounts(snap: CommandSnapshot, now: number): Record<StrikeFilter, number> {
+  const eligible = snap.leads.filter((l) => {
+    if (l.score == null) return false;
+    if (l.snoozedUntilMs != null && l.snoozedUntilMs > now) return false;
+    return true;
+  });
+  const counts: Record<StrikeFilter, number> = { all: eligible.length, critical: 0, hot: 0, now: 0 };
+  for (const l of eligible) {
+    if ((l.score?.qlvScore ?? 0) >= 85) counts.critical += 1;
+    if ((l.score?.qlvScore ?? 0) >= 70) counts.hot += 1;
+    if (l.highIntentNow) counts.now += 1;
   }
+  return counts;
 }
 
 export function StrikeView({
@@ -49,46 +78,72 @@ export function StrikeView({
   onFilter: (f: StrikeFilter) => void;
 }) {
   const stake = useMemo(() => ranked.reduce((sum, l) => sum + (l.leakageUsd ?? 0), 0), [ranked]);
+  const counts = useMemo(() => computeFilterCounts(snap, now), [snap, now]);
   const maxPriority = ranked[0]?.priority ?? 1;
+  const activeLabel = STRIKE_FILTERS.find(([k]) => k === filter)?.[1] ?? "All";
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // M1 — a filter change resets the viewport and snaps the cursor to card #1,
+  // so the J/K loop always resumes from a visible anchor.
+  useEffect(() => {
+    listRef.current?.scrollTo({ top: 0 });
+    if (ranked.length > 0) onCursor(ranked[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter]);
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto cc-scroll p-6">
+    <div ref={listRef} className="flex h-full flex-col overflow-y-auto cc-scroll p-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <SectionLabel>Strike queue — ranked by effective priority</SectionLabel>
           <p className="mt-2 font-display text-[22px] font-semibold tracking-[-0.03em] text-[#F4F5F2]">
             {ranked.length} recovery targets · <span className="underline decoration-white/30 underline-offset-4">{money(stake)}</span> leakage at stake
           </p>
+          <p className="mt-1.5 font-mono text-[10.5px] uppercase tracking-[0.14em] text-[#5F6460]">
+            filter <span className="text-[#F4F5F2]">{activeLabel}</span> — {ranked.length} of {counts.all} eligible · {money(stake)} at stake
+          </p>
           <p className="mt-1 font-mono text-[10.5px] uppercase tracking-[0.14em] text-[#5F6460]">
             j / k move · enter dossier · c call · x defer · s snooze
           </p>
         </div>
-        <div className="flex gap-2">
-          {(
-            [
-              ["all", "All"],
-              ["critical", "QLV ≥ 85"],
-              ["hot", "QLV ≥ 70"],
-              ["now", "On board now"],
-            ] as Array<[StrikeFilter, string]>
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => onFilter(key)}
-              className={`h-8 rounded-full px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-all ${
-                filter === key
-                  ? "bg-[#F4F5F2] text-[#0B0C0B]"
-                  : "border border-white/[0.12] bg-[#131513] text-[#8E9194] hover:text-[#F4F5F2]"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="flex flex-wrap gap-2">
+          {STRIKE_FILTERS.map(([key, label]) => {
+            const active = filter === key;
+            const count = counts[key];
+            return (
+              <button
+                key={key}
+                onClick={() => onFilter(key)}
+                aria-pressed={active}
+                title={`${count} target${count === 1 ? "" : "s"} match${count === 1 ? "es" : ""} this filter`}
+                className={`h-8 rounded-full px-3.5 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-all ${
+                  active
+                    ? "bg-[#F4F5F2] text-[#0B0C0B]"
+                    : `border border-white/[0.12] bg-[#131513] text-[#8E9194] hover:text-[#F4F5F2] ${count === 0 ? "opacity-45" : ""}`
+                }`}
+              >
+                {label}
+                <span className={`ml-1.5 tabular-nums ${active ? "text-[#0B0C0B]/55" : "text-[#5F6460]"}`}>{count}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
       <div className="mt-5 flex flex-col gap-3 pb-6">
-        {ranked.length === 0 && <EmptyHint>Nothing matches this filter — the machine keeps working</EmptyHint>}
+        {ranked.length === 0 && (
+          <div className="flex flex-col items-start gap-3">
+            <EmptyHint>Nothing matches {activeLabel} — the machine keeps working</EmptyHint>
+            {filter !== "all" && counts.all > 0 && (
+              <button
+                onClick={() => onFilter("all")}
+                className="h-8 rounded-full border border-white/[0.12] bg-[#131513] px-4 font-mono text-[10.5px] uppercase tracking-[0.12em] text-[#8E9194] transition-colors hover:border-white/25 hover:text-[#F4F5F2]"
+              >
+                ← Back to all · {counts.all} eligible
+              </button>
+            )}
+          </div>
+        )}
         {ranked.map((lead) => (
           <StrikeCard
             key={lead.id}
