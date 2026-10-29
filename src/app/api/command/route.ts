@@ -8,6 +8,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCachedSnapshot, storeSnapshot } from "@/lib/vertebra/snapshot-cache";
+import { deriveKpiInputs } from "@/lib/vertebra/persona";
 import {
   annualLeakageUsd,
   effectivePriority,
@@ -19,6 +20,7 @@ import {
   type ErpShape,
   type FeedItem,
   type FunnelStage,
+  type KpiInputs,
   type OpsModule,
   type OpsSnapshot,
   type ReplyIntent,
@@ -423,7 +425,60 @@ export async function GET(request: Request) {
       clusters,
       funnel,
       ops,
+      baseline: null,
     };
+
+    // ---- 24h baseline ledger ------------------------------------------------ //
+    // Hourly capture of the raw KPI inputs; the delta comparison point is the
+    // newest capture older than 24h. Raw SQL on purpose: the ledger must not
+    // depend on the Prisma Client generation inside the running process — a
+    // schema push plus regenerate never requires a server restart. Ledger
+    // failures must never break the read path: deltas simply disappear.
+    try {
+      const inputs = deriveKpiInputs(snapshot);
+      type BaselineRow = { id: string; capturedAt: Date; metricsJson: string };
+      const lastRows = await db.$queryRawUnsafe<BaselineRow[]>(
+        `SELECT id, capturedAt, metricsJson FROM CommandBaseline ORDER BY capturedAt DESC LIMIT 1`,
+      );
+      const last = lastRows[0];
+      if (!last || now - new Date(last.capturedAt).getTime() >= 3_600_000) {
+        await db.$executeRawUnsafe(
+          `INSERT INTO CommandBaseline (id, capturedAt, metricsJson) VALUES (?, ?, ?)`,
+          `cb_${now.toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+          new Date(now),
+          JSON.stringify(inputs),
+        );
+        await db.$executeRawUnsafe(`DELETE FROM CommandBaseline WHERE capturedAt < ?`, new Date(now - 7 * 86_400_000));
+      }
+      const baseRows = await db.$queryRawUnsafe<BaselineRow[]>(
+        `SELECT id, capturedAt, metricsJson FROM CommandBaseline WHERE capturedAt <= ? ORDER BY capturedAt DESC LIMIT 1`,
+        new Date(now - 86_400_000),
+      );
+      const fallbackRows = await db.$queryRawUnsafe<BaselineRow[]>(
+        `SELECT id, capturedAt, metricsJson FROM CommandBaseline WHERE capturedAt < ? ORDER BY capturedAt ASC LIMIT 1`,
+        new Date(now - 60_000),
+      );
+      const baseRow = baseRows[0] ?? fallbackRows[0];
+      if (baseRow) {
+        const EMPTY_INPUTS: KpiInputs = {
+          leakageTotalUsd: 0,
+          criticalCount: 0,
+          draftsPending: 0,
+          scoredCount: 0,
+          latencyCrew: 0,
+          spaLaggards: 0,
+          manualAvg: 0,
+          highIntentCount: 0,
+          telemetryEvents24h: 0,
+          dispatchesSent24h: 0,
+        };
+        const parsed = { ...EMPTY_INPUTS, ...(JSON.parse(baseRow.metricsJson) as Partial<KpiInputs>) } as KpiInputs;
+        snapshot.baseline = { capturedAtMs: new Date(baseRow.capturedAt).getTime(), inputs: parsed };
+      }
+    } catch (err) {
+      console.error("[api/command] baseline ledger failed", err);
+    }
+
     const body = JSON.stringify(snapshot);
     const etag = storeSnapshot(body);
     return new NextResponse(body, {

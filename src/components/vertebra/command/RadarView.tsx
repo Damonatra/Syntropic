@@ -30,7 +30,7 @@ import {
   type OpsSnapshot,
 } from "@/lib/vertebra/command";
 
-import { PERSONAS, personaDef, personaMetrics, type PersonaId } from "@/lib/vertebra/persona";
+import { PERSONAS, deriveKpiInputs, personaDef, personaDeltas, personaMetrics, type PersonaId } from "@/lib/vertebra/persona";
 
 /** The bridge posts every 9–18s — two minutes of silence means the pipe is dead, and the radar must say so. */
 const STALE_MS = 120_000;
@@ -76,6 +76,8 @@ export function RadarView({
   const { leads, feed, alerts, clusters, funnel, ops } = snap;
 
   const metrics = useMemo(() => personaMetrics(persona, snap), [persona, snap]);
+  const kpiInputs = useMemo(() => deriveKpiInputs(snap), [snap]);
+  const kpiDeltas = useMemo(() => personaDeltas(persona, kpiInputs, snap.baseline), [persona, kpiInputs, snap.baseline]);
 
   // 30s bucket for the 12h recency window — re-ranks the rail on a clock the
   // operator can feel instead of re-sorting every second.
@@ -204,6 +206,7 @@ export function RadarView({
               sub={m.sub}
               hot={m.hot}
               node={`AST-0${i + 2}`}
+              delta={kpiDeltas[i]}
               onClick={i === 0 ? onGoStrike : i === 2 ? onGoPipeline : undefined}
             />
           ))}

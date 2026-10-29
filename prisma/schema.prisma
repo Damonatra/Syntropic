@@ -281,3 +281,15 @@ model AuditDocument {
   @@index([createdAt])
   @@index([sha256])
 }
+
+/// Hourly KPI input captures for the 24h baseline deltas on the RADAR strip.
+/// The /api/command aggregator appends at most one row per hour and reads the
+/// newest capture older than 24h as the comparison point — no fake history,
+/// deltas appear once the ledger has genuinely accumulated.
+model CommandBaseline {
+  id          String   @id @default(cuid())
+  capturedAt  DateTime @default(now())
+  metricsJson String // KpiInputs document — see src/lib/vertebra/command.ts
+
+  @@index([capturedAt])
+}

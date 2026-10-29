@@ -226,6 +226,7 @@ export function KpiCard({
   node,
   children,
   onClick,
+  delta,
 }: {
   label: string;
   value: ReactNode;
@@ -234,6 +235,8 @@ export function KpiCard({
   node?: string;
   children?: ReactNode;
   onClick?: () => void;
+  /** 24h baseline delta chip — luminance only: good = bright, bad = steel, flat = graphite. */
+  delta?: { text: string; tone: "good" | "bad" | "flat" } | null;
 }) {
   return (
     <SoftCard
@@ -252,13 +255,25 @@ export function KpiCard({
           </span>
         )}
       </div>
-      <p
-        className={`mt-3 font-display text-[30px] font-semibold leading-none tracking-[-0.03em] tabular-nums ${
-          hot ? "text-white" : "text-[#E9EBE7]"
-        }`}
-      >
-        {value}
-      </p>
+      <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <p
+          className={`font-display text-[30px] font-semibold leading-none tracking-[-0.03em] tabular-nums ${
+            hot ? "text-white" : "text-[#E9EBE7]"
+          }`}
+        >
+          {value}
+        </p>
+        {delta && (
+          <span
+            title="delta vs the ~24h-ago baseline capture"
+            className={`font-mono text-[10px] font-medium uppercase tracking-[0.1em] tabular-nums ${
+              delta.tone === "good" ? "text-[#F4F5F2]" : delta.tone === "bad" ? "text-[#8E9194]" : "text-[#5F6460]"
+            }`}
+          >
+            {delta.text}
+          </span>
+        )}
+      </div>
       {sub && <p className="mt-2.5 line-clamp-2 text-[12px] leading-relaxed text-[#8E9194]">{sub}</p>}
       {children}
     </SoftCard>

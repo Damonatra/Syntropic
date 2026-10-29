@@ -5,7 +5,7 @@
  *
  * Every metric is derived from the live command snapshot — no decorative numbers.
  */
-import type { CommandSnapshot } from "./command";
+import type { CommandSnapshot, KpiInputs } from "./command";
 
 export type PersonaId = "coo" | "vp_sales" | "dir_inside";
 
@@ -53,19 +53,35 @@ const factorPoints = (snap: CommandSnapshot, key: string): number[] =>
     .map((l) => l.score?.factors.find((f) => f.key === key)?.points ?? null)
     .filter((p): p is number => p != null);
 
-/** The four defended metrics per persona, computed from live telemetry. */
-export function personaMetrics(id: PersonaId, snap: CommandSnapshot): PersonaMetric[] {
+/**
+ * The compact input set every persona KPI derives from — one math source for
+ * the live strip (personaMetrics) and the hourly baseline ledger (aggregator).
+ */
+export function deriveKpiInputs(snap: CommandSnapshot): KpiInputs {
   const leakageTotal = snap.leads.reduce((s, l) => s + (l.leakageUsd ?? 0), 0);
   const highIntent = snap.leads.filter((l) => l.highIntentNow);
   const critical = snap.leads.filter((l) => (l.score?.qlvScore ?? 0) >= 85);
-  const drafts = snap.triage.pending.length;
-  const queue = snap.leads.filter((l) => l.score != null).length;
-
   const rfqLatency = factorPoints(snap, "rfq_latency");
-  const latencyCrew = rfqLatency.filter((p) => p >= 55).length;
-  const spaLaggards = factorPoints(snap, "unapplied_spa").filter((p) => p >= 50).length;
   const manualPts = factorPoints(snap, "manual_quoting_share");
-  const manualAvg = manualPts.length > 0 ? Math.round(manualPts.reduce((a, b) => a + b, 0) / manualPts.length) : 0;
+  return {
+    leakageTotalUsd: leakageTotal,
+    criticalCount: critical.length,
+    draftsPending: snap.triage.pending.length,
+    scoredCount: snap.leads.filter((l) => l.score != null).length,
+    latencyCrew: rfqLatency.filter((p) => p >= 55).length,
+    spaLaggards: factorPoints(snap, "unapplied_spa").filter((p) => p >= 50).length,
+    manualAvg: manualPts.length > 0 ? Math.round(manualPts.reduce((a, b) => a + b, 0) / manualPts.length) : 0,
+    highIntentCount: highIntent.length,
+    telemetryEvents24h: snap.ops.telemetryEvents24h,
+    dispatchesSent24h: snap.ops.dispatchesSent24h,
+  };
+}
+
+/** The four defended metrics per persona, computed from live telemetry. */
+export function personaMetrics(id: PersonaId, snap: CommandSnapshot): PersonaMetric[] {
+  const k = deriveKpiInputs(snap);
+  const highIntentNames = snap.leads.filter((l) => l.highIntentNow).map((l) => l.name);
+  const criticalPool = snap.leads.filter((l) => (l.score?.qlvScore ?? 0) >= 85).reduce((s, l) => s + (l.leakageUsd ?? 0), 0);
 
   const fmtM = (v: number) => (v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M` : `$${Math.round(v / 1000)}K`);
 
@@ -74,24 +90,24 @@ export function personaMetrics(id: PersonaId, snap: CommandSnapshot): PersonaMet
       return [
         {
           label: "Net margin leakage",
-          value: fmtM(leakageTotal),
+          value: fmtM(k.leakageTotalUsd),
           sub: "annualized exposure across the distributor book — Module 6 audit math",
           hot: true,
         },
         {
           label: "Quote turnaround latency",
-          value: String(latencyCrew).padStart(2, "0"),
+          value: String(k.latencyCrew).padStart(2, "0"),
           sub: "accounts quoting RFQs outside the 24-hour competitive window",
-          hot: latencyCrew > 0,
+          hot: k.latencyCrew > 0,
         },
         {
           label: "SPA laggards",
-          value: String(spaLaggards).padStart(2, "0"),
+          value: String(k.spaLaggards).padStart(2, "0"),
           sub: "special pricing agreements unapplied at quote — margin walking off the floor",
         },
         {
           label: "Manual quoting share",
-          value: `${manualAvg}%`,
+          value: `${k.manualAvg}%`,
           sub: "avg inside-sales workload on manual quote assembly (Module 2 factor median)",
         },
       ];
@@ -99,24 +115,24 @@ export function personaMetrics(id: PersonaId, snap: CommandSnapshot): PersonaMet
       return [
         {
           label: "On the board now",
-          value: String(highIntent.length).padStart(2, "0"),
-          sub: highIntent.length > 0 ? highIntent.map((l) => l.name).join(" · ") : "no critical-band activity in the last 15 minutes",
-          hot: highIntent.length > 0,
+          value: String(k.highIntentCount).padStart(2, "0"),
+          sub: highIntentNames.length > 0 ? highIntentNames.join(" · ") : "no critical-band activity in the last 15 minutes",
+          hot: k.highIntentCount > 0,
         },
         {
           label: "Recovery targets",
-          value: String(critical.length).padStart(2, "0"),
-          sub: `QLV ≥ 85 · ${fmtM(critical.reduce((s, l) => s + (l.leakageUsd ?? 0), 0))} recoverable pool`,
+          value: String(k.criticalCount).padStart(2, "0"),
+          sub: `QLV ≥ 85 · ${fmtM(criticalPool)} recoverable pool`,
         },
         {
           label: "Drafts to clear",
-          value: String(drafts).padStart(2, "0"),
+          value: String(k.draftsPending).padStart(2, "0"),
           sub: "reply agent work waiting on human gate — Pipeline view",
-          hot: drafts > 0,
+          hot: k.draftsPending > 0,
         },
         {
           label: "Signals 24h",
-          value: String(snap.ops.telemetryEvents24h),
+          value: String(k.telemetryEvents24h),
           sub: `${snap.ops.alerts24h} alerts · ${snap.ops.dispatchesSent24h} rep touches`,
         },
       ];
@@ -124,26 +140,79 @@ export function personaMetrics(id: PersonaId, snap: CommandSnapshot): PersonaMet
       return [
         {
           label: "Recovery queue",
-          value: String(queue).padStart(2, "0"),
+          value: String(k.scoredCount).padStart(2, "0"),
           sub: "ranked strike depth — effective priority order, keyboard-ready",
         },
         {
           label: "SPA laggard burn-down",
-          value: String(spaLaggards).padStart(2, "0"),
+          value: String(k.spaLaggards).padStart(2, "0"),
           sub: "accounts still quoting against expired or unapplied SPAs",
-          hot: spaLaggards > 0,
+          hot: k.spaLaggards > 0,
         },
         {
           label: "Agent drafts pending",
-          value: String(drafts).padStart(2, "0"),
+          value: String(k.draftsPending).padStart(2, "0"),
           sub: "tier-2 human gate — approve from Pipeline, key a",
-          hot: drafts > 0,
+          hot: k.draftsPending > 0,
         },
         {
           label: "Rep touches 24h",
-          value: String(snap.ops.dispatchesSent24h),
+          value: String(k.dispatchesSent24h),
           sub: `${snap.ops.outboxPending} outbox pending · ${snap.ops.outboxPublished} published`,
         },
       ];
   }
+}
+
+// ---- 24h baseline deltas ------------------------------------------------- //
+
+export interface KpiDelta {
+  text: string;
+  tone: "good" | "bad" | "flat";
+}
+
+type DeltaKind = "money" | "count" | "pct";
+
+/** Per persona KPI: which baseline input to compare against, its unit, and which direction is good. */
+const DELTA_MAP: Record<PersonaId, Array<{ key: keyof KpiInputs; kind: DeltaKind; upIsGood: boolean } | null>> = {
+  // leakage ↓ good · latency crew ↓ good · SPA laggards ↓ good · manual share ↓ good
+  coo: [
+    { key: "leakageTotalUsd", kind: "money", upIsGood: false },
+    { key: "latencyCrew", kind: "count", upIsGood: false },
+    { key: "spaLaggards", kind: "count", upIsGood: false },
+    { key: "manualAvg", kind: "pct", upIsGood: false },
+  ],
+  // on-board-now is a 15-minute window — too ephemeral for a 24h comparison
+  vp_sales: [null, { key: "criticalCount", kind: "count", upIsGood: true }, { key: "draftsPending", kind: "count", upIsGood: false }, { key: "telemetryEvents24h", kind: "count", upIsGood: true }],
+  // scored queue ↑ good · SPA burn-down ↓ good · drafts ↓ good · rep touches ↑ good
+  dir_inside: [
+    { key: "scoredCount", kind: "count", upIsGood: true },
+    { key: "spaLaggards", kind: "count", upIsGood: false },
+    { key: "draftsPending", kind: "count", upIsGood: false },
+    { key: "dispatchesSent24h", kind: "count", upIsGood: true },
+  ],
+};
+
+function formatDelta(kind: DeltaKind, abs: number): string {
+  if (kind === "money") return abs >= 1_000_000 ? `$${(abs / 1_000_000).toFixed(1)}M` : `$${Math.round(abs / 1000)}K`;
+  if (kind === "pct") return `${abs} pts`;
+  return String(abs);
+}
+
+/**
+ * Aligned with personaMetrics: per KPI card, the delta against the ~24h-ago
+ * capture — or null when no baseline exists yet / the metric is too ephemeral.
+ */
+export function personaDeltas(id: PersonaId, live: KpiInputs, baseline: { capturedAtMs: number; inputs: KpiInputs } | null): (KpiDelta | null)[] {
+  if (!baseline) return [null, null, null, null];
+  return DELTA_MAP[id].map((spec) => {
+    if (!spec) return null;
+    const now = live[spec.key];
+    const base = baseline.inputs[spec.key];
+    const diff = now - base;
+    if (diff === 0) return { text: "flat vs 24h", tone: "flat" as const };
+    const glyph = diff > 0 ? "▲" : "▼";
+    const good = diff > 0 === spec.upIsGood;
+    return { text: `${glyph} ${formatDelta(spec.kind, Math.abs(diff))} vs 24h`, tone: good ? ("good" as const) : ("bad" as const) };
+  });
 }

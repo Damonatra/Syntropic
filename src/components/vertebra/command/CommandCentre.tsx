@@ -1,10 +1,11 @@
 /**
  * Executive Enclave root — the 1-of-1 operator cockpit for Syntropic.
  *
- * Owns: snapshot state, socket bridge fan-out, the keyboard loop,
- * high-intent alert toasts + chime, dossier drawer, persona switcher,
- * command palette. Tailored for COO / VP Sales / Director of Inside Sales
- * at US & Canada industrial distributors.
+ * Owns: snapshot state (with localStorage boot hydration for outage-proof
+ * paint), socket bridge fan-out, the keyboard loop, high-intent alert toasts
+ * + chime, dossier drawer, persona switcher, command palette. Tailored for
+ * COO / VP Sales / Director of Inside Sales at US & Canada industrial
+ * distributors.
  */
 "use client";
 
@@ -84,6 +85,9 @@ const VIEW_TITLES: Record<ViewKey, string> = {
 
 const VIEW_KEYS: ViewKey[] = ["radar", "strike", "theatre", "pipeline", "portal", "ops"];
 
+/** localStorage key for the last good snapshot — boot paint before the network answers. */
+const SNAPSHOT_CACHE_KEY = "vertebra:last-snapshot";
+
 export function CommandCentre() {
   const [snap, setSnap] = useState<CommandSnapshot | null>(null);
   const [view, setView] = useState<ViewKey>("radar");
@@ -143,6 +147,32 @@ export function CommandCentre() {
     }).catch(() => {});
   }, []);
 
+  // ---- boot hydration — last known truth from localStorage ---------------- //
+  // Paints instantly on reload with the previous snapshot while the network
+  // fetch is in flight; the staleness watchdog flags its age until the fresh
+  // snapshot lands. Alerts acked from this browser stay acked so the backlog
+  // never flashes rows the operator already dismissed.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(SNAPSHOT_CACHE_KEY);
+      if (!raw) return;
+      const cached = JSON.parse(raw) as CommandSnapshot;
+      if (!cached || typeof cached.generatedAtMs !== "number" || Date.now() - cached.generatedAtMs > 7 * 86_400_000) return;
+      let storageAcked: Set<string> = new Set();
+      try {
+        storageAcked = new Set(JSON.parse(window.localStorage.getItem("vertebra-acked-alerts") ?? "[]") as string[]);
+      } catch {
+        /* ignore malformed ack ledger */
+      }
+      setSnap({
+        ...cached,
+        alerts: cached.alerts.filter((a) => a.acknowledgedAtMs != null || !storageAcked.has(a.id)),
+      });
+    } catch {
+      /* corrupted cache — the network snapshot will replace it */
+    }
+  }, []);
+
   // ---- snapshot loading -------------------------------------------------- //
   const refresh = useCallback(async () => {
     try {
@@ -150,6 +180,11 @@ export function CommandCentre() {
       if (!res.ok) return;
       const data = (await res.json()) as CommandSnapshot;
       setSnap(data);
+      try {
+        window.localStorage.setItem(SNAPSHOT_CACHE_KEY, JSON.stringify(data));
+      } catch {
+        /* quota or privacy mode — cache is best-effort */
+      }
       if (!bootAlerted.current) {
         bootAlerted.current = true;
         let storageAcked: Set<string> = new Set();

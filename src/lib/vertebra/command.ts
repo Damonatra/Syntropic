@@ -265,6 +265,30 @@ export interface OpsSnapshot {
   channelBCount: number;
 }
 
+/**
+ * Raw KPI inputs — the compact number set every persona KPI derives from.
+ * Captured hourly into CommandBaseline so the radar can show honest 24h
+ * deltas; shared by the aggregator (capture) and the client (recompute).
+ */
+export interface KpiInputs {
+  leakageTotalUsd: number;
+  criticalCount: number;
+  draftsPending: number;
+  scoredCount: number;
+  latencyCrew: number;
+  spaLaggards: number;
+  manualAvg: number;
+  highIntentCount: number;
+  telemetryEvents24h: number;
+  dispatchesSent24h: number;
+}
+
+/** The ~24h-ago comparison point served alongside the live snapshot. */
+export interface BaselineBlock {
+  capturedAtMs: number;
+  inputs: KpiInputs;
+}
+
 export interface CommandSnapshot {
   generatedAtMs: number;
   leads: CommandLead[];
@@ -274,6 +298,7 @@ export interface CommandSnapshot {
   clusters: ClusterShape[];
   funnel: FunnelStage[];
   ops: OpsSnapshot;
+  baseline: BaselineBlock | null;
 }
 
 // --------------------------------------------------------------------------- //
