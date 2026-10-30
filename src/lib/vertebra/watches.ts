@@ -238,10 +238,23 @@ const p90 = (xs: number[]): number | null => {
 // --------------------------------------------------------------------------- //
 
 /**
+ * The stage trail's parse — the contract every writer honors is "detail
+ * LEADS with `${Label} → ${to}`": the desk writes exactly that, the engine
+ * leads with it and tells its story after. Parsing the leading clause (not
+ * the trailing segment) is what lets the desk's terse moves and the
+ * engine's rich ones read identically.
+ */
+export function stageMoveTarget(detail: string | null | undefined): string | null {
+  if (!detail) return null;
+  const m = detail.match(/^\s*\S+\s*→\s*(\S+)/);
+  return m ? (m[1] ?? null) : null;
+}
+
+/**
  * When the engagement entered `stage`, read from its ledger: the newest
- * `stage_changed` event whose "→ target" names the stage; `paid` falls back
- * to the `ingested` event, then to paidAt. Null when the trail cannot prove
- * it — callers degrade honestly instead of guessing.
+ * `stage_changed`/`delivered` event whose leading move names the stage;
+ * `paid` falls back to the `ingested` event, then to paidAt. Null when the
+ * trail cannot prove it — callers degrade honestly instead of guessing.
  */
 export function stageEnteredAtMs(engagement: EngagementShape, stage: string): number | null {
   if (stage === "paid") {
@@ -249,13 +262,9 @@ export function stageEnteredAtMs(engagement: EngagementShape, stage: string): nu
     return ing?.createdAtMs ?? engagement.paidAtMs;
   }
   const ev = engagement.events.find(
-    (e) => (e.kind === "stage_changed" || e.kind === "delivered") && e.detail?.includes("→"),
+    (e) => (e.kind === "stage_changed" || e.kind === "delivered") && stageMoveTarget(e.detail) === stage,
   );
-  if (ev && ev.detail) {
-    const target = ev.detail.split("→").pop()?.trim();
-    if (target === stage) return ev.createdAtMs;
-  }
-  return null;
+  return ev?.createdAtMs ?? null;
 }
 
 // --------------------------------------------------------------------------- //

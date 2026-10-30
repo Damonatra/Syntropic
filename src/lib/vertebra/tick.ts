@@ -28,6 +28,7 @@ import {
   type TurnaroundRow,
 } from "@/lib/vertebra/turnaround";
 import { writeEnginePulse } from "@/lib/vertebra/pulse";
+import { stageMoveTarget } from "@/lib/vertebra/watches";
 
 const NO_PROVIDER_BACKOFF_MS = 15 * 60_000;
 
@@ -215,9 +216,11 @@ export async function runTurnaroundTick(): Promise<TurnaroundTickOutcome> {
 
   const rows: TurnaroundRow[] = active.map((e) => {
     // Verdict entry from the ledger trail — the same read stageEnteredAtMs
-    // runs: newest stage_changed whose "→ target" names verdict.
+    // runs: newest stage_changed whose LEADING move names verdict (the
+    // engine's own details carry their story after the move — the parser
+    // reads the head, not the tail).
     const entry = e.events.find(
-      (ev) => ev.kind === "stage_changed" && ev.detail?.includes("→") && ev.detail.split("→").pop()?.trim() === "verdict",
+      (ev) => ev.kind === "stage_changed" && stageMoveTarget(ev.detail) === "verdict",
     );
     return {
       id: e.id,
