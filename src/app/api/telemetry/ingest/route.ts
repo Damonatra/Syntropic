@@ -50,12 +50,18 @@ export async function POST(request: Request) {
     }
     const body = parsed.data;
 
+    // Resolve the prospect filter first — a payload naming no prospect is
+    // unresolvable (404), never an unfiltered scan and never a null where.
+    const where = body.prospectId
+      ? { id: body.prospectId }
+      : body.domainKey
+        ? { OR: [{ domainKey: body.domainKey }, { domain: body.domainKey }] }
+        : undefined;
+    if (!where) {
+      return NextResponse.json({ error: "prospect_not_found" }, { status: 404 });
+    }
     const prospect = await db.prospect.findFirst({
-      where: body.prospectId
-        ? { id: body.prospectId }
-        : body.domainKey
-          ? { OR: [{ domainKey: body.domainKey }, { domain: body.domainKey }] }
-          : null,
+      where,
       include: {
         scores: { orderBy: { createdAt: "desc" }, take: 1 },
         contacts: { take: 1 },
