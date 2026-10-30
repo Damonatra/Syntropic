@@ -148,11 +148,11 @@ export function CommandCentre() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [connected, setConnected] = useState(false);
   // Operator identity — the signed session names whoever is at the stick.
-  const [operator, setOperator] = useState<{ username: string; displayName: string } | null>(null);
+  const [operator, setOperator] = useState<{ username: string; displayName: string; role: string } | null>(null);
   useEffect(() => {
     fetch("/api/gate")
       .then((r) => r.json())
-      .then((d: { operator?: { username: string; displayName: string } | null }) => setOperator(d.operator ?? null))
+      .then((d: { operator?: { username: string; displayName: string; role: string } | null }) => setOperator(d.operator ?? null))
       .catch(() => {});
   }, []);
   const signOut = () => {
@@ -708,7 +708,7 @@ export function CommandCentre() {
             {operator && (
               <div className="hidden items-center gap-2 md:flex">
                 <span
-                  title={`signed in as ${operator.username}`}
+                  title={`signed in as ${operator.username}${operator.role ? ` · ${operator.role}` : ""}`}
                   className="flex h-8 items-center rounded-full border border-white/[0.12] bg-[#131513] px-3 font-mono text-[10.5px] uppercase tracking-[0.12em] text-[#8E9194]"
                 >
                   {operator.displayName}

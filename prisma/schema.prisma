@@ -242,11 +242,14 @@ model OperatorAction {
 /// password. Passwords are stored ONLY as scrypt hashes (node:crypto,
 /// salted, timing-safe compare); plaintext never touches the database or
 /// the repo. username is the lowercase handle used in trails and acks;
-/// displayName is how the name renders everywhere ("Josias", "Damon").
+/// displayName is how the name renders everywhere ("Josias", "Damon");
+/// role is the title the checkpoint signs them with ("CEO", "Executive
+/// Lead") — empty falls back to the legacy "Operator" label.
 model Operator {
   id           String    @id @default(cuid())
   username     String    @unique
   displayName  String
+  role         String    @default("")
   passwordHash String // scrypt$N$r$p$<salt b64>$<hash b64>
   createdAt    DateTime  @default(now())
   lastLoginAt  DateTime?

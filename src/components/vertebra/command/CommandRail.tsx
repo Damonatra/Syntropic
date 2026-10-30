@@ -69,7 +69,7 @@ export function CommandRail({
   clock: string;
   connected: boolean;
   personaCode: string;
-  operator: { username: string; displayName: string } | null;
+  operator: { username: string; displayName: string; role: string } | null;
 }) {
   // Collapse posture is per-browser, remembered across visits.
   const collapsed = useSyncExternalStore(railStore.subscribe, railStore.read, railStore.serverRead);
@@ -91,9 +91,12 @@ export function CommandRail({
 
   // Identity — the signed session names whoever is at the stick; "—" while
   // the door is unlocked (sandbox, gate off) or the handshake is in flight.
+  // The role signs the rank ("CEO", "Executive Lead"); legacy rows without
+  // one keep the plain "Operator" label.
   const initials = operator ? operator.displayName.trim().slice(0, 2).toUpperCase() : "—";
+  const rankLabel = operator?.role || "Operator";
   const operatorTitle = operator
-    ? `Signed in as ${operator.username} — ${operator.displayName}`
+    ? `Signed in as ${operator.username} — ${operator.displayName}${operator.role ? ` · ${operator.role}` : ""}`
     : "No signed session";
 
   // The rail's one collapse control — lives at the top of the rail in both
@@ -235,7 +238,7 @@ export function CommandRail({
             </div>
             <div className="border-t border-white/[0.08] pt-4">
               <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#F4F5F2]">
-                Operator // {operator ? operator.displayName : "—"}
+                {`${rankLabel} // ${operator ? operator.displayName : "—"}`}
               </p>
               <p className="mt-0.5 text-[11px] text-[#8E9194]" title={operatorTitle}>
                 Clearance: {personaCode} · 1-of-1

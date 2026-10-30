@@ -1,8 +1,8 @@
 /**
  * The enclave door — per-operator accounts.
  *
- * GET    /api/gate → { gate, operators: [{ username, displayName }], operator? }
- *                    roster (handles + display names only, never hashes) for
+ * GET    /api/gate → { gate, operators: [{ username, displayName, role }], operator? }
+ *                    roster (handles, display names, titles — never hashes) for
  *                    the /gate chooser, plus the signed-in operator if any.
  * POST   /api/gate { username, password } → scrypt-verified login; mints the
  *                    signed identity cookie. Generic 401 on any failure so
@@ -22,12 +22,12 @@ const COOKIE_MAX_AGE_S = 60 * 60 * 24 * 30;
 
 export async function GET(request: Request) {
   const operators = await db.operator.findMany({
-    select: { username: true, displayName: true },
+    select: { username: true, displayName: true, role: true },
     orderBy: { username: "asc" },
   });
   const sessionUsername = await operatorFromRequest(request);
   const operator = sessionUsername
-    ? operators.find((o) => o.username === sessionUsername) ?? { username: sessionUsername, displayName: sessionUsername }
+    ? operators.find((o) => o.username === sessionUsername) ?? { username: sessionUsername, displayName: sessionUsername, role: "" }
     : null;
   return NextResponse.json({ gate: gateArmed(), operators, operator });
 }
@@ -70,7 +70,7 @@ export async function POST(request: Request) {
 
   const res = NextResponse.json({
     ok: true,
-    operator: { username: row.username, displayName: row.displayName },
+    operator: { username: row.username, displayName: row.displayName, role: row.role },
   });
   res.cookies.set(SESSION_COOKIE, value, {
     httpOnly: true,

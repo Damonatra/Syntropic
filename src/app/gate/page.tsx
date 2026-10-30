@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 interface OperatorOption {
   username: string;
   displayName: string;
+  role: string;
 }
 
 export default function GatePage() {
@@ -40,6 +41,8 @@ export default function GatePage() {
     setError(false);
     requestAnimationFrame(() => passwordRef.current?.focus());
   };
+
+  const chosen = operators.find((o) => o.username === username) ?? null;
 
   const submit = async () => {
     if (!username || busy) return;
@@ -94,7 +97,7 @@ export default function GatePage() {
                   <span
                     className={`font-mono text-[10px] uppercase tracking-[0.18em] ${selected ? "text-[#0B0C0B]/60" : "text-[#5F6460]"}`}
                   >
-                    {selected ? "● selected" : o.username}
+                    {selected ? "● selected" : o.role || o.username}
                   </span>
                 </button>
               );
@@ -117,7 +120,7 @@ export default function GatePage() {
               setPassword(e.target.value);
               setError(false);
             }}
-            placeholder={username ? `${username} — password` : "select an operator first"}
+            placeholder={chosen ? `${chosen.displayName} — password` : "select an operator first"}
             disabled={!username}
             autoFocus
             className="h-11 rounded-lg border border-white/15 bg-[#0E100E] px-4 font-mono text-[13px] text-[#F4F5F2] outline-none placeholder:text-[#5F6460] focus:border-white/40 disabled:opacity-40"
