@@ -38,6 +38,9 @@ const PatchBody = z.object({
   status: z.enum(["staged", "armed", "degraded", "retired"]).optional(),
   circuitState: z.enum(["closed", "open"]).optional(),
   notes: z.string().max(500).nullish(),
+  // operator-declared plan allowance (e.g. Apollo free tier credits) — the
+  // runway math uses it as the balance when the provider reports none
+  quotaRemaining: z.number().int().min(0).max(10_000_000).nullish(),
 });
 
 export async function GET() {
@@ -87,14 +90,18 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "invalid_body", issues: parsed.error.issues }, { status: 400 });
   }
   const actor = (await operatorFromRequest(request)) ?? "operator";
-  const { provider, status, circuitState, notes } = parsed.data;
-  if (!status && !circuitState && notes === undefined) {
-    return NextResponse.json({ error: "nothing_to_update", hint: "pass status, circuitState, or notes" }, { status: 400 });
+  const { provider, status, circuitState, notes, quotaRemaining } = parsed.data;
+  if (!status && !circuitState && notes === undefined && quotaRemaining === undefined) {
+    return NextResponse.json({ error: "nothing_to_update", hint: "pass status, circuitState, notes, or quotaRemaining" }, { status: 400 });
   }
 
-  const data: { status?: string; circuitState?: string; notes?: string | null; consecutiveFailures?: number } = {};
+  const data: { status?: string; circuitState?: string; notes?: string | null; consecutiveFailures?: number; quotaRemaining?: number | null; quotaUpdatedAt?: Date } = {};
   if (status) data.status = status;
   if (notes !== undefined) data.notes = notes;
+  if (quotaRemaining !== undefined) {
+    data.quotaRemaining = quotaRemaining;
+    data.quotaUpdatedAt = new Date();
+  }
   if (circuitState === "closed") data.consecutiveFailures = 0; // closing the circuit forgives the streak
   if (circuitState) data.circuitState = circuitState;
 
@@ -111,6 +118,7 @@ export async function PATCH(request: Request) {
       ...(status === "armed"
         ? { note: `armed by ${actor} — the gate still refuses when the key env var is unset, so arming without a key fails closed at call time` }
         : {}),
+      ...(quotaRemaining !== undefined ? { note: `quota declared by ${actor} — runway math uses it as the balance` } : {}),
     });
   } catch (error) {
     const code = (error as { code?: string }).code;

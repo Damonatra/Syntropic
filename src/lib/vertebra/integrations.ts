@@ -21,11 +21,80 @@
 import { db } from "@/lib/db";
 import { createHmac, randomBytes } from "node:crypto";
 import type { IntegrationRecord } from "@prisma/client";
+import { writeEnginePulse } from "@/lib/vertebra/pulse";
 
 export type IntegrationKind = "egress" | "inbound" | "enrich" | "calendar" | "pager";
 export type IntegrationStatus = "staged" | "armed" | "degraded" | "retired";
 
 export const CIRCUIT_THRESHOLD = 5;
+
+/* --------------------------------------------------------------- runway -- */
+
+/** Runway thresholds — a warn/crit the watchtower can ring before the
+ * enclave is stranded mid-campaign with no credits and no fallback. */
+export const RUNWAY_WARN_DAYS = 14;
+export const RUNWAY_CRIT_DAYS = 3;
+export const RUNWAY_WARN_CREDITS = 20;
+export const RUNWAY_CRIT_CREDITS = 5;
+const DAY_MS = 86_400_000;
+
+export type RunwayLevel = "ok" | "warn" | "crit";
+
+/**
+ * Quota runway for one enrich row — honest about what it knows. The pace is
+ * measured (credits the resolver actually spent over the last 7 days); the
+ * remaining balance is either provider-reported or operator-declared, and
+ * when it is unknown the view says pace-only instead of inventing a date.
+ */
+export function computeRunway(quotaRemaining: number | null, creditsSpent7d: number, nowMs: number): RunwayView {
+  const creditsPerDay = Math.round((creditsSpent7d / 7) * 100) / 100;
+  const dryInDays = quotaRemaining != null && creditsPerDay > 0 ? Math.round((quotaRemaining / creditsPerDay) * 10) / 10 : null;
+  const level: RunwayLevel =
+    (quotaRemaining != null && quotaRemaining <= RUNWAY_CRIT_CREDITS) || (dryInDays != null && dryInDays <= RUNWAY_CRIT_DAYS)
+      ? "crit"
+      : (quotaRemaining != null && quotaRemaining <= RUNWAY_WARN_CREDITS) || (dryInDays != null && dryInDays <= RUNWAY_WARN_DAYS)
+        ? "warn"
+        : "ok";
+  return {
+    quotaRemaining,
+    creditsSpent7d,
+    creditsPerDay,
+    dryInDays,
+    dryAtDate: dryInDays != null ? new Date(nowMs + dryInDays * DAY_MS).toISOString() : null,
+    level,
+  };
+}
+
+export interface RunwayView {
+  quotaRemaining: number | null;
+  creditsSpent7d: number;
+  creditsPerDay: number;
+  dryInDays: number | null;
+  dryAtDate: string | null;
+  level: RunwayLevel;
+}
+
+export function hourBucket(nowMs: number): number {
+  return Math.floor(nowMs / 3_600_000);
+}
+
+export function dayBucket(nowMs: number): number {
+  return Math.floor(nowMs / DAY_MS);
+}
+
+const REGISTRY_ENGINE = "enclave-registry";
+
+/** The watchtower's page when a circuit opens — crit on the deck, deduped
+ * per hour so a flap re-fires honestly without nagging within the hour. */
+async function fireCircuitOpenPulse(provider: string, failures: number): Promise<void> {
+  await writeEnginePulse({
+    engineId: `${REGISTRY_ENGINE}:${provider}`,
+    pulseRef: `circuit-open-${provider}-${hourBucket(Date.now())}`,
+    watchId: "circuit_open",
+    status: "fail",
+    detail: `${provider} failed ${failures} consecutive calls — circuit open; downstream gates refuse with integration_circuit_open until a probe or a real success closes it`,
+  }).catch(() => undefined);
+}
 
 export interface KnownIntegration {
   provider: string;
@@ -214,10 +283,15 @@ export async function recordIntegrationSuccess(provider: string, opts?: { credit
 }
 
 export async function recordIntegrationFailure(provider: string, reason: string): Promise<void> {
-  const row = await db.integrationRecord.findUnique({ where: { provider }, select: { consecutiveFailures: true, status: true } }).catch(() => null);
+  const row = await db.integrationRecord
+    .findUnique({ where: { provider }, select: { consecutiveFailures: true, status: true, circuitState: true } })
+    .catch(() => null);
   if (!row) return;
   const nextFailures = row.consecutiveFailures + 1;
   const openCircuit = nextFailures >= CIRCUIT_THRESHOLD;
+  // Fire the watchtower page only on the closed→open transition — a circuit
+  // that is already open refuses downstream calls, so no new failures land.
+  const justOpened = openCircuit && row.circuitState !== "open";
   await db.integrationRecord
     .update({
       where: { provider },
@@ -231,6 +305,7 @@ export async function recordIntegrationFailure(provider: string, reason: string)
       },
     })
     .catch(() => undefined);
+  if (justOpened) await fireCircuitOpenPulse(provider, nextFailures);
 }
 
 /* ------------------------------------------------------------------ probe -- */
@@ -405,23 +480,113 @@ export interface IntegrationView {
   callsFailed: number;
   notes: string | null;
   doorPath: string | null;
+  /** enrich rows only — the fail-closed feed, counted where it happened */
+  refusals24h?: number;
+  refusalsTotal?: number;
+  runway?: RunwayView;
 }
 
-/** The panel's payload — registry rows joined with live env truth. */
-export async function integrationsSnapshot(): Promise<{ integrations: IntegrationView[] }> {
+export interface FleetView {
+  total: number;
+  armed: number;
+  staged: number;
+  degraded: number;
+  retired: number;
+  circuitOpen: number;
+  armedKeyMissing: number;
+  verdict: string;
+}
+
+export function deriveFleet(rows: Array<Pick<IntegrationView, "status" | "circuitState" | "keyPresent">>): FleetView {
+  const fleet: FleetView = {
+    total: rows.length,
+    armed: 0,
+    staged: 0,
+    degraded: 0,
+    retired: 0,
+    circuitOpen: 0,
+    armedKeyMissing: 0,
+    verdict: "",
+  };
+  for (const r of rows) {
+    if (r.status === "armed") fleet.armed += 1;
+    else if (r.status === "staged") fleet.staged += 1;
+    else if (r.status === "degraded") fleet.degraded += 1;
+    else if (r.status === "retired") fleet.retired += 1;
+    if (r.circuitState === "open") fleet.circuitOpen += 1;
+    if (r.status === "armed" && !r.keyPresent) fleet.armedKeyMissing += 1;
+  }
+  fleet.verdict =
+    fleet.degraded > 0 || fleet.circuitOpen > 0
+      ? `degraded — ${Math.max(fleet.degraded, fleet.circuitOpen)} spoke(s) down; gates refusing with named reasons`
+      : fleet.armed === 0
+        ? "unarmed — every spoke staged; nothing external is reachable"
+        : fleet.armedKeyMissing > 0
+          ? `armed but unkeyed — ${fleet.armedKeyMissing} armed row(s) refuse at call time until their key lands`
+          : `nominal — ${fleet.armed} armed · ${fleet.staged} staged`;
+  return fleet;
+}
+
+/**
+ * Runway pulses — the watchtower rings warn/crit once per provider per day
+ * per level (the pulseRef dedupes; the panel polls every 30s and cannot
+ * nag). Fired from the snapshot build, same write-on-read precedent as the
+ * command baseline captures.
+ */
+async function fireRunwayPulses(rows: IntegrationView[]): Promise<void> {
+  const nowMs = Date.now();
+  for (const r of rows) {
+    if (r.kind !== "enrich" || !r.runway || r.runway.level === "ok") continue;
+    await writeEnginePulse({
+      engineId: `${REGISTRY_ENGINE}:${r.provider}`,
+      pulseRef: `runway-${r.provider}-${r.runway.level}-${dayBucket(nowMs)}`,
+      watchId: "quota_runway",
+      status: r.runway.level === "crit" ? "fail" : "warn",
+      detail:
+        r.runway.dryInDays != null
+          ? `${r.provider} quota runway ~${r.runway.dryInDays} days at ${r.runway.creditsPerDay}/day — ${r.runway.quotaRemaining ?? 0} credits left; declare more or stagger resolves`
+          : `${r.provider} spent ${r.runway.creditsSpent7d} credits over 7d (${r.runway.creditsPerDay}/day) with no reported balance — declare the plan allowance on the panel to get a dry date`,
+    }).catch(() => undefined);
+  }
+}
+
+/** The panel's payload — registry rows joined with live env truth, the
+ * refusal feed, and the runway math. Also the write-on-read point where
+ * warn/crit runway pulses reach the watchtower (deduped per day/level). */
+export async function integrationsSnapshot(): Promise<{ integrations: IntegrationView[]; fleet: FleetView; gateRefusals24h: number }> {
   await ensureKnownIntegrations();
-  const [rows, counts] = await Promise.all([
+  const nowMs = Date.now();
+  const [rows, countsAll, counts7d, counts24h, gateRefusals24h] = await Promise.all([
     db.integrationRecord.findMany({ orderBy: [{ kind: "asc" }, { provider: "asc" }] }),
     db.contactResolution.groupBy({
       by: ["provider", "outcome"],
       _count: { _all: true },
       _sum: { creditsUsed: true },
     }),
+    db.contactResolution.groupBy({
+      by: ["provider", "outcome"],
+      where: { createdAt: { gte: new Date(nowMs - 7 * DAY_MS) } },
+      _sum: { creditsUsed: true },
+    }),
+    db.contactResolution.groupBy({
+      by: ["provider"],
+      where: { outcome: "refused", createdAt: { gte: new Date(nowMs - DAY_MS) } },
+      _count: { _all: true },
+    }),
+    // gate-level refusals — rows written before a provider was picked
+    // (unregistered, staged, key-missing, open circuit, invalid query)
+    db.contactResolution.count({
+      where: { outcome: "refused", provider: "none", createdAt: { gte: new Date(nowMs - DAY_MS) } },
+    }),
   ]);
-  const countMap = new Map(counts.map((c) => [`${c.provider}:${c.outcome}`, c]));
+  const countMap = new Map(countsAll.map((c) => [`${c.provider}:${c.outcome}`, c]));
+  const spend7d = new Map(counts7d.map((c) => [c.provider, c._sum.creditsUsed ?? 0]));
+  const refused24h = new Map(counts24h.map((c) => [c.provider, c._count._all]));
   const integrations: IntegrationView[] = rows.map((row) => {
     const known = KNOWN_INTEGRATIONS.find((k) => k.provider === row.provider);
     const resolved = countMap.get(`${row.provider}:resolved`);
+    const refused = countMap.get(`${row.provider}:refused`);
+    const spent7d = spend7d.get(row.provider) ?? 0;
     return {
       provider: row.provider,
       label: known?.label ?? row.provider,
@@ -441,9 +606,19 @@ export async function integrationsSnapshot(): Promise<{ integrations: Integratio
       callsFailed: row.callsFailed,
       notes: row.notes ?? known?.what ?? null,
       doorPath: known?.doorPath ?? null,
-      // resolutions carried for the enrich rows — the panel shows spend, not vibes
-      ...(row.kind === "enrich" ? { resolutionsResolved: resolved?._count._all ?? 0, creditsSpent: resolved?._sum.creditsUsed ?? 0 } : {}),
+      // enrich rows carry the honest ledger roll-up: resolutions, spend,
+      // refusals (the fail-closed feed), and the runway projection
+      ...(row.kind === "enrich"
+        ? {
+            resolutionsResolved: resolved?._count._all ?? 0,
+            creditsSpent: resolved?._sum.creditsUsed ?? 0,
+            refusals24h: refused24h.get(row.provider) ?? 0,
+            refusalsTotal: refused?._count._all ?? 0,
+            runway: computeRunway(row.quotaRemaining, spent7d, nowMs),
+          }
+        : {}),
     } as IntegrationView & { resolutionsResolved?: number; creditsSpent?: number };
   });
-  return { integrations };
+  await fireRunwayPulses(integrations);
+  return { integrations, fleet: deriveFleet(integrations), gateRefusals24h };
 }

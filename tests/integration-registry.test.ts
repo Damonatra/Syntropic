@@ -31,6 +31,8 @@ import {
   CIRCUIT_THRESHOLD,
   KNOWN_INTEGRATIONS,
   buildDoorProbeRequest,
+  computeRunway,
+  deriveFleet,
   ensureKnownIntegrations,
   integrationsSnapshot,
   pickEnrichIntegration,
@@ -403,5 +405,112 @@ describe("contact resolver", () => {
     expect(outcome.prospectUpdated).toBe(true);
     await resetProvider("apollo", { status: "staged" });
     await resetProvider("hunter", { status: "staged" });
+  });
+});
+
+describe("runway, fleet, and watchtower pulses", () => {
+  const NOW = Date.now();
+
+  it("computeRunway: measured pace, honest about unknown balances", () => {
+    // healthy: 35 credits over 7d → 5/day, 100 left → 20 days of runway
+    const ok = computeRunway(100, 35, NOW);
+    expect(ok.creditsPerDay).toBe(5);
+    expect(ok.dryInDays).toBe(20);
+    expect(ok.level).toBe("ok");
+    expect(ok.dryAtDate).not.toBeNull();
+
+    // warn: 6 days left (≤14)
+    expect(computeRunway(30, 35, NOW).level).toBe("warn");
+    // crit: 2 days left (≤3)
+    expect(computeRunway(10, 35, NOW).level).toBe("crit");
+    // crit by absolute floor even with no pace
+    const floored = computeRunway(4, 0, NOW);
+    expect(floored.dryInDays).toBeNull();
+    expect(floored.dryAtDate).toBeNull();
+    expect(floored.level).toBe("crit");
+    // unknown balance → pace-only, never an invented date
+    const paceOnly = computeRunway(null, 14, NOW);
+    expect(paceOnly.creditsPerDay).toBe(2);
+    expect(paceOnly.dryInDays).toBeNull();
+    expect(paceOnly.dryAtDate).toBeNull();
+    expect(paceOnly.level).toBe("ok");
+  });
+
+  it("deriveFleet: verdicts name the actual blocking condition", () => {
+    const row = (status: string, circuitState = "closed", keyPresent = true) => ({ status, circuitState, keyPresent });
+    expect(deriveFleet([row("armed"), row("armed"), row("staged")]).verdict).toContain("nominal");
+    expect(deriveFleet([row("staged"), row("staged")]).verdict).toContain("unarmed");
+    expect(deriveFleet([row("armed", "open")]).verdict).toContain("degraded");
+    expect(deriveFleet([row("armed", "closed", false)]).verdict).toContain("armed but unkeyed");
+    const fleet = deriveFleet([row("armed", "closed", false), row("armed"), row("staged"), row("retired")]);
+    expect(fleet.armed).toBe(2);
+    expect(fleet.staged).toBe(1);
+    expect(fleet.retired).toBe(1);
+    expect(fleet.armedKeyMissing).toBe(1);
+  });
+
+  it("snapshot counts refusals and computes runway from the resolution ledger", async () => {
+    // hermetic slice — earlier resolver tests leave apollo ledger rows behind
+    await db.contactResolution.deleteMany({ where: { provider: "apollo" } });
+    await db.contactResolution.deleteMany({ where: { provider: "none", outcome: "refused" } });
+    await resetProvider("apollo", { status: "armed" });
+    await db.contactResolution.createMany({
+      data: [
+        { provider: "apollo", queryJson: "{}", outcome: "refused", refuseReason: "integration_circuit_open: test" },
+        { provider: "apollo", queryJson: "{}", outcome: "refused", refuseReason: "integration_key_missing: test" },
+        { provider: "apollo", queryJson: "{}", outcome: "resolved", email: "a@acme.test", creditsUsed: 7 },
+        { provider: "apollo", queryJson: "{}", outcome: "resolved", email: "b@acme.test", creditsUsed: 7 },
+      ],
+    });
+    const { integrations, gateRefusals24h } = await integrationsSnapshot();
+    const apollo = integrations.find((i) => i.provider === "apollo");
+    expect(apollo?.refusals24h).toBe(2);
+    expect(apollo?.refusalsTotal).toBe(2);
+    expect(apollo?.runway?.creditsSpent7d).toBe(14);
+    expect(apollo?.runway?.creditsPerDay).toBe(2);
+    // no balance declared → pace-only, no invented dry date
+    expect(apollo?.runway?.dryAtDate).toBeNull();
+    // gate-level refusals (provider "none") surface on the fleet line
+    expect(gateRefusals24h).toBe(0);
+    await db.contactResolution.create({
+      data: { provider: "none", queryJson: "{}", outcome: "refused", refuseReason: "integration_not_armed: test" },
+    });
+    expect((await integrationsSnapshot()).gateRefusals24h).toBe(1);
+  });
+
+  it("a circuit opening pages the watchtower exactly once per hour bucket", async () => {
+    await db.enginePulse.deleteMany({});
+    await resetProvider("apollo", { status: "armed" });
+    for (let i = 0; i < CIRCUIT_THRESHOLD; i += 1) {
+      await recordIntegrationFailure("apollo", `failure ${i}`);
+    }
+    // the circuit is now open — further failures never transition again
+    await recordIntegrationFailure("apollo", "while already open");
+    const pulses = await db.enginePulse.findMany({ where: { watchId: "circuit_open", engineId: "enclave-registry:apollo" } });
+    expect(pulses.length).toBe(1);
+    expect(pulses[0]?.status).toBe("fail");
+    expect(pulses[0]?.detail).toContain("circuit open");
+  });
+
+  it("runway warn/crit reaches the watchtower once per day per level", async () => {
+    await db.enginePulse.deleteMany({});
+    await db.contactResolution.deleteMany({ where: { provider: "apollo" } });
+    await resetProvider("apollo", { status: "armed" });
+    await db.integrationRecord.update({ where: { provider: "apollo" }, data: { quotaRemaining: 30 } });
+    await db.contactResolution.createMany({
+      data: [
+        { provider: "apollo", queryJson: "{}", outcome: "resolved", email: "c@acme.test", creditsUsed: 20 },
+        { provider: "apollo", queryJson: "{}", outcome: "resolved", email: "d@acme.test", creditsUsed: 15 },
+      ],
+    });
+    // 30 remaining / (35/7 per day) = 6 days → warn; the panel polls every
+    // 30s, so a second snapshot in the same day must dedup, not nag
+    await integrationsSnapshot();
+    await integrationsSnapshot();
+    const pulses = await db.enginePulse.findMany({ where: { watchId: "quota_runway", engineId: "enclave-registry:apollo" } });
+    expect(pulses.length).toBe(1);
+    expect(pulses[0]?.status).toBe("warn");
+    expect(pulses[0]?.detail).toContain("apollo");
+    await db.integrationRecord.update({ where: { provider: "apollo" }, data: { quotaRemaining: null } });
   });
 });
