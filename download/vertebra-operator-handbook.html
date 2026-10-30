@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Vertebra — Operator Handbook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  @page { size: 720px 1020px; margin: 0; }
+
+  :root {
+    --bg: #0B0C0B;
+    --panel: #121412;
+    --panel-2: #141614;
+    --line: rgba(255, 255, 255, 0.08);
+    --line-soft: rgba(255, 255, 255, 0.05);
+    --ink: #F4F5F2;
+    --ink-2: #C9CCC7;
+    --ink-3: #8E9194;
+    --ink-4: #5F6460;
+    --ink-5: #6E736E;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 720px;
+    background: #0B0C0B;
+    color: var(--ink);
+    font-family: 'Inter Tight', sans-serif;
+    font-size: 13.5px;
+    line-height: 1.66;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  @media screen {
+    html { height: auto; display: flex; justify-content: center; background: #0B0C0B; }
+    body { margin: 0 auto; }
+  }
+
+  * { box-sizing: border-box; }
+
+  /* ------------------------------------------------------------------ */
+  /* COVER                                                               */
+  /* ------------------------------------------------------------------ */
+  .cover {
+    width: 720px;
+    height: 1020px;
+    break-after: page;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 68px;
+    background: var(--bg);
+  }
+  .cover-hairline {
+    position: absolute;
+    inset: 26px;
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    pointer-events: none;
+  }
+  .cover-grid {
+    position: absolute;
+    right: 26px;
+    top: 26px;
+    width: 220px;
+    height: 220px;
+    background-image: linear-gradient(var(--line-soft) 1px, transparent 1px),
+                      linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+    background-size: 22px 22px;
+    border-left: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .cover-kicker {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.34em;
+    text-transform: uppercase;
+    color: var(--ink-5);
+  }
+  .cover-title {
+    font-family: 'Space Grotesk', 'Inter Tight', sans-serif;
+    font-size: 64px;
+    font-weight: 700;
+    line-height: 1.04;
+    letter-spacing: -0.025em;
+    margin: 22px 0 0 0;
+    color: var(--ink);
+  }
+  .cover-rule {
+    width: 88px;
+    height: 2px;
+    background: var(--ink);
+    margin: 46px 0;
+  }
+  .cover-summary {
+    font-size: 15.5px;
+    line-height: 1.7;
+    color: var(--ink-3);
+    max-width: 430px;
+  }
+  .cover-summary b { color: var(--ink-2); font-weight: 600; }
+  .cover-meta {
+    margin-top: 46px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    max-width: 100%;
+  }
+  .cover-chip {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    border: 1px solid var(--line);
+    background: var(--panel);
+    border-radius: 999px;
+    padding: 7px 14px;
+  }
+  .cover-foot {
+    position: absolute;
+    left: 68px;
+    right: 68px;
+    bottom: 74px;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--ink-5);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* FLOWING CONTENT                                                     */
+  /* ------------------------------------------------------------------ */
+  .main-content {
+    padding: 58px 64px 44px 64px;
+  }
+
+  .chapter-header {
+    break-after: avoid;
+    break-inside: avoid;
+    margin-top: 26px;
+  }
+  .chapter-header:first-child { margin-top: 0; }
+
+  .sec-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--ink-5);
+  }
+  .sec-title {
+    font-family: 'Space Grotesk', 'Inter Tight', sans-serif;
+    font-size: 27px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    margin: 8px 0 0 0;
+  }
+  .sec-rule {
+    height: 0;
+    margin: 0;
+  }
+  .chapter-header {
+    padding-bottom: 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+    border-image: linear-gradient(90deg, rgba(255, 255, 255, 0.30), rgba(255, 255, 255, 0)) 1;
+  }
+
+  p { margin: 0 0 11px 0; text-align: left; overflow-wrap: break-word; }
+  p b { color: var(--ink); font-weight: 600; }
+  .lead { color: var(--ink-2); font-size: 14px; }
+  .muted { color: var(--ink-3); }
+
+  .steps { margin: 14px 0 4px 0; padding: 0; list-style: none; counter-reset: step; }
+  .steps li {
+    counter-increment: step;
+    position: relative;
+    padding: 0 0 12px 40px;
+    break-inside: avoid;
+  }
+  .steps li::before {
+    content: counter(step, decimal-leading-zero);
+    position: absolute;
+    left: 0;
+    top: 1px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    color: var(--ink-3);
+    border: 1px solid var(--line);
+    background: var(--panel);
+    border-radius: 999px;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .steps li b { display: inline; }
+  .steps .why { color: var(--ink-3); }
+
+  .mini-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    max-width: 100%;
+    margin: 16px 0 4px 0;
+  }
+  .mini {
+    flex: 1 1 270px;
+    min-width: 240px;
+    max-width: 100%;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 15px 17px;
+    break-inside: avoid;
+    margin-bottom: 2px;
+  }
+  .mini h4 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-5);
+    margin: 0 0 7px 0;
+  }
+  .mini p { margin: 0; font-size: 12.8px; color: var(--ink-2); }
+
+  .view-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-left: 2px solid rgba(255,255,255,0.35);
+    border-radius: 10px;
+    padding: 16px 19px;
+    margin-bottom: 12px;
+    break-inside: avoid;
+  }
+  .view-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 7px;
+    max-width: 100%;
+  }
+  .view-glyph {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--ink-2);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .view-name {
+    font-family: 'Space Grotesk', 'Inter Tight', sans-serif;
+    font-size: 16.5px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .view-sub {
+    margin-left: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-5);
+  }
+  .view-card p { margin: 0 0 6px 0; font-size: 12.8px; color: var(--ink-2); }
+  .view-card .k { color: var(--ink); font-weight: 600; }
+
+  .loop { margin: 14px 0 4px 0; padding: 0; list-style: none; counter-reset: loop; }
+  .loop li {
+    counter-increment: loop;
+    position: relative;
+    padding: 9px 0 9px 40px;
+    border-bottom: 1px solid var(--line-soft);
+    break-inside: avoid;
+    font-size: 12.9px;
+    color: var(--ink-2);
+  }
+  .loop li:last-child { border-bottom: none; }
+  .loop li::before {
+    content: counter(loop);
+    position: absolute;
+    left: 2px;
+    top: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    color: var(--ink-3);
+  }
+  .loop b { color: var(--ink); font-weight: 600; }
+
+  .callout {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 15px 18px;
+    margin: 14px 0 4px 0;
+    break-inside: avoid;
+  }
+  .callout h4 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-5);
+    margin: 0 0 7px 0;
+  }
+  .callout p { margin: 0; font-size: 12.8px; color: var(--ink-2); }
+
+  table.keys {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 2px 0;
+    margin: 10px 0 14px 0;
+    break-inside: avoid;
+    table-layout: fixed;
+  }
+  table.keys thead { display: table-header-group; }
+  table.keys th {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-5);
+    text-align: left;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  table.keys td {
+    font-size: 12.3px;
+    color: var(--ink-2);
+    padding: 6.5px 10px;
+    border-bottom: 1px solid var(--line-soft);
+    vertical-align: top;
+    overflow-wrap: break-word;
+  }
+  table.keys tr { break-inside: avoid; }
+  table.keys td:first-child { width: 118px; }
+
+  .key {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    color: var(--ink);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    padding: 2px 7px;
+    white-space: nowrap;
+  }
+  .keys-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 18px 0 2px 0;
+    break-after: avoid;
+  }
+  .keys-title:first-of-type { margin-top: 6px; }
+
+  /* ------------------------------------------------------------------ */
+  /* ENDING                                                              */
+  /* ------------------------------------------------------------------ */
+  .ending {
+    width: 720px;
+    height: 1020px;
+    break-before: page;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 68px;
+    background: var(--bg);
+  }
+  .ending-hairline {
+    position: absolute;
+    inset: 26px;
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    pointer-events: none;
+  }
+  .ending-kicker {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: var(--ink-5);
+    margin-bottom: 26px;
+  }
+  .law {
+    padding: 26px 0;
+    border-bottom: 1px solid var(--line);
+    break-inside: avoid;
+  }
+  .law:last-of-type { border-bottom: none; }
+  .law-n {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    color: var(--ink-5);
+    letter-spacing: 0.2em;
+  }
+  .law-t {
+    font-family: 'Space Grotesk', 'Inter Tight', sans-serif;
+    font-size: 25px;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    line-height: 1.22;
+    margin-top: 6px;
+  }
+  .law-d {
+    font-size: 13px;
+    color: var(--ink-3);
+    margin-top: 7px;
+    max-width: 470px;
+  }
+  .ending-foot {
+    position: absolute;
+    left: 68px;
+    right: 68px;
+    bottom: 74px;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--ink-5);
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================ COVER ============================ -->
+<div class="cover">
+  <div class="cover-hairline"></div>
+  <div class="cover-grid"></div>
+  <p class="cover-kicker">Syntropic // Enclave</p>
+  <h1 class="cover-title">Operator<br>Handbook</h1>
+  <div class="cover-rule"></div>
+  <p class="cover-summary">
+    How we run the margin-defense desk: sign in at the checkpoint, sweep the radar,
+    work the strike queue, judge the machine's drafts, and move paid work through the
+    portal. Everything inside is built for one rule — <b>the enclave acts only through
+    its operators.</b>
+  </p>
+  <div class="cover-meta">
+    <span class="cover-chip">Damon — CEO</span>
+    <span class="cover-chip">Josias — Executive Lead</span>
+    <span class="cover-chip">Clearance 1-of-1</span>
+  </div>
+  <div class="cover-foot">
+    <span>Vertebra · Margin Defense</span>
+    <span>Quick-Start Edition</span>
+  </div>
+</div>
+
+<!-- ============================ BODY ============================ -->
+<div class="main-content">
+
+  <!-- ==================== CHAPTER 01 ==================== -->
+  <div class="chapter-header">
+    <p class="sec-tag">01 · Arrival</p>
+    <h2 class="sec-title">The door &amp; the desk</h2>
+  </div>
+
+  <p class="lead">
+    The enclave is keyed to its operators, not to a shared password. Every dispatch, every
+    acknowledgement, every stage move carries the name of the human who made it — so the door
+    asks who you are before it shows you the desk. There are exactly two keys, and each opens
+    the same room with a different signature on the trail.
+  </p>
+  <p>
+    The <b>operator checkpoint</b> is the gate page. It lists the accounts the enclave knows:
+    <b>Damon — CEO</b> and <b>Josias — Executive Lead</b>. Choose your row, present your
+    password, and the enclave mints a signed session that lasts thirty days. If your password
+    needs replacing, a rotation re-seals the lock without touching anything else — ask for a
+    fresh one and carry on.
+  </p>
+
+  <ol class="steps">
+    <li><b>Open the enclave.</b> <span class="why">An unsigned visit lands on the checkpoint automatically.</span></li>
+    <li><b>Choose your account</b> — Damon or Josias. <span class="why">The row highlights; the password field addresses you by name.</span></li>
+    <li><b>Present your password</b> and press <b>enter enclave</b>. <span class="why">Verification is deliberately slow — that is the scrypt lock doing its job.</span></li>
+    <li><b>Land on the Radar</b>, signed in. <span class="why">The rail footer now carries your identity; every action signs to your name.</span></li>
+    <li><b>Leaving?</b> Press <b>Exit</b> in the top bar. <span class="why">Ends the session on this machine; the enclave goes dark behind you.</span></li>
+  </ol>
+
+  <p class="muted" style="margin-top: 10px;">
+    Once inside, four pieces of furniture matter on day one:
+  </p>
+
+  <div class="mini-grid">
+    <div class="mini">
+      <h4>The rail — left edge</h4>
+      <p>Brand, bridge pulse, the six views, watch status, and your identity block
+      (<span style="font-family:'JetBrains Mono',monospace; font-size:10.5px;">ROLE // NAME</span>).
+      The ‹ · › control collapses it to an icon column — the posture is remembered per browser.</p>
+    </div>
+    <div class="mini">
+      <h4>Personas — top bar</h4>
+      <p>The COO / VP Sales / Dir. Inside Sales switcher re-frames the desk for the seat you're
+      speaking from. Your mandate rides beside it; the trail still signs your real name.</p>
+    </div>
+    <div class="mini">
+      <h4>The dossier — drawer</h4>
+      <p>One prospect, one drawer: score, evidence, contacts, telemetry, the action log.
+      Open it from any view with a click or <b>Enter</b>; compose cold email inside it with <b>e</b>.</p>
+    </div>
+    <div class="mini">
+      <h4>The palette — ⌘K</h4>
+      <p>The command palette jumps anywhere — views, prospects, drafts — without touching the
+      mouse. <b>?</b> overlays the full keyboard map at any moment.</p>
+    </div>
+  </div>
+
+  <!-- ==================== CHAPTER 02 ==================== -->
+  <div class="chapter-header">
+    <p class="sec-tag">02 · Cadence</p>
+    <h2 class="title sec-title">The daily rhythm</h2>
+  </div>
+
+  <p class="lead">
+    The desk is ordered so attention flows downhill: the machine filters all night, the morning
+    sweep spends that work where margin is actually leaking. Run it top-down, in this order —
+    each step feeds the next, and skipping one is how signals rot into noise.
+  </p>
+
+  <ol class="steps">
+    <li><b>Sign in and read the room.</b> <span class="why">Bridge pulse first — LIVE means the engine is feeding the desk; BRIDGE DOWN means read-only until it returns.</span></li>
+    <li><b>Sweep the Radar.</b> <span class="why">Net-margin leakage, quote-turnaround latency, SPA laggards, manual-quoting share — and each against its 24-hour delta. Drift, not level, is what asks for action.</span></li>
+    <li><b>Clear the alert backlog.</b> <span class="why">High-intent portal hits surface with the company and executive on the card. Open what's hot, acknowledge the rest with an honest reason — real, handled, or false positive. Acks are how the watchtower learns its thresholds.</span></li>
+    <li><b>Work the Strike queue top-down.</b> <span class="why">QLV rank is the machine's bet; walk it. Call the ones worth a voice (<b>c</b>), defer what isn't today (<b>x</b>), snooze the not-yets (<b>s</b>), send cold email where the evidence is strong (<b>e</b>).</span></li>
+    <li><b>Judge the Pipeline.</b> <span class="why">Replies became drafts overnight. Approve what reads true, edit what needs your hand, discard what doesn't. Pending drafts are queued money — the queue should leave the morning near zero.</span></li>
+    <li><b>Move paid work through the Portal.</b> <span class="why">Advance engagements one legal stage each (<b>a</b>), drop fresh audit documents where forensics needs them, and check the ledger for new money.</span></li>
+    <li><b>Close out on Ops.</b> <span class="why">The watchtower deck lists what the engine is watching on your behalf. Quiet is the goal; unacknowledged warnings are tomorrow's first item.</span></li>
+  </ol>
+
+  <div class="callout">
+    <h4>The two-minute version</h4>
+    <p>Radar for drift → acknowledge alerts → Strike until the queue is triaged → Pipeline to zero
+    pending → Portal stages forward → Ops quiet. If the bridge is down, triage from what's already
+    on the desk and let the engine catch up.</p>
+  </div>
+
+  <!-- ==================== CHAPTER 03 ==================== -->
+  <div class="chapter-header">
+    <p class="sec-tag">03 · Territory</p>
+    <h2 class="sec-title">The six views</h2>
+  </div>
+
+  <p class="lead">
+    Six surfaces, one grammar: every view is the same ledger seen from a different altitude.
+    Learn what each is <b>for</b> and the keyboard carries you the rest of the way.
+  </p>
+
+  <div class="view-card">
+    <div class="view-head">
+      <span class="view-glyph">◎</span>
+      <span class="view-name">Radar</span>
+      <span class="view-sub">Where margin leaks</span>
+    </div>
+    <p><span class="k">For:</span> the executive read. Entry anchor, the four margin KPIs with live
+    24-hour deltas, the alert backlog, and Module&nbsp;7 territory corridors with their hot counts.</p>
+    <p><span class="k">Work it:</span> read deltas before levels; acknowledge or open alerts; click a
+    corridor to open the Theatre. The strike rail on the right lists who opened the portal in the
+    last hours — those are the warmest names on the page.</p>
+  </div>
+
+  <div class="view-card">
+    <div class="view-head">
+      <span class="view-glyph">▸</span>
+      <span class="view-name">Strike</span>
+      <span class="view-sub">Where you spend the morning</span>
+    </div>
+    <p><span class="k">For:</span> the QLV-ranked prospect queue. Bands — critical, hot, now — are the
+    machine's bet on who deserves a human next, and the counters on each row show why.</p>
+    <p><span class="k">Work it:</span> top-down with the keyboard. <b>Enter</b> opens the dossier —
+    pain signals are verbatim quotes from the prospect's own world, not summaries. Call, defer,
+    snooze, or compose from evidence. Never send prose the evidence doesn't carry.</p>
+  </div>
+
+  <div class="view-card">
+    <div class="view-head">
+      <span class="view-glyph">◈</span>
+      <span class="view-name">Theatre</span>
+      <span class="view-sub">Where the map breathes</span>
+    </div>
+    <p><span class="k">For:</span> Module&nbsp;7 spatial clustering — corridors drawn from geocoded
+    HQs, sized by density, colored by heat. It answers "where is the pattern" at a glance.</p>
+    <p><span class="k">Work it:</span> zoom and pan, open pulses on live prospects, drop into any
+    cluster to see its members. Use it to brief others; the queue remains the working surface.</p>
+  </div>
+
+  <div class="view-card">
+    <div class="view-head">
+      <span class="view-glyph">▤</span>
+      <span class="view-name">Pipeline</span>
+      <span class="view-sub">Where drafts meet judgment</span>
+    </div>
+    <p><span class="k">For:</span> triage of inbound replies. The engine classifies intent and drafts
+    the response; the pending queue waits for a human verdict — nothing sends itself.</p>
+    <p><span class="k">Work it:</span> cursor down the queue, <b>a</b> to approve a faithful draft,
+    <b>e</b> to edit one that's close, <b>x</b> to discard what should never leave. Space multi-selects
+    for batch moves. Approve only what you'd sign by hand.</p>
+  </div>
+
+  <div class="view-card">
+    <div class="view-head">
+      <span class="view-glyph">◧</span>
+      <span class="view-name">Portal</span>
+      <span class="view-sub">Where money becomes work</span>
+    </div>
+    <p><span class="k">For:</span> paid engagements. Each client moves one legal stage at a time —
+    paid, intake, forensics, verdict, delivered, sow, closed — with documents and notes bound
+    along the way.</p>
+    <p><span class="k">Work it:</span> <b>q</b> opens the queue, <b>a</b> advances the engaged row,
+    the audit dropzone ingests real files for forensics, and <b>c</b> jumps to the ledger — the
+    money room — from anywhere. The verdict stage records the $10,000 guarantee decision honestly:
+    cleared, or not.</p>
+  </div>
+
+  <div class="view-card">
+    <div class="view-head">
+      <span class="view-glyph">▦</span>
+      <span class="view-name">Ops</span>
+      <span class="view-sub">Where the engine confesses</span>
+    </div>
+    <p><span class="k">For:</span> the watchtower deck. Alerts are re-derived from real rows on every
+    sweep — nothing here is stored opinion — and engine pulses show which watchers last checked in.</p>
+    <p><span class="k">Work it:</span> acknowledge fires with a reason. "False positive" rolls up into
+    per-watch hit rates and becomes threshold tuning data; "real" leaves the watch armed. Chronic
+    flappers expose themselves in the fire ledger.</p>
+  </div>
+
+  <!-- ==================== CHAPTER 04 ==================== -->
+  <div class="chapter-header">
+    <p class="sec-tag">04 · Machinery</p>
+    <h2 class="sec-title">The engine loop</h2>
+  </div>
+
+  <p class="lead">
+    The desk is the front of a loop that runs without you — until the moment judgment is
+    required. Knowing where the machine ends and you begin is the whole skill.
+  </p>
+
+  <ol class="loop">
+    <li><b>Ingest.</b> Prospects arrive from manual entry and engine sweeps, deduped on domain.
+    Filtering and CASL scope are decided before anything earns a stamp.</li>
+    <li><b>Forensics.</b> Audit documents are parsed server-side; line items and quote-portal
+    types become structured evidence. Nothing is invented — extraction carries provenance or it
+    doesn't ship.</li>
+    <li><b>Score.</b> The QLV model stamps every prospect 0–100 with factors and hooks, banded for
+    the Strike queue. Scores are fingerprints — recomputed, never hand-edited.</li>
+    <li><b>Evidence.</b> Pain signals collect the prospect's own words — review complaints, site
+    copy, job postings, reply language — vetoed by operators, hashed into every draft built on them.</li>
+    <li><b>Dispatch.</b> Channel A runs automated sequences on the scorable middle; channel B is
+    high-touch, human-led, reserved for the top of the queue. Every send carries a verify report
+    of exactly what left the enclave.</li>
+    <li><b>Telemetry.</b> Portal visits, audit views, and pricing reads raise intent heat in real
+    time — this is what makes the strike rail warm and the pager loud.</li>
+    <li><b>Inbound.</b> Replies are classified — interested, out of office, objection, not
+    interested — with confidence and rationale attached, then turned into drafts.</li>
+    <li><b>The human gate.</b> Drafts wait in the Pipeline for a named operator. Approval is the
+    one step the enclave refuses to automate — the loop's entire integrity lives here.</li>
+  </ol>
+
+  <div class="callout">
+    <h4>Where you are irreplaceable</h4>
+    <p>Veto weak pain signals before they teach the drafts bad habits. Approve only email you'd
+    sign by hand. Record verdicts as they are — the guarantee is a contract, and the ledger never
+    forgets. Suppression is permanent: an unsubscribe anywhere silences the address everywhere.</p>
+  </div>
+
+  <!-- ==================== CHAPTER 05 ==================== -->
+  <div class="chapter-header">
+    <p class="sec-tag">05 · Grammar</p>
+    <h2 class="sec-title">Keys &amp; palette</h2>
+  </div>
+
+  <p class="lead">
+    The desk is keyboard-first. One grammar everywhere — <b>j / k</b> to move, <b>Enter</b> to
+    open, a letter to act — and <b>?</b> overlays the live map whenever the fingers forget.
+  </p>
+
+  <p class="keys-title">Everywhere</p>
+  <table class="keys">
+    <thead><tr><th>Key</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td><span class="key">⌘K</span> <span class="key">Ctrl K</span></td><td>Command palette — jump to any view, prospect, or draft</td></tr>
+      <tr><td><span class="key">?</span></td><td>Overlay the full shortcut map</td></tr>
+      <tr><td><span class="key">Esc</span></td><td>Step back out — drawer, palette, overlay</td></tr>
+    </tbody>
+  </table>
+
+  <p class="keys-title">Strike — the queue</p>
+  <table class="keys">
+    <thead><tr><th>Key</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td><span class="key">j</span> <span class="key">k</span></td><td>Cursor down / up the ranked queue</td></tr>
+      <tr><td><span class="key">Enter</span></td><td>Open the dossier for the focused prospect</td></tr>
+      <tr><td><span class="key">c</span></td><td>Call — dials the contact's direct line</td></tr>
+      <tr><td><span class="key">x</span></td><td>Defer the focused lead</td></tr>
+      <tr><td><span class="key">s</span></td><td>Snooze the focused lead</td></tr>
+      <tr><td><span class="key">e</span></td><td>Open the dossier straight into cold-email compose</td></tr>
+      <tr><td><span class="key">f</span></td><td>Cycle filters — all → critical → hot → now</td></tr>
+    </tbody>
+  </table>
+
+  <p class="keys-title">Pipeline — triage</p>
+  <table class="keys">
+    <thead><tr><th>Key</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td><span class="key">j</span> <span class="key">k</span></td><td>Cursor down / up the pending queue</td></tr>
+      <tr><td><span class="key">Enter</span></td><td>Open the prospect behind the draft</td></tr>
+      <tr><td><span class="key">a</span></td><td>Approve the focused draft</td></tr>
+      <tr><td><span class="key">e</span></td><td>Open the editor on the focused draft</td></tr>
+      <tr><td><span class="key">x</span></td><td>Discard the focused draft</td></tr>
+      <tr><td><span class="key">Space</span></td><td>Toggle select — batch approvals</td></tr>
+      <tr><td><span class="key">⌘ Enter</span></td><td>Send from the editor</td></tr>
+      <tr><td><span class="key">f</span></td><td>Cycle the triage filter</td></tr>
+    </tbody>
+  </table>
+
+  <p class="keys-title">Portal — engagements</p>
+  <table class="keys">
+    <thead><tr><th>Key</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td><span class="key">q</span></td><td>Open / close the queue door from the desk</td></tr>
+      <tr><td><span class="key">c</span></td><td>The ledger — from anywhere</td></tr>
+      <tr><td><span class="key">e</span> <span class="key">Enter</span></td><td>Open the engagement under the cursor</td></tr>
+      <tr><td><span class="key">j</span> <span class="key">k</span></td><td>Move the cursor through the queue</td></tr>
+      <tr><td><span class="key">a</span></td><td>Advance the engagement one legal stage</td></tr>
+      <tr><td><span class="key">Esc</span></td><td>Walk back out — engagement → queue → desk</td></tr>
+    </tbody>
+  </table>
+
+  <p class="keys-title">Theatre — the map</p>
+  <table class="keys">
+    <thead><tr><th>Key</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td><span class="key">+</span> <span class="key">−</span></td><td>Zoom in / out</td></tr>
+      <tr><td><span class="key">Arrows</span></td><td>Pan the map</td></tr>
+      <tr><td><span class="key">p</span></td><td>Toggle the pulse panel</td></tr>
+    </tbody>
+  </table>
+
+  <p class="muted">
+    The rail's ‹ · › control collapses it to an icon column and back — counters stay visible,
+    tooltips name the glyphs, and the posture is remembered. Stage moves in the Portal always
+    follow the legal path; <b>a</b> simply takes the next allowed step.
+  </p>
+
+</div>
+
+<!-- ============================ ENDING ============================ -->
+<div class="ending">
+  <div class="ending-hairline"></div>
+  <p class="ending-kicker">The desk laws</p>
+
+  <div class="law">
+    <span class="law-n">LAW 01</span>
+    <p class="law-t">Every action signs to your name.</p>
+    <p class="law-d">Calls, acks, verdicts, sends — the trail carries the operator who made it.
+    The enclave has no anonymous hands.</p>
+  </div>
+  <div class="law">
+    <span class="law-n">LAW 02</span>
+    <p class="law-t">Evidence before prose.</p>
+    <p class="law-d">A sentence is only safe to send if it would be false for every other company
+    on the list. Verbatim or nothing.</p>
+  </div>
+  <div class="law">
+    <span class="law-n">LAW 03</span>
+    <p class="law-t">One-of-one — nothing moves without a human.</p>
+    <p class="law-d">The machine scores, drafts, and watches. It never sends. Approval is the
+    gate the loop cannot skip.</p>
+  </div>
+  <div class="law">
+    <span class="law-n">LAW 04</span>
+    <p class="law-t">The ledger never forgets.</p>
+    <p class="law-d">Verify reports, engagement events, operator actions — append-only and
+    honest. Record what is, not what was hoped.</p>
+  </div>
+
+  <div class="ending-foot">
+    <span>Syntropic // Vertebra</span>
+    <span>Margin Defense</span>
+  </div>
+</div>
+
+</body>
+</html>
