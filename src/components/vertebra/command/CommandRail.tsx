@@ -96,6 +96,9 @@ export function CommandRail({
     ? `Signed in as ${operator.username} — ${operator.displayName}`
     : "No signed session";
 
+  // The rail's one collapse control — lives at the top of the rail in both
+  // postures (brand row when expanded, under the monogram when collapsed),
+  // so it can never be buried by overlays or lost below the fold.
   const collapseControl = (
     <button
       type="button"
@@ -103,7 +106,7 @@ export function CommandRail({
       aria-label={collapsed ? "Expand rail" : "Collapse rail"}
       aria-expanded={!collapsed}
       title={collapsed ? "Expand rail" : "Collapse rail"}
-      className="rail-toggle flex size-7 shrink-0 items-center justify-center rounded-full font-mono text-[13px] leading-none"
+      className="rail-toggle flex size-6 shrink-0 items-center justify-center rounded-full font-mono text-[12px] leading-none"
     >
       {collapsed ? "›" : "‹"}
     </button>
@@ -117,12 +120,13 @@ export function CommandRail({
     >
       {collapsed ? (
         <>
-          {/* brand — monogram + the one live signal that matters */}
-          <div className="flex flex-col items-center gap-3 border-b border-white/[0.08] py-5 whitespace-nowrap">
+          {/* brand — monogram, live signal, collapse control */}
+          <div className="flex flex-col items-center gap-2.5 border-b border-white/[0.08] py-4 whitespace-nowrap">
             <p className="font-display text-[19px] font-semibold leading-none tracking-[-0.03em] text-[#F4F5F2]" title="SYNTROPIC — Vertebra · Margin Defense">
               S
             </p>
             <LiveDot level={connected ? "live" : "warn"} />
+            {collapseControl}
           </div>
 
           {/* nav — glyphs only; counts ride the corner so alarms still surface */}
@@ -159,24 +163,22 @@ export function CommandRail({
             })}
           </nav>
 
-          {/* footer — enclave pulse, initials, collapse control */}
-          <div className="mt-auto flex flex-col items-center gap-4 pb-4 whitespace-nowrap">
-            <div className="flex flex-col items-center gap-2.5">
-              <LiveDot level={warn === 0 ? "live" : "warn"} />
-              <span
-                title={`${operatorTitle} · Clearance: ${personaCode} · 1-of-1`}
-                className="flex size-7 items-center justify-center rounded-full border border-white/[0.12] bg-[#131513] font-mono text-[9.5px] tracking-[0.06em] text-[#C9CCC7]"
-              >
-                {initials}
-              </span>
-            </div>
-            {collapseControl}
+          {/* footer — enclave pulse, identity initials */}
+          <div className="mt-auto flex flex-col items-center gap-2.5 pb-4 whitespace-nowrap">
+            <LiveDot level={warn === 0 ? "live" : "warn"} />
+            <span
+              title={`${operatorTitle} · Clearance: ${personaCode} · 1-of-1`}
+              className="flex size-7 items-center justify-center rounded-full border border-white/[0.12] bg-[#131513] font-mono text-[9.5px] tracking-[0.06em] text-[#C9CCC7]"
+            >
+              {initials}
+            </span>
           </div>
         </>
       ) : (
         <>
-          {/* brand */}
-          <div className="whitespace-nowrap border-b border-white/[0.08] px-5 py-5">
+          {/* brand — collapse control pinned top-right, on the cap line */}
+          <div className="relative whitespace-nowrap border-b border-white/[0.08] px-5 py-5">
+            <span className="absolute right-4 top-[17px]">{collapseControl}</span>
             <p className="font-display text-[19px] font-semibold leading-none tracking-[-0.03em] text-[#F4F5F2]">SYNTROPIC</p>
             <p className="mt-1.5 font-mono text-[9.5px] uppercase tracking-[0.28em] text-[#6E736E]">Vertebra · Margin Defense</p>
             <div className="mt-4 flex items-center gap-2">
@@ -242,7 +244,6 @@ export function CommandRail({
                 j/k move · e cold email · f filter · ? help · ⌘K jump
               </p>
             </div>
-            <div className="border-t border-white/[0.08] pt-3">{collapseControl}</div>
           </div>
         </>
       )}
