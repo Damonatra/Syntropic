@@ -418,6 +418,36 @@ model OpsAlertAck {
   @@index([createdAt])
 }
 
+/// Egress ledger — every domain the enclave may ever send from, and the
+/// warmup discipline each one is under. The mailer's third interlock reads
+/// this table: a domain that is not registered, not DNS-verified, or over
+/// its warmup cap cannot leave the building (live egress only — the staged
+/// sandbox is unaffected). Sending cold email from the company's main
+/// domain is how a reputation dies in a week; the ledger makes that
+/// mistake structurally impossible rather than a matter of memory.
+///
+/// The warmup ramp lives in lib/vertebra/warmup.ts — caps are derived from
+/// warmupStartedAt, never invented per-row. status transitions:
+///   spare    registered, warmup not started (no live sends)
+///   warming  on the ramp — daily cap grows with the schedule
+///   ready    ramp plateaued — full cap
+///   paused   operator hold — refuses live egress, keeps the history
+///   burned   reputation lost (watch evidence) — retired, never deleted
+model SendingDomain {
+  id              String    @id @default(cuid())
+  domain          String    @unique
+  role            String    @default("sending") // sending | transactional
+  dnsStatus       String    @default("pending") // pending | dns_added | verified
+  providerRef     String? // Resend domain id once added in the dashboard
+  warmupStartedAt DateTime?
+  status          String    @default("spare") // spare | warming | ready | paused | burned
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status])
+}
+
 /// Flap ledger — one row per (watch, subject, hour) the condition was live.
 /// Alerts are derived, so presence in a snapshot build is the only fire
 /// signal; recording distinct hour buckets gives honest refire counts

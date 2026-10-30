@@ -88,6 +88,10 @@ export const THRESHOLDS = {
   failedCrit: 8,
   failedSentinelFloor: 2,
   failedSentinelThreshold: 8,
+  /** Warmup watch — hard-bounce rate over the trailing 7d, floors on sends. */
+  bounceRateWarn: 0.05,
+  bounceRateCrit: 0.1,
+  bounceFloorSends: 10,
 } as const;
 
 const HOUR = 3_600_000;
@@ -470,6 +474,116 @@ export function deriveFunnelAlerts(f: FunnelInput, nowMs: number): OpsWatchAlert
       etaMs: null,
       firedAtMs: nowMs,
     });
+  }
+  return out;
+}
+
+// --------------------------------------------------------------------------- //
+// Watch 2b — domain warmup / sending reputation
+// --------------------------------------------------------------------------- //
+
+/** One sending domain's live numbers — the same math the mailer gate uses. */
+export interface DomainWarmupRow {
+  domain: string;
+  role: string;
+  dnsStatus: string;
+  status: string;
+  warmupDay: number | null;
+  cap: number | null;
+  sentToday: number;
+  sends7d: number;
+  hardBounces7d: number;
+  queuedBacklog: number;
+  /** false → dispatch rows reference this domain but the ledger does not. */
+  registered: boolean;
+}
+
+export function deriveDomainWarmupAlerts(rows: DomainWarmupRow[], nowMs: number): OpsWatchAlert[] {
+  const out: OpsWatchAlert[] = [];
+  for (const d of rows) {
+    if (!d.registered) {
+      out.push({
+        key: alertKey("domain_warmup", d.domain, nowMs),
+        watchId: "domain_warmup",
+        watch: "Domain warmup",
+        severity: "warn",
+        subjectKind: "dispatch",
+        subjectId: d.domain,
+        subjectLabel: d.domain,
+        title: `${d.domain} has ${d.queuedBacklog} dispatch rows but is not in the egress ledger — the gate will refuse them all`,
+        action: "register the domain in the ledger (ops → sending domains) or repoint the dispatches",
+        evidence: `${d.queuedBacklog} dispatch rows reference ${d.domain} · registered=false · live egress refuses unledgered domains`,
+        etaMs: null,
+        firedAtMs: nowMs,
+      });
+      continue;
+    }
+    if (d.role !== "sending") continue;
+
+    // Warming volume through unverified DNS — every send trains the filters
+    // on a half-wired domain.
+    if (d.sentToday > 0 && d.dnsStatus !== "verified") {
+      out.push({
+        key: alertKey("domain_warmup", d.domain, nowMs),
+        watchId: "domain_warmup",
+        watch: "Domain warmup",
+        severity: "warn",
+        subjectKind: "dispatch",
+        subjectId: d.domain,
+        subjectLabel: d.domain,
+        title: `${d.domain} sent ${d.sentToday} today through dnsStatus=${d.dnsStatus} — filters are learning from a half-wired domain`,
+        action: "finish the DNS records (SPF/DKIM/DMARC) and flip dnsStatus to verified, then restart warmup honestly",
+        evidence: `${d.sentToday} sent today · dnsStatus=${d.dnsStatus} · warmup day ${d.warmupDay ?? "—"}`,
+        etaMs: null,
+        firedAtMs: nowMs,
+      });
+    }
+
+    // Over cap today — the gate already refuses new sends; the queued rows
+    // behind it are tomorrow's volume piling up where the operator can see it.
+    if (d.cap != null && d.sentToday >= d.cap && d.queuedBacklog > 0) {
+      out.push({
+        key: alertKey("domain_warmup", d.domain, nowMs),
+        watchId: "domain_warmup",
+        watch: "Domain warmup",
+        severity: "warn",
+        subjectKind: "dispatch",
+        subjectId: d.domain,
+        subjectLabel: d.domain,
+        title: `${d.domain} is at its warmup cap with ${d.queuedBacklog} queued behind it`,
+        action: "nothing to fix — the ramp is the reputation; the backlog drains tomorrow, or register another domain",
+        evidence: `day ${d.warmupDay ?? "—"} · cap ${d.sentToday}/${d.cap} · ${d.queuedBacklog} queued`,
+        etaMs: null,
+        firedAtMs: nowMs,
+      });
+    }
+
+    // Reputation decay — hard bounces are the metric providers punish. The
+    // resend feedback door lands them in the ledger; this watch prices them.
+    if (d.sends7d >= THRESHOLDS.bounceFloorSends) {
+      const rate = d.hardBounces7d / d.sends7d;
+      const crit = rate >= THRESHOLDS.bounceRateCrit;
+      if (crit || rate >= THRESHOLDS.bounceRateWarn) {
+        out.push({
+          key: alertKey("domain_warmup", d.domain, nowMs),
+          watchId: "domain_warmup",
+          watch: "Domain warmup",
+          severity: crit ? "crit" : "warn",
+          subjectKind: "dispatch",
+          subjectId: d.domain,
+          subjectLabel: d.domain,
+          title: crit
+            ? `${d.domain} hard-bounced ${Math.round(rate * 100)}% this week — reputation is burning, pause the domain`
+            : `${d.domain} hard-bounced ${Math.round(rate * 100)}% this week — above the 5% comfort line`,
+          action: crit
+            ? "pause the domain (status=paused), audit the list source for dead addresses, resume only after two clean days"
+            : "check list freshness — bounces this early usually mean stale addresses, not content",
+          evidence: `${d.hardBounces7d} hard bounces / ${d.sends7d} sends in 7d = ${Math.round(rate * 100)}% · crit ≥ ${THRESHOLDS.bounceRateCrit * 100}% · warn ≥ ${THRESHOLDS.bounceRateWarn * 100}%`,
+          etaMs: null,
+          firedAtMs: nowMs,
+        });
+      }
+    }
   }
   return out;
 }

@@ -1,0 +1,169 @@
+# Vertebra — domain runbook: what is waiting, what to do on buy day (2026-10-30)
+# You have not bought the sending domains yet. Everything that does not need
+# them is now BUILT AND PROVEN. This file is the complete list of what to do
+# the day you buy — a wiring job, not a research project.
+
+===========================================================================
+WHY THE DOMAINS COME LAST — AND WHY THAT IS THE RIGHT ORDER
+===========================================================================
+
+A cold-email sending domain is a consumable. Mailbox providers judge every
+sender by its volume curve and its bounce rate; a fresh domain pushed hard
+in week one looks exactly like a spam farm, because operationally it is
+one. So the enclave now treats sending domains the way it treats live
+egress generally: as an armed, ledgered, discipline-enforced capability —
+and the discipline exists BEFORE the domains do.
+
+Register nothing, buy nothing, until you are ready to walk the ramp the
+day the DNS goes live. A domain that sits registered but unwarmed costs
+nothing; a domain that warms and then stalls twice costs a week.
+
+===========================================================================
+WHAT IS ALREADY BUILT (NO DOMAINS REQUIRED — DONE, TESTED, PROVEN)
+===========================================================================
+
+1. SENDING-DOMAIN LEDGER (SendingDomain table + /api/ops/domains)
+   Register each domain the day you buy it. One row per domain carries:
+   role (sending | transactional), dnsStatus (pending → dns_added →
+   verified), status (spare → warming → ready | paused | burned), and the
+   warmup clock (warmupStartedAt — stamped the first time you flip to
+   warming; pausing and resuming never resets it).
+
+2. THE EGRESS GATE (mailer interlock 3)
+   Live egress refuses, with named reasons:
+     unregistered_sending_domain  the ledger is the allowlist
+     domain_dns_unverified        no DNS, no send — the provider 401s anyway
+     domain_warmup_not_started    registered but still spare
+     domain_paused / domain_burned operator hold / retired
+     warmup_cap_reached N/M       the ramp is the reputation
+   Fail-closed: if the gate cannot read the ledger, it refuses.
+   The staged sandbox (no RESEND key) is untouched — proof run:
+   8/8 verdicts correct (scripts/domain-gate-proof.ts).
+
+3. THE WARMUP SCHEDULE (lib/vertebra/warmup.ts — pure, derived, never stored)
+     day  1– 3    5/day      introduce the domain to the filters
+     day  4– 6   10/day      first ramp step
+     day  7–10   20/day      bounce rate must be ~zero here
+     day 11–14   30/day      full-pattern ramp
+     day 15+     40/day      plateau per domain — volume comes from owning
+                             several warmed domains, not pushing one
+
+4. THE WATCH (domain_warmup on the Ops deck)
+   Fires with its math on:
+     · dispatch rows referencing an unregistered domain
+     · sends through unverified DNS (day-1 mistake, caught same day)
+     · warmup cap reached with backlog queued behind it
+     · hard-bounce rate 7d ≥ 5% warn / ≥ 10% crit (floor: ≥10 sends)
+   The crit case names the action: pause the domain, audit the list
+   source, resume only after two clean days.
+
+5. THE BOARD (Ops tab → "Sending domains — egress ledger")
+   Register, flip DNS status, start/pause/resume warmup, read the live
+   math the gate enforces. Nothing on the board is a parallel truth.
+
+6. THE THREE MAIL DOORS (built earlier this week, domain-independent)
+   /api/mail/inbound               canonical HMAC relay door
+   /api/providers/resend/inbound   Resend email.received (Svix)
+   /api/providers/resend/events    sent/delivered/opened/bounced/complained
+   They sit idle until step 5 below points Resend at them.
+
+===========================================================================
+BUY-DAY CHECKLIST — IN ORDER, ROUGHLY ONE HOUR OF WORK
+===========================================================================
+
+STEP 0 — WHAT TO BUY (the only decision that needs thought)
+  · Buy 1–2 SENDING domains that are NOT your main company domain.
+    Never send cold outreach from syntropic-os.com — a spam complaint
+    against the outreach domain poisons every transactional email the
+    desk sends. The main domain goes in the ledger once, role=
+    "transactional", and never carries Channel A volume.
+  · Pick plausible lookalikes of the main brand (the console mailer
+    already renders sender names cleanly): short, .com, no hyphens or
+    digits if you can. Age of the domain matters less than the volume
+    curve — a new .com warmed honestly beats an old domain pushed hard.
+  · Any registrar; turn WHOIS privacy ON; register 1–2 years (providers
+    read short registrations as throwaway).
+  · Budget note: 2 domains × ~$10/yr is the entire infra cost of this
+    step. Everything else is time.
+
+STEP 1 — REGISTER THEM IN THE LEDGER (1 minute each)
+  Console → Ops → Sending domains → Register, or:
+    curl -X POST http://localhost:3000/api/ops/domains \
+      -H "Content-Type: application/json" \
+      -d '{"domain":"send.yourbrand2.com","role":"sending"}'
+
+STEP 2 — ADD EACH DOMAIN IN RESEND (dashboard → Domains → Add)
+  Resend issues the exact DNS values. Do not hand-write them from this
+  file — copy from the dashboard. You will add roughly:
+    SPF     TXT  @                v=spf1 include:resend.dev ~all (or amazonses)
+    DKIM    TXT/CNAME ×2–3       the resend-issued selector records
+    DMARC   TXT  _dmarc           v=DMARC1; p=none; rua=mailto:...  ← start at none
+    MX      (receiving domain)   Resend's inbound MX for the reply path
+  Flip the ledger row: dns → dns_added.
+
+STEP 3 — WAIT FOR VERIFY, THEN FLIP (minutes to a few hours)
+  Resend shows "Verified" when the records propagate. Flip the ledger
+  row: dns → verified. The gate now admits the domain — as spare.
+
+STEP 4 — START THE WARMUP (the day the DNS verifies, not before)
+  Board → start warmup (status → warming; the clock stamps itself).
+  Warmup content matters: send to addresses you control or warm inboxes
+  first; reply to yourself; mark yourself as not-spam from a test
+  account. Volume follows the schedule automatically — the tick refuses
+  more than the cap, so you cannot over-send even by accident.
+
+STEP 5 — POINT THE WEBHOOKS (needs a public URL for the console)
+  Resend dashboard → Webhooks → Add webhook:
+    endpoint  https://<public-console-host>/api/providers/resend/events
+    events    email.sent, email.delivered, email.opened,
+              email.bounced, email.complained
+  Create a second webhook (or same endpoint, second entry):
+    endpoint  https://<public-console-host>/api/providers/resend/inbound
+    events    email.received
+  Signing: set the endpoint's signing secret to the value already in
+  .env (RESEND_WEBHOOK_SECRET) — Svix lets you supply your own secret;
+  that keeps the enclave's .env the single source of truth. If you let
+  Resend generate one instead, paste it into .env and never into code.
+
+STEP 6 — THE INBOUND ROUTE (so replies have somewhere to land)
+  Resend dashboard → Receiving → create route for the domain → deliver
+  to the /api/providers/resend/inbound webhook. Requires the domain
+  added in step 2 and the MX record from step 2 live.
+
+STEP 7 — FIRST LIVE SEND, THEN LEAVE IT ALONE
+  Queue one Channel A dispatch (or let the tick claim one). It should
+  pass the gate and leave the building. Watch the Ops deck: the
+  resend_events pulses and the domain_warmup watch are the honest
+  record of what happened next. Do not touch the ramp. Day 8+ you can
+  point real prospect volume at it.
+
+REALISTIC TIMELINE FROM BUY CLICK TO FULL VOLUME
+  day 0    buy, ledger, Resend domain, DNS records        (~1 hour of work)
+  day 0–2  DNS propagation + Resend verify                (waiting)
+  day 1    warmup starts (5/day) — counted from verified day
+  day 8    20/day — first meaningful prospect volume
+  day 15   40/day/domain plateau; add the second domain's
+           ramp in parallel for 80/day combined
+  Speeding this up is the one mistake this whole layer exists to make
+  impossible.
+
+===========================================================================
+WHAT STAYS BLOCKED UNTIL BUY DAY (AND WHAT DOES NOT)
+===========================================================================
+
+BLOCKED ON DOMAINS (the list above — nothing else):
+  · any live Channel A send (the gate refuses unledgered domains)
+  · Resend webhook pointing (needs a live verified domain for events
+    to exist; the doors themselves are proven with synthetic payloads)
+  · real inbound replies (no MX, no replies)
+
+NOT BLOCKED — buildable any time, no domains needed:
+  · Tier 2 fuel: contact resolver (needs an Apollo/Hunter key, not a
+    domain), pain-signal harvester, calendar connector (needs OAuth)
+  · Tier 3 reach: OutboxEvent signed publisher, real pager (Slack/
+    Twilio tokens), CRM mirror, nightly ledger snapshot
+  · rail minimize/maximize icon (still parked, needs your go)
+
+When you buy: do steps 1–7 in order, then tell me and I will run the
+wiring verification (DNS dig checks, webhook handshake test, one gated
+live send) end to end.

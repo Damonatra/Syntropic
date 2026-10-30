@@ -5,9 +5,18 @@
  * send is staged (returned with reason "no_provider") so callers can queue
  * or log it without pretending an email left the building. Every CASL-scope
  * send carries the identification footer + RFC 8058 one-click headers.
+ *
+ * Third interlock (with the unsubscribe secret and the egress arm): the
+ * sending-domain ledger. Live egress resolves the effective from-domain and
+ * asks the warmup gate whether this domain may send today — unregistered,
+ * unverified-DNS, paused, burned, or over-cap domains all refuse with a
+ * named reason. A fresh domain blasted to volume looks like a spam farm to
+ * every mailbox provider; the ledger makes the ramp structural instead of
+ * a matter of memory. Staged mode (no provider) is untouched.
  */
 import { db } from "@/lib/db";
 import { buildCaslFooter, buildEmailHeaders, unsubscribeSecretStatus } from "@/lib/vertebra/casl";
+import { resolveEgressVerdict, startOfUtcDay } from "@/lib/vertebra/warmup";
 
 export interface SendEmailInput {
   to: string;
@@ -69,6 +78,42 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
         reason: "enclave_egress_disarmed: set ENCLAVE_EGRESS_ARMED=1 before live egress — no real mail from a disarmed enclave",
         footerApplied: null,
       };
+    }
+    // Interlock 3 — the sending-domain ledger. Resolve the exact domain this
+    // send would use, then ask the warmup gate. Counted volume is the
+    // domain's dispatch rows that landed today (sent/delivered/opened) —
+    // the same rows the ops board and the warmup watch read. Raw SQL on
+    // purpose (schema pushes never require a restart) and fail-closed on
+    // purpose: a ledger the gate cannot read refuses, it never waves through.
+    const fromDomain = input.fromDomain ?? process.env.VERTEBRA_SEND_DOMAIN ?? "syntropic-os.com";
+    type LedgerRow = { domain: string; role: string; dnsStatus: string; status: string; warmupStartedAt: Date | string | null };
+    const [ledgerRows, countRows] = await Promise.all([
+      db
+        .$queryRawUnsafe<LedgerRow[]>(`SELECT domain, role, dnsStatus, status, warmupStartedAt FROM SendingDomain WHERE domain = ? LIMIT 1`, fromDomain)
+        .catch(() => null as LedgerRow[] | null),
+      db
+        .$queryRawUnsafe<{ c: number }[]>(
+          `SELECT COUNT(*) as c FROM Dispatch WHERE fromDomain = ? AND status IN ('sent','delivered','opened') AND updatedAt >= ?`,
+          fromDomain,
+          startOfUtcDay(new Date()),
+        )
+        .catch(() => null as { c: number }[] | null),
+    ]);
+    if (!ledgerRows || !countRows) {
+      return { ok: false, status: "failed", reason: "domain_ledger_unavailable: the egress gate could not read the SendingDomain ledger — fail-closed, retry the tick", footerApplied: null };
+    }
+    const ledgerRow = ledgerRows[0]
+      ? {
+          domain: ledgerRows[0].domain,
+          role: ledgerRows[0].role,
+          dnsStatus: ledgerRows[0].dnsStatus,
+          status: ledgerRows[0].status,
+          warmupStartedAt: ledgerRows[0].warmupStartedAt ? new Date(ledgerRows[0].warmupStartedAt) : null,
+        }
+      : null;
+    const verdict = resolveEgressVerdict(ledgerRow, countRows[0]?.c ?? 0, new Date());
+    if (!verdict.ok) {
+      return { ok: false, status: "failed", reason: verdict.reason, footerApplied: null };
     }
   }
 

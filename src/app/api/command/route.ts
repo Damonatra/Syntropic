@@ -42,6 +42,7 @@ import {
   correlateDeck,
   deriveBaselineSentinels,
   deriveCoverageAlerts,
+  deriveDomainWarmupAlerts,
   deriveEngineAlerts,
   deriveEngineView,
   deriveFlapAlerts,
@@ -52,7 +53,9 @@ import {
   deriveVitals,
   escalateDeck,
   humanDuration,
+  type DomainWarmupRow,
 } from "@/lib/vertebra/watches";
+import { capForDay, startOfUtcDay, warmupDay } from "@/lib/vertebra/warmup";
 import { deliverAlert, pagerConfigured } from "@/lib/vertebra/pager";
 
 function parseErp(raw: string | null): ErpShape | null {
@@ -519,6 +522,88 @@ export async function GET(request: Request) {
     const channelBCount = await db.highTouchQueueItem.count();
     const verifiedEmails = leads.filter((l) => l.bestEmail).length;
 
+    // ---- domain warmup rows — the egress ledger meets the send ledger ------
+    // Raw SQL + catch fallbacks, same doctrine as the ack reads below: the
+    // process must survive a schema push without a restart. On any failure
+    // the watch simply has no domain rows this sweep (the mailer gate still
+    // enforces its own fail-closed verdict at send time).
+    const dayStart = startOfUtcDay(new Date(now));
+    const weekAgoMs = now - 7 * 86_400_000;
+    const [domainLedger, sentTodayRows, sends7dRows, bounced7dRows, backlogRows] = await Promise.all([
+      db
+        .$queryRawUnsafe<{ domain: string; role: string; dnsStatus: string; status: string; warmupStartedAt: Date | null }[]>(
+          `SELECT domain, role, dnsStatus, status, warmupStartedAt FROM SendingDomain`,
+        )
+        .catch(() => [] as { domain: string; role: string; dnsStatus: string; status: string; warmupStartedAt: Date | null }[]),
+      db
+        .$queryRawUnsafe<{ fromDomain: string; c: number }[]>(
+          `SELECT fromDomain, COUNT(*) as c FROM Dispatch WHERE fromDomain IS NOT NULL
+           AND status IN ('sent','delivered','opened') AND updatedAt >= ? GROUP BY fromDomain`,
+          new Date(dayStart),
+        )
+        .catch(() => [] as { fromDomain: string; c: number }[]),
+      db
+        .$queryRawUnsafe<{ fromDomain: string; c: number }[]>(
+          `SELECT fromDomain, COUNT(*) as c FROM Dispatch WHERE fromDomain IS NOT NULL
+           AND updatedAt >= ? AND status IN ('sent','delivered','opened','failed') GROUP BY fromDomain`,
+          new Date(weekAgoMs),
+        )
+        .catch(() => [] as { fromDomain: string; c: number }[]),
+      db
+        .$queryRawUnsafe<{ fromDomain: string; c: number }[]>(
+          `SELECT fromDomain, COUNT(*) as c FROM Dispatch WHERE fromDomain IS NOT NULL
+           AND updatedAt >= ? AND status = 'failed' AND (error LIKE '%bounce%' OR error LIKE '%Bounce%') GROUP BY fromDomain`,
+          new Date(weekAgoMs),
+        )
+        .catch(() => [] as { fromDomain: string; c: number }[]),
+      db
+        .$queryRawUnsafe<{ fromDomain: string; c: number }[]>(
+          `SELECT fromDomain, COUNT(*) as c FROM Dispatch WHERE fromDomain IS NOT NULL AND status = 'queued' GROUP BY fromDomain`,
+        )
+        .catch(() => [] as { fromDomain: string; c: number }[]),
+    ]);
+    const sentTodayMap = new Map(sentTodayRows.map((r) => [r.fromDomain, r.c]));
+    const sends7dMap = new Map(sends7dRows.map((r) => [r.fromDomain, r.c]));
+    const bounced7dMap = new Map(bounced7dRows.map((r) => [r.fromDomain, r.c]));
+    const backlogMap = new Map(backlogRows.map((r) => [r.fromDomain, r.c]));
+    const ledgerSet = new Set(domainLedger.map((r) => r.domain));
+    const domainRows: DomainWarmupRow[] = [
+      ...domainLedger.map((r) => {
+        const day = warmupDay(r.warmupStartedAt ? new Date(r.warmupStartedAt) : null, new Date(now));
+        const cap = r.role === "sending" ? capForDay(day) : null;
+        return {
+          domain: r.domain,
+          role: r.role,
+          dnsStatus: r.dnsStatus,
+          status: r.status,
+          warmupDay: day,
+          cap,
+          sentToday: sentTodayMap.get(r.domain) ?? 0,
+          sends7d: sends7dMap.get(r.domain) ?? 0,
+          hardBounces7d: bounced7dMap.get(r.domain) ?? 0,
+          queuedBacklog: backlogMap.get(r.domain) ?? 0,
+          registered: true,
+        };
+      }),
+      // Dispatch domains nobody registered — the gate refuses them at send
+      // time; the watch names them before the tick burns a window.
+      ...[...new Set([...sends7dMap.keys(), ...backlogMap.keys()])]
+        .filter((d) => !ledgerSet.has(d))
+        .map((d) => ({
+          domain: d,
+          role: "sending",
+          dnsStatus: "unknown",
+          status: "unregistered",
+          warmupDay: null,
+          cap: null,
+          sentToday: sentTodayMap.get(d) ?? 0,
+          sends7d: sends7dMap.get(d) ?? 0,
+          hardBounces7d: bounced7dMap.get(d) ?? 0,
+          queuedBacklog: backlogMap.get(d) ?? 0,
+          registered: false,
+        })),
+    ];
+
     const [ackRows, pulseRows, baselineHistory] = await Promise.all([
       // Raw SQL on purpose — same doctrine as the baseline ledger below: the
       // running process must survive a schema push without a restart, so new
@@ -602,6 +687,7 @@ export async function GET(request: Request) {
         now,
       ),
       ...deriveEngineAlerts(pulseRowsShaped, now),
+      ...deriveDomainWarmupAlerts(domainRows, now),
       ...deriveQueueForecastAlerts(engagements, now),
       ...deriveCoverageAlerts(
         {
