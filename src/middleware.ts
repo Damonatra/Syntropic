@@ -4,6 +4,11 @@
  * shared-password era is retired. Unauthenticated traffic is redirected to
  * /gate; the unsubscribe endpoint stays public regardless (CASL requires the
  * one-click link to always work).
+ *
+ * The machine doors (ops/heartbeat, mail/inbound, providers/resend/*)
+ * authenticate themselves — each route's own timing-safe signature check IS
+ * the auth (relays and providers can't hold browser sessions). An unsigned
+ * request there still gets 401, from the signature check, not the gate.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { checkSessionCookie, SESSION_COOKIE } from "@/lib/vertebra/session";
@@ -17,7 +22,17 @@ export async function middleware(request: NextRequest) {
   // HMAC check against OPS_HEARTBEAT_SECRET IS the auth (engines can't hold
   // browser sessions). The gate must not stand in front of the engine door;
   // an unsigned request there still gets 401, from the signature check.
-  const alwaysPublic = ["/gate", "/api/gate", "/api/unsubscribe", "/api/health", "/api/ops/heartbeat"];
+  const alwaysPublic = [
+    "/gate",
+    "/api/gate",
+    "/api/unsubscribe",
+    "/api/health",
+    "/api/ops/heartbeat",
+    // Machine mail doors — self-authenticating (HMAC / Svix), never sessions.
+    "/api/mail/inbound",
+    "/api/providers/resend/inbound",
+    "/api/providers/resend/events",
+  ];
   if (alwaysPublic.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     return NextResponse.next();
   }
