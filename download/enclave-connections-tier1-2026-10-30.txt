@@ -1,0 +1,92 @@
+# Vertebra — Tier-1 connection doors handoff (2026-10-30)
+# The loop-closing connections: mail IN + delivery feedback IN.
+# Secrets already live in .env (gitignored). Rotating them never touches code.
+
+INBOUND_MAIL_SECRET=af90babc76147cf4045ac92ec445e1de810ab55b48020bda
+RESEND_WEBHOOK_SECRET=2330eb9952830514fd270bea19db64edf3b2017bd39793b2
+
+===========================================================================
+WHAT WAS BUILT — three signed doors, one shared brain
+===========================================================================
+
+1) POST /api/mail/inbound        THE CANONICAL RELAY DOOR
+   Any transport (IMAP poller, Cloudflare Email Worker, mail parser)
+   becomes a ~20-line adapter that POSTs this envelope:
+
+     x-vertebra-signature: hex HMAC-SHA256(rawBody, INBOUND_MAIL_SECRET)
+
+     { "from": "Jane Roe <jane@acme.com>",     // required
+       "subject": "...",                        // optional
+       "text": "plain-text body",               // required
+       "messageId": "<rfc-id@host>",            // optional = retry dedupe
+       "receivedAt": "2026-10-30T12:00:00Z" }   // optional
+
+   One-line curl proof (reads the secret from .env):
+     SECRET=$(grep '^INBOUND_MAIL_SECRET=' .env | cut -d= -f2)
+     BODY='{"from":"jane@acme.com","text":"we should talk"}'
+     SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SECRET" -hex | sed 's/.* //')
+     curl -s -X POST http://localhost:3000/api/mail/inbound \
+       -H "Content-Type: application/json" -H "x-vertebra-signature: $SIG" -d "$BODY"
+
+   Routing: exact bestEmail match first, then the sender's own domain
+   (a live dispatch breaks ties). Matched mail classifies intent and runs
+   tiered autonomy (tier 1 auto-resolves, tier 2 parks a draft for human
+   review). Unmatched mail is recorded, never discarded, never automated.
+
+2) POST /api/providers/resend/inbound   RESEND RECEIVING (email.received)
+   Point Resend's Receiving webhook here (Dashboard → Webhooks → Add
+   Webhook → events: email.received). Svix-signed with RESEND_WEBHOOK_SECRET.
+   Body is fetched from Resend's Received-emails API with the existing
+   RESEND_API_KEY, then driven through the same brain as door 1.
+   Requires: RESEND_API_KEY in .env (same key the egress mailer uses).
+
+3) POST /api/providers/resend/events   DELIVERY FEEDBACK (the reputation loop)
+   Point Resend's webhook here too (same webhook, more events:
+   email.sent, email.delivered, email.opened, email.bounced,
+   email.complained). Svix-signed with RESEND_WEBHOOK_SECRET.
+
+     permanent bounce  -> dispatch failed + address suppressed + active
+                          Channel A sequences stopped (same ledger an
+                          unsubscribe writes to — reason "bounce")
+     spam complaint    -> dispatch stopped + suppressed (reason "complaint")
+     delivered/opened  -> dispatch status escalation
+     unknown events    -> acknowledged and ignored (must 200)
+
+   Every accepted event pulses the watchtower (resend_events watch) —
+   delivery health is now visible on the ops deck. Retries dedupe on the
+   svix-id via the EnginePulse ledger; a retried webhook never double-applies.
+
+===========================================================================
+MIDDLEWARE / SECURITY
+===========================================================================
+- All three doors self-authenticate (HMAC / Svix, timing-safe, 5-minute
+  replay tolerance on Svix). The session gate deliberately does NOT stand
+  in front of them — same doctrine as /api/ops/heartbeat.
+- No secret is read from the request; both secrets live only in .env and
+  this handoff. Rotate by editing .env — code never changes.
+
+===========================================================================
+RESEND DASHBOARD WIRING (when the real account is connected)
+===========================================================================
+1. Egress: RESEND_API_KEY in .env + ENCLAVE_EGRESS_ARMED=1 + custom
+   SYNTROPIC_UNSUBSCRIBE_SECRET (already present) — the mailer's existing
+   interlocks.
+2. Webhooks → Add webhook → URL: https://<your-enclave-host>/api/providers/resend/events
+   + a second one on /api/providers/resend/inbound for email.received.
+   Copy the signing secret into RESEND_WEBHOOK_SECRET (whsec_...).
+3. Inbound: add the receiving domain (Custom Receiving) — MX record
+   inbound.<domain> → Resend's MX; mail to that address arrives as
+   email.received at door 2.
+4. DNS on every SENDING domain: SPF (include resend), DKIM (Resend-
+   generated), DMARC p=quarantine — the warmup guardrail is Tier 1 #3.
+
+===========================================================================
+VERIFIED (this build)
+===========================================================================
+- 23 unit tests in tests/webhook-doors.test.ts (Svix scheme incl. key
+  rotation + replay, HMAC door, From parsing, event→ledger mapping)
+- Live e2e: scripts/webhook-door-proof.ts — 31/31 checks against the
+  running server (signed/unsigned/tampered, matching, tiered autonomy,
+  dedupe on retry, all five event types, suppression ledger, watchtower
+  pulses), proof rows swept from the ledger afterwards
+- Baseline held: tsc 5 (pre-existing), ESLint 0 errors, 152/152 tests
