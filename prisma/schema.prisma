@@ -465,6 +465,63 @@ model OpsWatchFire {
   @@index([lastFireAt])
 }
 
+/// Integration registry — every external API the enclave can touch, one row
+/// each, the star-not-mesh doctrine made physical: dumb spokes, one brain,
+/// one ledger. Any capability that needs a provider consults this table
+/// first and fails closed with a named reason — an unregistered provider, a
+/// key not on disk, a staged (never-armed) row, or an open circuit all
+/// refuse before a single byte leaves for the provider. Arming is always an
+/// operator act: a key appearing in the environment never auto-arms
+/// anything, exactly like ENCLAVE_EGRESS_ARMED. The key itself never lives
+/// here — only which env var carries it (name, never value) and the honest
+/// fact of whether that env var is currently set. consecutiveFailures ≥ 5
+/// opens the circuit; a success or an operator probe closes it again.
+model IntegrationRecord {
+  id                  String    @id @default(cuid())
+  provider            String    @unique // apollo | hunter | resend-egress | mail-relay | resend-inbound | resend-events | slack-pager | google-calendar | ...
+  kind                String // egress | inbound | enrich | calendar | pager
+  authType            String    @default("api_key") // api_key | hmac | svix | oauth | none
+  status              String    @default("staged") // staged | armed | degraded | retired
+  circuitState        String    @default("closed") // closed | open
+  consecutiveFailures Int       @default(0)
+  keyEnvVar           String? // env var NAME that carries the credential — the value never enters the ledger
+  quotaRemaining      Int? // credits left, where the provider actually reports them (null = unknown)
+  quotaUpdatedAt      DateTime?
+  lastSuccessAt       DateTime?
+  lastErrorAt         DateTime?
+  lastError           String?
+  callsTotal          Int       @default(0)
+  callsFailed         Int       @default(0)
+  notes               String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([kind, status])
+}
+
+/// Contact-resolution ledger — one row per resolver attempt, resolved or
+/// refused. The enrich spoke's honesty record: who asked, what was searched,
+/// which provider answered, what it cost in credits, and what came back.
+/// Refusals are rows too — a resolver that quietly pretends to work is a
+/// resolver the pipeline trusts and the pipeline suffers for.
+model ContactResolution {
+  id           String   @id @default(cuid())
+  prospectId   String?
+  provider     String // apollo | hunter
+  queryJson    String // {domain, company, name, role} — exactly what was asked
+  outcome      String // resolved | no_match | refused
+  refuseReason String?
+  email        String?
+  confidence   String? // high | medium | low — the provider's own verdict
+  creditsUsed  Int      @default(0)
+  durationMs   Int      @default(0)
+  actor        String   @default("operator")
+  createdAt    DateTime @default(now())
+
+  @@index([prospectId, createdAt])
+  @@index([provider, outcome])
+}
+
 /// Heartbeat pulses from external engines — the engine contract's ingress
 /// ledger. The document turnaround engine (or any watch reporter) POSTs a
 /// signed pulse per watch update to /api/ops/heartbeat; the watch layer
