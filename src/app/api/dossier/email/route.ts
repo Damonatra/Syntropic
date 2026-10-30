@@ -32,6 +32,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { operatorFromRequest } from "@/lib/vertebra/session";
 import { guardWrite } from "@/lib/vertebra/guard";
 import { isSuppressed, mailProvider, sendEmail } from "@/lib/vertebra/mailer";
 import { buildBrief, verifyDraft, CLOSE_CTA } from "@/lib/vertebra/evidence";
@@ -196,7 +197,12 @@ export async function POST(request: Request) {
     });
 
     await db.operatorAction.create({
-      data: { prospectId: prospect.id, action: "emailed", note: `${result.status} · ${subject}` },
+      data: {
+        prospectId: prospect.id,
+        action: "emailed",
+        note: `${result.status} · ${subject}`,
+        actor: (await operatorFromRequest(request)) ?? "operator",
+      },
     });
 
     return NextResponse.json({

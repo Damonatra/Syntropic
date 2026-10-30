@@ -94,10 +94,19 @@ async function main() {
   // does). The command route serves a 5s in-memory snapshot cache kept warm
   // by the open console — wait it out so this fetch forces a fresh build.
   await new Promise((r) => setTimeout(r, 5_500));
-  const pw = "7BP2iox9DhM2cF9LiXwsma";
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode("vertebra-enclave-v1"));
-  const cookie = Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  const user = process.env.OPERATOR_USER ?? "josias";
+  const pass = process.env.OPERATOR_PASSWORD;
+  if (!pass) {
+    console.error("set OPERATOR_PASSWORD — the shared enclave password is retired");
+    process.exit(1);
+  }
+  const login = await fetch("http://localhost:3000/api/gate", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: user, password: pass }),
+  });
+  check("gate login", login.ok, `status ${login.status}`);
+  const cookie = /enclave_session=([^;]*)/.exec(login.headers.get("set-cookie") ?? "")?.[1] ?? "";
   const res = await fetch("http://localhost:3000/api/command", { headers: { cookie: `enclave_session=${cookie}` } });
   check("command snapshot reads", res.ok, `status ${res.status}`);
   const snap = (await res.json()) as {

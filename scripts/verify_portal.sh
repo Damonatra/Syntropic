@@ -8,7 +8,8 @@
 set -u
 BASE="http://localhost:81"
 JAR="$(mktemp)"
-PW="${ENCLAVE_PASSWORD:-7BP2iox9DhM2cF9LiXwsma}"
+OP_USER="${OPERATOR_USER:-josias}"
+OP_PASS="${OPERATOR_PASSWORD:-}"
 SECRET="${PORTAL_INGEST_SECRET:-vtx_portal_7f4c2a91d8e64b35a0c9f1e2d3b4a5c6}"
 PASS=0; FAIL=0
 ok()   { echo "  PASS: $1"; PASS=$((PASS+1)); }
@@ -18,10 +19,11 @@ sig()  { node -e "const c=require('crypto');process.stdout.write(c.createHmac('s
 echo "== 0. Cleanup — remove previous verify rows (repeatable runs)"
 bun -e "import {PrismaClient} from '@prisma/client'; const db=new PrismaClient(); const e=await db.engagement.deleteMany({where:{ref:{startsWith:'verify_portal_'}}}); const d=await db.auditDocument.deleteMany({where:{fileName:{startsWith:'verify_forensics_'}}}); console.log('  removed', e.count, 'prior verify engagements ·', d.count, 'verify documents'); process.exit(0)" >/dev/null 2>&1 || true
 
-echo "== 1. Enclave auth — POST /api/gate (expect 200 ok)"
+echo "== 1. Enclave auth — POST /api/gate as $OP_USER (expect 200 ok)"
+if [ -z "$OP_PASS" ]; then echo "  FAIL: set OPERATOR_PASSWORD (and optionally OPERATOR_USER) — the shared enclave password is retired"; exit 1; fi
 code=$(curl -s -o /tmp/gate.json -w "%{http_code}" -c "$JAR" -X POST "$BASE/api/gate" \
-  -H 'content-type: application/json' -d "{\"password\":\"$PW\"}")
-if [ "$code" = "200" ] && grep -q '"ok":true' /tmp/gate.json; then ok "session cookie issued"; else bad "gate returned $code"; fi
+  -H 'content-type: application/json' -d "{\"username\":\"$OP_USER\",\"password\":\"$OP_PASS\"}")
+if [ "$code" = "200" ] && grep -q '"ok":true' /tmp/gate.json; then ok "session cookie issued for $(echo "$OP_USER")"; else bad "gate returned $code"; fi
 
 echo "== 2. Pure logic — matcher, domain normalizer, stage machine, next-action engine"
 bun -e "

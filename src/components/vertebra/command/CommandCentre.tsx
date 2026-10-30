@@ -147,6 +147,21 @@ export function CommandCentre() {
   }, []);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [connected, setConnected] = useState(false);
+  // Operator identity — the signed session names whoever is at the stick.
+  const [operator, setOperator] = useState<{ username: string; displayName: string } | null>(null);
+  useEffect(() => {
+    fetch("/api/gate")
+      .then((r) => r.json())
+      .then((d: { operator?: { username: string; displayName: string } | null }) => setOperator(d.operator ?? null))
+      .catch(() => {});
+  }, []);
+  const signOut = () => {
+    void fetch("/api/gate", { method: "DELETE" })
+      .catch(() => {})
+      .finally(() => {
+        window.location.href = "/gate";
+      });
+  };
   const [clock, setClock] = useState("");
   const [fresh, setFresh] = useState<Map<string, number>>(new Map());
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -690,6 +705,23 @@ export function CommandCentre() {
           </div>
           <div className="flex shrink-0 items-center gap-6">
             <HudMeta node="AST-00" hash="0a11" className="hidden xl:inline-flex" />
+            {operator && (
+              <div className="hidden items-center gap-2 md:flex">
+                <span
+                  title={`signed in as ${operator.username}`}
+                  className="flex h-8 items-center rounded-full border border-white/[0.12] bg-[#131513] px-3 font-mono text-[10.5px] uppercase tracking-[0.12em] text-[#8E9194]"
+                >
+                  {operator.displayName}
+                </span>
+                <button
+                  onClick={signOut}
+                  title="Sign out"
+                  className="tactile-btn h-8 rounded-full border border-white/[0.12] bg-[#131513] px-3 font-mono text-[9.5px] uppercase tracking-[0.12em] text-[#8E9194]"
+                >
+                  Exit
+                </button>
+              </div>
+            )}
             <button
               onClick={() => setPaletteOpen(true)}
               className="tactile-btn h-8 items-center gap-2 rounded-full border border-white/[0.12] bg-[#131513] px-3 font-mono text-[10.5px] uppercase tracking-[0.12em] text-[#8E9194] hover:text-[#F4F5F2] hover:border-white/25"

@@ -62,11 +62,11 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
         footerApplied: null,
       };
     }
-    if (!process.env.ENCLAVE_PASSWORD) {
+    if (process.env.ENCLAVE_EGRESS_ARMED !== "1") {
       return {
         ok: false,
         status: "failed",
-        reason: "enclave_gate_required: set ENCLAVE_PASSWORD before live egress — no real mail from an unlocked enclave",
+        reason: "enclave_egress_disarmed: set ENCLAVE_EGRESS_ARMED=1 before live egress — no real mail from a disarmed enclave",
         footerApplied: null,
       };
     }

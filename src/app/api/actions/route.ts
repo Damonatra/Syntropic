@@ -6,6 +6,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { operatorFromRequest } from "@/lib/vertebra/session";
 import { guardWrite } from "@/lib/vertebra/guard";
 
 const ActionSchema = z.object({
@@ -32,7 +33,7 @@ export async function POST(request: Request) {
       action === "snoozed" ? `${note ? `${note} · ` : ""}snooze:${hours ?? 24}h` : (note ?? null);
 
     const created = await db.operatorAction.create({
-      data: { prospectId, action, note: resolvedNote },
+      data: { prospectId, action, note: resolvedNote, actor: (await operatorFromRequest(request)) ?? "operator" },
     });
 
     if (action === "snoozed") {

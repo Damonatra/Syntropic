@@ -25,11 +25,14 @@ curl -s -o /dev/null -w "%{http_code} -> %{redirect_url}\n" --max-time 5 http://
 log "== 2. api ungated (expect 401) =="
 curl -s -o /dev/null -w "%{http_code}\n" --max-time 5 http://localhost:3000/api/command >> "$OUT" 2>&1
 
-log "== 3. wrong password (expect 401) =="
-curl -s --max-time 5 -X POST http://localhost:3000/api/gate -H 'Content-Type: application/json' -d '{"password":"wrong"}' -w " [%{http_code}]\n" >> "$OUT" 2>&1
+log "== 3. wrong credentials (expect 401) =="
+curl -s --max-time 5 -X POST http://localhost:3000/api/gate -H 'Content-Type: application/json' -d '{"username":"josias","password":"wrong"}' -w " [%{http_code}]\n" >> "$OUT" 2>&1
 
-log "== 4. correct password (expect ok:true gated:true) =="
-curl -s -c /home/z/my-project/scripts/.gate_cookies.txt --max-time 5 -X POST http://localhost:3000/api/gate -H 'Content-Type: application/json' -d '{"password":"7BP2iox9DhM2cF9LiXwsma"}' -w " [%{http_code}]\n" >> "$OUT" 2>&1
+log "== 4. correct operator login (expect ok:true) =="
+OP_USER="${OPERATOR_USER:-josias}"
+OP_PASS="${OPERATOR_PASSWORD:-}"
+[ -z "$OP_PASS" ] && { echo "set OPERATOR_PASSWORD — the shared enclave password is retired" >> "$OUT"; exit 1; }
+curl -s -c /home/z/my-project/scripts/.gate_cookies.txt --max-time 5 -X POST http://localhost:3000/api/gate -H 'Content-Type: application/json' -d "{\"username\":\"$OP_USER\",\"password\":\"$OP_PASS\"}" -w " [%{http_code}]\n" >> "$OUT" 2>&1
 
 log "== 5. root with cookie (expect 200) =="
 curl -s -b /home/z/my-project/scripts/.gate_cookies.txt -o /dev/null -w "%{http_code}\n" --max-time 5 http://localhost:3000/ >> "$OUT" 2>&1

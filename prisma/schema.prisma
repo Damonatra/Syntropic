@@ -223,15 +223,33 @@ model InboundReply {
 }
 
 // Command centre — operator decision log (call / defer / snooze / triage moves).
+// actor carries the signed-in operator's username ("josias" | "damon") —
+// "operator" only when the gate is off (sandbox default) or for system-ish
+// writers on public routes (unsubscribe links fired by prospects).
 model OperatorAction {
   id         String   @id @default(cuid())
   prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
   prospectId String
   action     String // called | deferred | snoozed | booked | note | emailed
   note       String?
+  actor      String   @default("operator")
   createdAt  DateTime @default(now())
 
   @@index([prospectId])
+}
+
+/// Per-operator enclave accounts — the door is identity, not a shared
+/// password. Passwords are stored ONLY as scrypt hashes (node:crypto,
+/// salted, timing-safe compare); plaintext never touches the database or
+/// the repo. username is the lowercase handle used in trails and acks;
+/// displayName is how the name renders everywhere ("Josias", "Damon").
+model Operator {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  displayName  String
+  passwordHash String // scrypt$N$r$p$<salt b64>$<hash b64>
+  createdAt    DateTime  @default(now())
+  lastLoginAt  DateTime?
 }
 
 model AgentDraft {

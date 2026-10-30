@@ -13,6 +13,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { operatorFromRequest } from "@/lib/vertebra/session";
 import { AUTO_SEND_INTENTS, type ReplyIntent, money } from "@/lib/vertebra/command";
 import { auditLeakage } from "@/lib/vertebra/leakage";
 import { keywordClassify } from "@/lib/vertebra/reply-intent";
@@ -348,6 +349,7 @@ export async function PATCH(request: Request) {
             decision === "approved"
               ? `Draft approved and sent: "${updated.subject}" (${delivery.status})`
               : `Draft discarded: "${draft.subject}"`,
+          actor: (await operatorFromRequest(request)) ?? "operator",
         },
       });
     }

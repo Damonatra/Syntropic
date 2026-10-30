@@ -1,13 +1,15 @@
 /**
- * Enclave gate middleware — active only when ENCLAVE_PASSWORD is configured.
- * Unauthenticated traffic is redirected to /gate; the unsubscribe endpoint
- * stays public regardless (CASL requires the one-click link to always work).
+ * Enclave gate middleware — active when ENCLAVE_SESSION_SECRET is configured.
+ * Sessions are per-operator (signed identity cookie minted by /api/gate); the
+ * shared-password era is retired. Unauthenticated traffic is redirected to
+ * /gate; the unsubscribe endpoint stays public regardless (CASL requires the
+ * one-click link to always work).
  */
 import { NextRequest, NextResponse } from "next/server";
 import { checkSessionCookie, SESSION_COOKIE } from "@/lib/vertebra/session";
 
 export async function middleware(request: NextRequest) {
-  const passwordSet = Boolean(process.env.ENCLAVE_PASSWORD);
+  const passwordSet = Boolean(process.env.ENCLAVE_SESSION_SECRET);
   if (!passwordSet) return NextResponse.next();
 
   const { pathname } = request.nextUrl;

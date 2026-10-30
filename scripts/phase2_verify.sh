@@ -7,7 +7,9 @@ log() { echo "$1" >> "$OUT"; }
 step() { echo "" >> "$OUT"; echo "== $1 ==" >> "$OUT"; }
 
 cd /home/z/my-project
-PW="7BP2iox9DhM2cF9LiXwsma"
+OP_USER="${OPERATOR_USER:-josias}"
+OP_PASS="${OPERATOR_PASSWORD:-}"
+[ -z "$OP_PASS" ] && { echo "set OPERATOR_PASSWORD — the shared enclave password is retired" >> "$OUT"; exit 1; }
 GULF="cmvtcxblv0005m3jea8z7y7n7"
 
 # wait for server
@@ -21,7 +23,7 @@ log "server up (waited ~$((i*2))s)"
 step "1. gate chain"
 curl -s -o /dev/null -w "root ungated: %{http_code} -> %{redirect_url}\n" --max-time 5 http://localhost:3000/ >> "$OUT" 2>&1
 curl -s -o /dev/null -w "api ungated: %{http_code}\n" --max-time 5 http://localhost:3000/api/command >> "$OUT" 2>&1
-curl -s -c "$JAR" -X POST http://localhost:3000/api/gate -H 'Content-Type: application/json' -d "{\"password\":\"$PW\"}" -w "\nlogin: [%{http_code}]\n" --max-time 5 >> "$OUT" 2>&1
+curl -s -c "$JAR" -X POST http://localhost:3000/api/gate -H 'Content-Type: application/json' -d "{\"username\":\"$OP_USER\",\"password\":\"$OP_PASS\"}" -w "\nlogin: [%{http_code}]\n" --max-time 5 >> "$OUT" 2>&1
 curl -s -b "$JAR" -o /dev/null -w "root with cookie: %{http_code}\n" --max-time 5 http://localhost:3000/ >> "$OUT" 2>&1
 
 step "2. evidence ledger — GET (Gulf Coast seeded fixtures)"

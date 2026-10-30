@@ -1,19 +1,21 @@
 /**
- * Enclave session — optional password gate.
+ * Enclave session — per-operator identity.
  *
- * When ENCLAVE_PASSWORD is unset (sandbox default) the console is open and
- * this module is inert. When set, middleware requires the enclave_session
- * cookie whose value is an HMAC of a fixed domain string under that
- * password — possession of a valid cookie proves knowledge of the password.
+ * The door is identity, not a shared password: each operator signs in with
+ * their own credentials (scrypt-verified against the Operator table by the
+ * Node route handler) and the enclave mints a cookie that PROVES WHO they
+ * are, not merely that someone knows a secret.
+ *
+ * Cookie value: `<username>.<hex HMAC("vertebra-operator-v1:" + username,
+ * ENCLAVE_SESSION_SECRET)>` — possession of a valid cookie proves the
+ * secret signed that username, so trails and acks can attribute actions to
+ * "josias" or "damon" without a session store (stateless, Edge-safe).
  *
  * Implemented with Web Crypto (async) so the module bundles safely into the
  * Edge middleware runtime as well as Node route handlers.
  */
 export const SESSION_COOKIE = "enclave_session";
-const SESSION_DOMAIN = "vertebra-enclave-v1";
-
-/** Minimum accepted ENCLAVE_PASSWORD length — weaker locks are refused loudly. */
-export const ENCLAVE_MIN_PASSWORD_LENGTH = 12;
+const SESSION_DOMAIN = "vertebra-operator-v1";
 
 async function hmacHex(message: string, secret: string): Promise<string> {
   const enc = new TextEncoder();
@@ -32,33 +34,44 @@ function hexEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-export function enclavePassword(): string | null {
-  return process.env.ENCLAVE_PASSWORD || null;
+/** The gate is armed only when a session secret exists to sign identities with. */
+export function gateArmed(): boolean {
+  return Boolean(process.env.ENCLAVE_SESSION_SECRET);
 }
 
-/** The cookie value a correct password produces — null when the gate is off. */
-export async function expectedCookieValue(): Promise<string | null> {
-  const password = enclavePassword();
-  if (!password) return null;
-  return hmacHex(SESSION_DOMAIN, password);
+/** The cookie value that proves `username` signed in — null while the gate is off. */
+export async function sessionCookieFor(username: string): Promise<string | null> {
+  const secret = process.env.ENCLAVE_SESSION_SECRET;
+  if (!secret || !username) return null;
+  return `${username}.${await hmacHex(`${SESSION_DOMAIN}:${username}`, secret)}`;
 }
 
+/** Verify a cookie's signature and return the operator username it carries. */
+export async function operatorFromCookie(value: string | undefined): Promise<string | null> {
+  const secret = process.env.ENCLAVE_SESSION_SECRET;
+  if (!secret || !value) return null;
+  const dot = value.indexOf(".");
+  if (dot <= 0 || dot === value.length - 1) return null;
+  const username = value.slice(0, dot);
+  const sig = value.slice(dot + 1);
+  const expected = await hmacHex(`${SESSION_DOMAIN}:${username}`, secret);
+  return hexEqual(sig, expected) ? username : null;
+}
+
+/** Middleware check — true when the gate is off, else the cookie must verify. */
 export async function checkSessionCookie(value: string | undefined): Promise<boolean> {
-  const expected = await expectedCookieValue();
-  if (!expected) return true; // gate disabled
-  if (!value) return false;
-  return hexEqual(value, expected);
+  if (!gateArmed()) return true; // gate disabled
+  return (await operatorFromCookie(value)) !== null;
 }
 
-export async function verifyPassword(candidate: string): Promise<boolean> {
-  const password = enclavePassword();
-  if (!password || !candidate) return false;
-  return hexEqual(await hmacHex(candidate, password), await hmacHex(password, password));
-}
-
-/** Verify candidate AND produce the cookie value in one step. */
-export async function sessionCookieFor(candidate: string): Promise<string | null> {
-  const ok = await verifyPassword(candidate);
-  if (!ok) return null;
-  return expectedCookieValue();
+/** Server-side read of the signed-in operator from a Request's Cookie header. */
+export async function operatorFromRequest(request: Request): Promise<string | null> {
+  const header = request.headers.get("cookie") ?? "";
+  const m = header.match(/(?:^|;\s*)enclave_session=([^;]*)/);
+  if (!m || !m[1]) return null;
+  try {
+    return operatorFromCookie(decodeURIComponent(m[1]));
+  } catch {
+    return null;
+  }
 }

@@ -10,6 +10,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { operatorFromRequest } from "@/lib/vertebra/session";
 import { guardWrite } from "@/lib/vertebra/guard";
 import { invalidateSnapshot } from "@/lib/vertebra/snapshot-cache";
 
@@ -70,6 +71,7 @@ export async function POST(request: Request) {
         prospectId,
         action: "note",
         note: `Channel B export — ${item.prospect.name} handed to Josias queue (QLV ${item.qlvScore}, ${item.qlvBand})`,
+        actor: (await operatorFromRequest(request)) ?? "operator",
       },
     });
 

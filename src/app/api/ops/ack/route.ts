@@ -16,6 +16,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { operatorFromRequest } from "@/lib/vertebra/session";
 
 const Body = z.object({
   key: z.string().min(3).max(200),
@@ -34,16 +35,19 @@ export async function POST(request: Request) {
   try {
     const now = new Date();
     const id = `ack_${now.getTime().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    // The signed session names the acker — anonymous "operator" only when the
+    // gate is off (sandbox). Every ack is now attributable to josias or damon.
+    const actor = (await operatorFromRequest(request)) ?? "operator";
     await db.$executeRawUnsafe(
       `INSERT INTO OpsAlertAck (id, alertKey, actor, reason, createdAt) VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(alertKey) DO NOTHING`,
       id,
       parsed.data.key,
-      "operator",
+      actor,
       parsed.data.reason,
       now,
     );
-    return NextResponse.json({ ok: true, key: parsed.data.key, reason: parsed.data.reason });
+    return NextResponse.json({ ok: true, key: parsed.data.key, reason: parsed.data.reason, actor });
   } catch (err) {
     console.error("[api/ops/ack] failed", err);
     return NextResponse.json({ error: "ack_failed" }, { status: 500 });

@@ -235,6 +235,17 @@ body {
   .tactile-btn:active {
     transform: scale(0.96);
   }
+  /* Operator chooser card — plain-CSS hover lift on the hairline (same law
+     as .cc-row: no Tailwind hover: gate, the light responds everywhere). */
+  .tactile-card {
+    --card-border: rgba(255, 255, 255, 0.12);
+    border-color: var(--card-border);
+    transition: border-color 140ms ease, background-color 140ms ease;
+  }
+  .tactile-card:hover,
+  .tactile-card:focus-visible {
+    --card-border: rgba(255, 255, 255, 0.38);
+  }
   /* Door — a desk entry. On hover or keyboard focus the light floods in:
      the panel inverts to paper and every child reads its color from the
      door's variables, so the inversion never depends on Tailwind's

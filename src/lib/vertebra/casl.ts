@@ -9,7 +9,7 @@
  *
  * Live-egress interlocks live in mailer.ts: with RESEND_API_KEY configured,
  * sends refuse unless SYNTROPIC_UNSUBSCRIBE_SECRET is a real value and
- * ENCLAVE_PASSWORD is set — no real mail leaves an unlocked enclave.
+ * ENCLAVE_EGRESS_ARMED=1 — no real mail leaves a disarmed enclave.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 

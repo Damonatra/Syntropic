@@ -7,16 +7,17 @@
 set -u
 BASE="http://localhost:81"
 JAR="$(mktemp)"
-PW="${ENCLAVE_PASSWORD:-7BP2iox9DhM2cF9LiXwsma}"
+OP_USER="${OPERATOR_USER:-josias}"
+OP_PASS="${OPERATOR_PASSWORD:-}"
 PASS=0; FAIL=0
 ok()   { echo "  PASS: $1"; PASS=$((PASS+1)); }
 bad()  { echo "  FAIL: $1"; FAIL=$((FAIL+1)); }
 
-echo "== 1. Enclave auth — POST /api/gate (expect 200 ok)"
+echo "== 1. Enclave auth — POST /api/gate as $OP_USER (expect 200 ok)"
+if [ -z "$OP_PASS" ]; then echo "  FAIL: set OPERATOR_PASSWORD (and optionally OPERATOR_USER) — the shared enclave password is retired"; exit 1; fi
 code=$(curl -s -o /tmp/pgate.json -w "%{http_code}" -c "$JAR" -X POST "$BASE/api/gate" \
-  -H 'content-type: application/json' -d "{\"password\":\"$PW\"}")
-if [ "$code" = "200" ] && grep -q '"ok":true' /tmp/pgate.json; then ok "session cookie issued"; else bad "gate returned $code"; fi
-if grep -q '"gated":false' /tmp/pgate.json 2>/dev/null; then echo "  (gate disabled — proceeding without cookie)"; fi
+  -H 'content-type: application/json' -d "{\"username\":\"$OP_USER\",\"password\":\"$OP_PASS\"}")
+if [ "$code" = "200" ] && grep -q '"ok":true' /tmp/pgate.json; then ok "session cookie issued for $(echo "$OP_USER")"; else bad "gate returned $code"; fi
 
 echo "== 2. Triage logic — sorts, bulk partition, cursor math, delivery honesty"
 bun -e "
