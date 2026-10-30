@@ -676,7 +676,7 @@ export function CommandCentre() {
   // ---- render ------------------------------------------------------------ //
   return (
     <div className="command-root fixed inset-0 flex overflow-hidden bg-[#0B0C0B] font-sans text-[#F4F5F2] antialiased">
-      <CommandRail view={view} onView={setView} snap={snap} clock={clock || "--:--:--"} connected={connected} personaCode={activePersona.code} />
+      <CommandRail view={view} onView={setView} snap={snap} clock={clock || "--:--:--"} connected={connected} personaCode={activePersona.code} operator={operator} />
 
       <main className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center justify-between gap-6 border-b border-white/[0.08] px-7">

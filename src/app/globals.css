@@ -246,6 +246,26 @@ body {
   .tactile-card:focus-visible {
     --card-border: rgba(255, 255, 255, 0.38);
   }
+  /* Rail collapse control — plain-CSS hover on the hairline (same law as
+     .tactile-card: no Tailwind hover: gate, the light responds everywhere). */
+  .rail-toggle {
+    --rail-border: rgba(255, 255, 255, 0.1);
+    --rail-ink: #5f6460;
+    --rail-bg: transparent;
+    border: 1px solid var(--rail-border);
+    color: var(--rail-ink);
+    background: var(--rail-bg);
+    transition: border-color 140ms ease, color 140ms ease, background-color 140ms ease, transform 140ms ease;
+  }
+  .rail-toggle:hover,
+  .rail-toggle:focus-visible {
+    --rail-border: rgba(255, 255, 255, 0.32);
+    --rail-ink: #f4f5f2;
+    --rail-bg: rgba(255, 255, 255, 0.05);
+  }
+  .rail-toggle:active {
+    transform: scale(0.94);
+  }
   /* Door — a desk entry. On hover or keyboard focus the light floods in:
      the panel inverts to paper and every child reads its color from the
      door's variables, so the inversion never depends on Tailwind's
