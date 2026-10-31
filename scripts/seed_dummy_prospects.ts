@@ -27,6 +27,7 @@
  *   all three sent   → sequence_complete (step 3 is the ceiling)
  */
 import { PrismaClient } from "@prisma/client";
+import { FACTOR_WEIGHTS } from "../src/lib/vertebra/scoring";
 
 const db = new PrismaClient();
 const DAY = 86_400_000;
@@ -206,6 +207,34 @@ function openerSubject(name: string): string {
   return `${name}: RFQ turnaround`;
 }
 
+/**
+ * Canonical QLVFactor[] — the exact shape scoring.ts writes and every
+ * console consumer reads ({key, weight, points, evidence}). The v1 seed
+ * stored an object here and crashed RadarView; the fixture now speaks the
+ * ledger's real dialect. Points derive deterministically from the spec —
+ * no randomness — and evidence strings cite the fixture fields.
+ */
+function canonicalFactors(spec: CastSpec): Array<{ key: keyof typeof FACTOR_WEIGHTS; weight: number; points: number; evidence: string }> {
+  const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
+  const byPortalLatency = { manual_mailto: 82, legacy_portal: 68, static_pdf_form: 58 } as Record<string, number>;
+  const byPortalManual = { manual_mailto: 84, legacy_portal: 58, static_pdf_form: 66 } as Record<string, number>;
+  const byPortalLegacy = { legacy_portal: 88, static_pdf_form: 72, manual_mailto: 61 } as Record<string, number>;
+  const midmarketErp = !/quickbooks|unknown/i.test(spec.erp);
+  const rows: Array<{ key: keyof typeof FACTOR_WEIGHTS; points: number; evidence: string }> = [
+    { key: "rfq_latency", points: clamp((byPortalLatency[spec.portal] ?? 50) + (spec.qlv % 5)), evidence: `portal=${spec.portal}; desk assembles quotes by hand (fixture)` },
+    { key: "legacy_portal", points: clamp(byPortalLegacy[spec.portal] ?? 40), evidence: `portal=${spec.portal} (fixture)` },
+    { key: "unapplied_spa", points: clamp((midmarketErp ? 68 : 44) + (spec.qlv % 7)), evidence: `erp=${spec.erp}; SPA enforcement is a spreadsheet (fixture)` },
+    { key: "manual_quoting_share", points: clamp(byPortalManual[spec.portal] ?? 45), evidence: `portal=${spec.portal}; quote assembly manual (fixture)` },
+    { key: "vertical_fit", points: clamp(spec.qlv + 5), evidence: "vertical=industrial manufacturing (fixture)" },
+    {
+      key: "size_fit",
+      points: spec.revenue >= 50_000_000 ? 82 : spec.revenue >= 25_000_000 ? 70 : 58,
+      evidence: `revenue≈$${Math.round(spec.revenue / 1_000_000)}M (fixture)`,
+    },
+  ];
+  return rows.map((r) => ({ ...r, weight: FACTOR_WEIGHTS[r.key] }));
+}
+
 async function undo(): Promise<void> {
   const dummies = await db.prospect.findMany({ where: { domainKey: { startsWith: "dummy-" } }, select: { id: true, name: true } });
   const ids = dummies.map((d) => d.id);
@@ -255,7 +284,7 @@ async function seed(): Promise<void> {
           create: {
             qlvScore: spec.qlv,
             band: spec.band,
-            factorsJson: JSON.stringify({ portal_drift: 0.3, rfq_latency: 0.5, spa_leakage: 0.2 }),
+            factorsJson: JSON.stringify(canonicalFactors(spec)),
             hooksJson: JSON.stringify([{ flavor: "rfq_latency", body: spec.hook }]),
             rationale: "dummy cast — deterministic test fixture, not a real audit",
             model: "dummy-seed-v1",

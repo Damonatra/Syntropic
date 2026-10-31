@@ -121,3 +121,46 @@ describe("tiered autonomy policy", () => {
     expect(gate).toEqual(new Set(["interested", "objection_price", "objection_erp"]));
   });
 });
+
+describe("score JSON columns — the validated readers", () => {
+  // the v1 dummy seed stored an object in factorsJson and crashed RadarView
+  // (`factors.find is not a function`); the readers exist so the ledger can
+  // hold anything a script ever wrote without taking a component down.
+  it("parseFactorsJson — canonical array passes through, everything else reads as empty", async () => {
+    const { parseFactorsJson } = await import("@/lib/vertebra/scoring");
+    const good = [{ key: "rfq_latency", weight: 0.28, points: 82, evidence: "portal=manual_mailto" }];
+    expect(parseFactorsJson(JSON.stringify(good))).toEqual(good);
+    expect(parseFactorsJson(JSON.stringify({ portal_drift: 0.3, rfq_latency: 0.5 }))).toEqual([]); // the poison shape
+    expect(parseFactorsJson(JSON.stringify("an array, double-encoded"))).toEqual([]);
+    expect(parseFactorsJson("not json at all")).toEqual([]);
+    expect(parseFactorsJson(JSON.stringify([null, 42, { key: "size_fit", weight: "oops", points: 1, evidence: "x" }]))).toEqual([]);
+    expect(parseFactorsJson(null)).toEqual([]);
+    expect(parseFactorsJson(undefined)).toEqual([]);
+  });
+
+  it("parseHooksJson — same contract for the hooks column", async () => {
+    const { parseHooksJson } = await import("@/lib/vertebra/scoring");
+    const good = [{ flavor: "rfq_latency", body: "quotes in 26 hours" }];
+    expect(parseHooksJson(JSON.stringify(good))).toEqual(good);
+    expect(parseHooksJson(JSON.stringify({ flavor: "rfq_latency" }))).toEqual([]);
+    expect(parseHooksJson("garbage")).toEqual([]);
+    expect(parseHooksJson(null)).toEqual([]);
+  });
+
+  it("persona KPI math survives a malformed snapshot — no throw, empty factor pools", async () => {
+    const { deriveKpiInputs } = await import("@/lib/vertebra/persona");
+    const snap = {
+      leads: [
+        { name: "Poisoned Factor", leakageUsd: 120_000, highIntentNow: false, score: { qlvScore: 88, factors: { portal_drift: 0.3 } } },
+        { name: "Clean Lead", leakageUsd: 80_000, highIntentNow: true, score: { qlvScore: 71, factors: [{ key: "rfq_latency", points: 90 }, { key: "unapplied_spa", points: 61 }] } },
+      ],
+      triage: { pending: [] },
+      ops: { telemetryEvents24h: 3, dispatchesSent24h: 1, alerts24h: 0, outboxPending: 0, outboxPublished: 0 },
+    } as never;
+    const k = deriveKpiInputs(snap);
+    expect(k.leakageTotalUsd).toBe(200_000);
+    expect(k.latencyCrew).toBe(1); // only the clean lead's rfq_latency lands
+    expect(k.spaLaggards).toBe(1);
+    expect(k.manualAvg).toBe(0); // no manual_quoting_share anywhere
+  });
+});

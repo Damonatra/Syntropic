@@ -4,6 +4,7 @@
  */
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { parseFactorsJson, parseHooksJson } from "@/lib/vertebra/scoring";
 
 export async function GET(request: Request) {
   try {
@@ -67,8 +68,8 @@ export async function GET(request: Request) {
           ? {
               qlvScore: prospect.scores[0].qlvScore,
               band: prospect.scores[0].band,
-              factors: JSON.parse(prospect.scores[0].factorsJson),
-              hooks: JSON.parse(prospect.scores[0].hooksJson),
+              factors: parseFactorsJson(prospect.scores[0].factorsJson),
+              hooks: parseHooksJson(prospect.scores[0].hooksJson),
               rationale: prospect.scores[0].rationale,
               model: prospect.scores[0].model,
             }

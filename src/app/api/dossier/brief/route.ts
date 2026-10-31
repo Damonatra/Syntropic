@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { buildBriefPdf, sealId, type BriefLine } from "@/lib/vertebra/brief-pdf";
 import { auditLeakage, LEAKAGE_MODEL } from "@/lib/vertebra/leakage";
+import { parseFactorsJson, parseHooksJson } from "@/lib/vertebra/scoring";
 import { PORTAL_LABELS } from "@/lib/vertebra/command";
 
 const usd = (v: number) => `$${Math.round(v).toLocaleString("en-US")}`;
@@ -32,8 +33,8 @@ export async function GET(request: Request) {
     const score = prospect.scores[0];
     if (!score) return NextResponse.json({ error: "prospect_unscored" }, { status: 409 });
 
-    const factors = JSON.parse(score.factorsJson) as Array<{ key: string; weight: number; points: number; evidence: string }>;
-    const hooks = JSON.parse(score.hooksJson) as Array<{ flavor: string; body: string }>;
+    const factors = parseFactorsJson(score.factorsJson);
+    const hooks = parseHooksJson(score.hooksJson);
     const erp = (() => {
       try {
         return prospect.erpMetadata ? (JSON.parse(prospect.erpMetadata) as { detected_erp?: string; recommended_pitch_angle?: string }) : null;

@@ -50,7 +50,7 @@ export interface PersonaMetric {
 
 const factorPoints = (snap: CommandSnapshot, key: string): number[] =>
   snap.leads
-    .map((l) => l.score?.factors.find((f) => f.key === key)?.points ?? null)
+    .map((l) => (Array.isArray(l.score?.factors) ? l.score?.factors.find((f) => f.key === key)?.points ?? null : null))
     .filter((p): p is number => p != null);
 
 /**

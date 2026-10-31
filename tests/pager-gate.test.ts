@@ -41,6 +41,11 @@ async function seedPagerRow(provider: string, keyEnvVar: string) {
 }
 
 beforeAll(async () => {
+  // hermetic against ambient env — vitest loads the repo's .env, which now
+  // carries REAL pager credentials; every test states its own env truth
+  delete process.env.SLACK_WEBHOOK_URL;
+  delete process.env.TELEGRAM_BOT_TOKEN;
+  delete process.env.TELEGRAM_CHAT_ID;
   rmSync(SCRATCH, { force: true });
   rmSync(`${SCRATCH}-journal`, { force: true });
   execSync("npx prisma db push --skip-generate", {

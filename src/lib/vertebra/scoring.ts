@@ -63,6 +63,47 @@ export interface Hook {
   body: string;
 }
 
+/**
+ * The one honest reader for the score row's JSON columns. The ledger may
+ * hold anything a script ever wrote (a seed once stored an object here),
+ * so the parse is validated, never trusted: a non-array, a double-encoded
+ * string, or shapeless fragments read as empty — never as a runtime crash
+ * three components downstream. Every consumer of factorsJson/hooksJson
+ * goes through these two functions.
+ */
+export function parseFactorsJson(raw: string | null | undefined): QLVFactor[] {
+  if (!raw) return [];
+  try {
+    const v: unknown = JSON.parse(raw);
+    if (!Array.isArray(v)) return [];
+    return v.filter(
+      (f): f is QLVFactor =>
+        f != null &&
+        typeof f === "object" &&
+        typeof (f as { key?: unknown }).key === "string" &&
+        typeof (f as { weight?: unknown }).weight === "number" &&
+        typeof (f as { points?: unknown }).points === "number" &&
+        typeof (f as { evidence?: unknown }).evidence === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function parseHooksJson(raw: string | null | undefined): Hook[] {
+  if (!raw) return [];
+  try {
+    const v: unknown = JSON.parse(raw);
+    if (!Array.isArray(v)) return [];
+    return v.filter(
+      (h): h is Hook =>
+        h != null && typeof h === "object" && typeof (h as { flavor?: unknown }).flavor === "string" && typeof (h as { body?: unknown }).body === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
 export interface ScoreOutcome {
   qlvScore: number;
   band: QLVBand;

@@ -7,6 +7,7 @@
  */
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { parseFactorsJson, parseHooksJson } from "@/lib/vertebra/scoring";
 import { getCachedSnapshot, storeSnapshot } from "@/lib/vertebra/snapshot-cache";
 import { deriveKpiInputs } from "@/lib/vertebra/persona";
 import { classifyLeadGeo } from "@/lib/vertebra/geo";
@@ -93,19 +94,17 @@ function parseScore(
     | undefined,
 ): ScoreShape | null {
   if (!row) return null;
-  try {
-    return {
-      qlvScore: row.qlvScore,
-      band: row.band,
-      factors: JSON.parse(row.factorsJson),
-      hooks: JSON.parse(row.hooksJson),
-      rationale: row.rationale,
-      model: row.model,
-      createdAt: row.createdAt.toISOString(),
-    };
-  } catch {
-    return null;
-  }
+  // the validated readers — a malformed JSON column reads as empty, never
+  // as a crash in a component three renders downstream
+  return {
+    qlvScore: row.qlvScore,
+    band: row.band,
+    factors: parseFactorsJson(row.factorsJson),
+    hooks: parseHooksJson(row.hooksJson),
+    rationale: row.rationale,
+    model: row.model,
+    createdAt: row.createdAt.toISOString(),
+  };
 }
 
 const SNOOZE_RE = /snooze:(\d+)h/;
