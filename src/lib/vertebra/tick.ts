@@ -29,6 +29,7 @@ import {
 } from "@/lib/vertebra/turnaround";
 import { writeEnginePulse } from "@/lib/vertebra/pulse";
 import { runConvoyForDispatch } from "@/lib/vertebra/convoy";
+import { runFastlaneScan, type FastlaneOutcome } from "@/lib/vertebra/fastlane";
 import { stageMoveTarget } from "@/lib/vertebra/watches";
 
 const NO_PROVIDER_BACKOFF_MS = 15 * 60_000;
@@ -40,6 +41,8 @@ export interface TickOutcome {
   deferred: number;
   failed: number;
   provider: string;
+  /** The lane's intake story for this tick (null when the scan crashed). */
+  fastlane: FastlaneOutcome | null;
   details: Array<{ id: string; prospect: string; outcome: string; note?: string }>;
 }
 
@@ -57,7 +60,19 @@ function composeBody(args: {
 
 export async function runSequenceTick(): Promise<TickOutcome> {
   const now = new Date();
-  const outcome: TickOutcome = { due: 0, sent: 0, stopped: 0, deferred: 0, failed: 0, provider: mailProvider(), details: [] };
+
+  // The fast-lane — intake before the send loop. Every trigger of the tick
+  // (operator button, cron door, in-process heartbeat) inherits it. The scan
+  // never throws; if it somehow did, the tick still runs on what is queued.
+  let fastlane: FastlaneOutcome | null = null;
+  try {
+    fastlane = await runFastlaneScan(now);
+  } catch {
+    fastlane = null;
+  }
+
+  const outcome: TickOutcome = { due: 0, sent: 0, stopped: 0, deferred: 0, failed: 0, provider: mailProvider(), fastlane, details: [] };
+  if (fastlane && fastlane.admitted > 0) invalidateSnapshot();
 
   const due = await db.dispatch.findMany({
     where: { status: "queued", scheduledAt: { lte: now }, channel: "channel_a_automated_email" },
