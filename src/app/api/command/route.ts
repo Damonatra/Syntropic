@@ -797,7 +797,8 @@ export async function GET(request: Request) {
         pagedAt.set(a.key, now);
         void deliverAlert(`ESCALATED · ${a.title}`, `${a.action}\nmath: ${a.evidence ?? "n/a"}`).then((out) => {
           if (out.delivered.length === 0) {
-            console.warn(`[watchtower] pager attempt for ${a.watchId} delivered nowhere: attempted=${out.attempted.join(",") || "none configured"}`);
+            const refused = out.refused.length ? `; refused by the registry: ${out.refused.join(" | ")}` : "";
+            console.warn(`[watchtower] pager attempt for ${a.watchId} delivered nowhere: attempted=${out.attempted.join(",") || "none configured"}${refused}`);
           }
         });
       }

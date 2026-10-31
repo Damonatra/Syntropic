@@ -173,6 +173,14 @@ export const KNOWN_INTEGRATIONS: KnownIntegration[] = [
     what: "Where crit alerts ring when they cannot wait for the next console refresh. Incoming webhook; fires one POST per page.",
   },
   {
+    provider: "telegram-pager",
+    label: "Telegram — pager",
+    kind: "pager",
+    authType: "api_key",
+    keyEnvVar: "TELEGRAM_BOT_TOKEN",
+    what: "Where crit alerts ring on the phone. BotFather token + chat id (the token's env var shows here; delivery needs TELEGRAM_CHAT_ID too). One sendMessage per page.",
+  },
+  {
     provider: "google-calendar",
     label: "Google Calendar",
     kind: "calendar",
@@ -388,7 +396,12 @@ export type Transport = (url: string, init?: RequestInit) => Promise<Response>;
  */
 export async function probeIntegration(
   provider: string,
-  opts?: { transport?: Transport; fireDoor?: (req: { path: string; body: string; headers: Record<string, string> }) => Promise<DoorProbeResponse> },
+  opts?: {
+    transport?: Transport;
+    fireDoor?: (req: { path: string; body: string; headers: Record<string, string> }) => Promise<DoorProbeResponse>;
+    /** pager rows — fires one real test page to that channel (the honest probe) */
+    firePager?: (provider: string) => Promise<{ ok: boolean; detail: string }>;
+  },
 ): Promise<ProbeResult | null> {
   const known = KNOWN_INTEGRATIONS.find((k) => k.provider === provider);
   const row = await db.integrationRecord.findUnique({ where: { provider } }).catch(() => null);
@@ -427,6 +440,12 @@ export async function probeIntegration(
         checks.push({ name: "door_probe_fired", pass: false, detail: `transport error: ${String(error).slice(0, 160)}` });
       }
     }
+  } else if (known.kind === "pager" && opts?.firePager) {
+    // A key-shape check cannot prove a channel rings — the honest pager
+    // probe is the page itself: one real test message to that channel.
+    const r = await opts.firePager(provider);
+    checks.push({ name: "test_page_fired", pass: r.ok, detail: r.detail });
+    ok = r.ok;
   } else if (known.authType === "oauth") {
     const present = keyPresentFor(known.keyEnvVar);
     checks.push({ name: "credential_present", pass: present, detail: present ? `${known.keyEnvVar} is set` : `${known.keyEnvVar} is not set in this environment` });
@@ -454,7 +473,13 @@ export async function probeIntegration(
     .catch(() => undefined);
 
   const verdict = ok
-    ? `probe passed — ${checks.map((c) => c.name).join(", ")}${known.kind === "enrich" ? "; first real resolve is the full test" : ""}`
+    ? `probe passed — ${checks.map((c) => c.name).join(", ")}${
+        known.kind === "enrich"
+          ? "; first real resolve is the full test"
+          : known.kind === "pager"
+            ? "; a real test page just left — check the channel"
+            : ""
+      }`
     : `probe failed — ${checks.filter((c) => !c.pass).map((c) => c.detail).join("; ")}`;
   return { provider, ok, checks, verdict, firedAt: at.toISOString() };
 }

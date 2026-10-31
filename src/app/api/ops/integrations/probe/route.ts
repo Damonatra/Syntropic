@@ -16,6 +16,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { operatorFromRequest } from "@/lib/vertebra/session";
 import { probeIntegration, type DoorProbeResponse } from "@/lib/vertebra/integrations";
+import { probePagerChannel } from "@/lib/vertebra/pager";
 import { invalidateSnapshot } from "@/lib/vertebra/snapshot-cache";
 
 const PostBody = z.object({ provider: z.string().min(2).max(64) });
@@ -41,7 +42,11 @@ export async function POST(request: Request) {
     return { status: res.status, body: body.slice(0, 400) };
   };
 
-  const result = await probeIntegration(provider, { fireDoor });
+  const result = await probeIntegration(provider, {
+    fireDoor,
+    // pager rows get the real thing: one live test page to that channel
+    firePager: (p) => probePagerChannel(p),
+  });
   if (!result) {
     return NextResponse.json({ error: "unknown_provider", provider }, { status: 404 });
   }
