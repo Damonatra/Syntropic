@@ -12,14 +12,20 @@
  * zero external calls). Verification is timing-safe via timingSafeEqual.
  */
 import { randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
-import { promisify } from "node:util";
 
-const scrypt = promisify(scryptCb) as (
+function scryptAsync(
   password: string | Buffer,
   salt: string | Buffer,
   keylen: number,
   options: { N: number; r: number; p: number; maxmem?: number },
-) => Promise<Buffer>;
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scryptCb(password, salt, keylen, options, (err, derivedKey) => {
+      if (err) reject(err);
+      else resolve(derivedKey);
+    });
+  });
+}
 
 /** scrypt cost — OWASP-aligned for interactive login (N=2^15, r=8, p=1). */
 const SCRYPT_N = 32_768;
@@ -35,7 +41,7 @@ export const OPERATOR_MIN_PASSWORD_LENGTH = 12;
 /** Hash a plaintext password into the stored scrypt envelope. */
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16);
-  const hash = await scrypt(password, salt, KEYLEN, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P, maxmem: SCRYPT_MAXMEM });
+  const hash = await scryptAsync(password, salt, KEYLEN, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P, maxmem: SCRYPT_MAXMEM });
   return `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${salt.toString("base64")}$${hash.toString("base64")}`;
 }
 
@@ -50,7 +56,7 @@ export async function verifyPassword(candidate: string, stored: string): Promise
     if (!Number.isInteger(N) || !Number.isInteger(r) || !Number.isInteger(p)) return false;
     const salt = Buffer.from(parts[4], "base64");
     const expected = Buffer.from(parts[5], "base64");
-    const hash = await scrypt(candidate, salt, expected.length, { N, r, p, maxmem: SCRYPT_MAXMEM });
+    const hash = await scryptAsync(candidate, salt, expected.length, { N, r, p, maxmem: SCRYPT_MAXMEM });
     return hash.length === expected.length && timingSafeEqual(hash, expected);
   } catch {
     return false;
