@@ -127,6 +127,7 @@ model Dispatch {
   channel       String // channel_a_automated_email | channel_b_josias_high_touch
   status        String   @default("queued")
   caslScope     Boolean  @default(false)
+  step          Int      @default(1) // sequence step: 1 opener (fastlane) · 2/3 follow-ups (cadence)
   subject       String?
   body          String?
   fromDomain    String?

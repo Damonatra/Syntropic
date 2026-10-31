@@ -18,6 +18,8 @@ import { auditLeakage } from "@/lib/vertebra/leakage";
 import { keywordClassify } from "@/lib/vertebra/reply-intent";
 import { isSuppressed } from "@/lib/vertebra/mailer";
 import { parseAddressHeader, addressDomain } from "@/lib/vertebra/webhook-verify";
+import { deliverAlert } from "@/lib/vertebra/pager";
+import { writeEnginePulse } from "@/lib/vertebra/pulse";
 import { z } from "zod";
 
 // --------------------------------------------------------------------------- //
@@ -175,6 +177,85 @@ export async function matchProspectByEmail(fromEmail: string): Promise<ProspectM
 }
 
 // --------------------------------------------------------------------------- //
+// The reply pager — a live reply is a human-moment, not a ledger row.
+//
+// Doctrine (operator decision, 2026-10-31): page on the LIVE intents only —
+// interested, the two objections, and send_information (its one-pager auto-
+// sends, but a human must know the conversation opened). Out-of-office and
+// clean declines are ledger rows, not pages — the machine already handled
+// them (reschedule / stop) and a page would be noise. Suppressed prospects
+// are dead — recorded, never paged.
+//
+// Claim-first, convoy-style: the EnginePulse claim (UNIQUE engineId+
+// pulseRef) is written BEFORE the page — a retried webhook can never
+// double-page. Failure-isolated: the pager never throws into ingest —
+// machine doors run inside webhook handling.
+// --------------------------------------------------------------------------- //
+
+export const REPLY_PAGER_ENGINE_ID = "reply-pager";
+export const REPLY_PAGED_INTENTS: readonly ReplyIntent[] = [
+  "interested",
+  "objection_price",
+  "objection_erp",
+  "send_information",
+];
+
+export interface ReplyPageInput {
+  company: string;
+  qlvScore: number | null;
+  intent: ReplyIntent;
+  confidence: number;
+  theirWords: string | null;
+  machineAction: string; // "auto_sent" (one-pager out) | "draft_pending_review"
+}
+
+/** Plain text only — pager channels render it verbatim; no markdown escaping class of bugs. */
+export function replyPageBody(input: ReplyPageInput): string {
+  const lines = [
+    `Company: ${input.company}${input.qlvScore != null ? ` · QLV ${input.qlvScore}/100` : ""}`,
+    `Intent: ${input.intent} (${Math.round(input.confidence * 100)}% confident)`,
+    `Their words: ${input.theirWords ? (input.theirWords.length > 160 ? `${input.theirWords.slice(0, 157)}…` : input.theirWords) : "(body not classifiable — read the reply in Ops)"}`,
+    input.machineAction === "auto_sent"
+      ? "Machine: the one-pager + audit sample already went out — no action owed unless they come back."
+      : "Machine: a draft is parked for human review — approve, edit, or discard in Ops. Proceed accordingly.",
+  ];
+  return lines.join("\n");
+}
+
+function replyPageTitle(company: string): string {
+  return `CHANNEL A · REPLY LANDED — ${company}`;
+}
+
+/**
+ * Fire-and-forget page for a live reply. Claim-first (never double-pages a
+ * retried webhook), fully failure-isolated (never throws into ingest).
+ */
+async function pageLiveReply(args: {
+  replyId: string;
+  company: string;
+  qlvScore: number | null;
+  intent: ReplyIntent;
+  confidence: number;
+  theirWords: string | null;
+  machineAction: string;
+}): Promise<void> {
+  try {
+    const claim = await writeEnginePulse({
+      engineId: REPLY_PAGER_ENGINE_ID,
+      pulseRef: `page:${args.replyId}`,
+      watchId: "reply_page",
+      status: "ok",
+      detail: `${args.company} — ${args.intent} reply paged`,
+    });
+    if (claim.deduped) return; // a retry of the same reply absorbs
+    await deliverAlert(replyPageTitle(args.company), replyPageBody(args));
+  } catch {
+    // A lost page is visible as a claimed pulse with no delivery — honest,
+    // at-most-once. It must never fail the reply's ingest path.
+  }
+}
+
+// --------------------------------------------------------------------------- //
 // The one ingest path every door shares
 // --------------------------------------------------------------------------- //
 
@@ -319,6 +400,20 @@ export async function ingestReply(input: ReplyIngestInput): Promise<ReplyIngestR
     });
     draft = { id: created.id, status: created.status, subject: created.subject, body: created.body };
     action = "draft_pending_review";
+  }
+
+  // The reply pager — live intents wake the humans (claim-first, never
+  // throws). OOO and not_interested stay ledger-only by doctrine.
+  if ((REPLY_PAGED_INTENTS as readonly string[]).includes(intent)) {
+    await pageLiveReply({
+      replyId: reply.id,
+      company: prospect.name,
+      qlvScore,
+      intent,
+      confidence,
+      theirWords: input.body,
+      machineAction: action === "auto_sent" ? "auto_sent" : "draft_pending_review",
+    });
   }
 
   return {

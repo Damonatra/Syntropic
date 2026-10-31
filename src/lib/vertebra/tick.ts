@@ -30,6 +30,7 @@ import {
 import { writeEnginePulse } from "@/lib/vertebra/pulse";
 import { runConvoyForDispatch } from "@/lib/vertebra/convoy";
 import { runFastlaneScan, type FastlaneOutcome } from "@/lib/vertebra/fastlane";
+import { runCadenceScan, type CadenceOutcome } from "@/lib/vertebra/cadence";
 import { stageMoveTarget } from "@/lib/vertebra/watches";
 
 const NO_PROVIDER_BACKOFF_MS = 15 * 60_000;
@@ -43,6 +44,8 @@ export interface TickOutcome {
   provider: string;
   /** The lane's intake story for this tick (null when the scan crashed). */
   fastlane: FastlaneOutcome | null;
+  /** The cadence's follow-up story for this tick (null when the scan crashed). */
+  cadence: CadenceOutcome | null;
   details: Array<{ id: string; prospect: string; outcome: string; note?: string }>;
 }
 
@@ -71,8 +74,18 @@ export async function runSequenceTick(): Promise<TickOutcome> {
     fastlane = null;
   }
 
-  const outcome: TickOutcome = { due: 0, sent: 0, stopped: 0, deferred: 0, failed: 0, provider: mailProvider(), fastlane, details: [] };
+  // The cadence — follow-up intake after the lane. Same tick, same claim
+  // contract, same armed posture; never throws into the send loop.
+  let cadence: CadenceOutcome | null = null;
+  try {
+    cadence = await runCadenceScan(now);
+  } catch {
+    cadence = null;
+  }
+
+  const outcome: TickOutcome = { due: 0, sent: 0, stopped: 0, deferred: 0, failed: 0, provider: mailProvider(), fastlane, cadence, details: [] };
   if (fastlane && fastlane.admitted > 0) invalidateSnapshot();
+  if (cadence && cadence.admitted > 0) invalidateSnapshot();
 
   const due = await db.dispatch.findMany({
     where: { status: "queued", scheduledAt: { lte: now }, channel: "channel_a_automated_email" },
@@ -130,6 +143,24 @@ export async function runSequenceTick(): Promise<TickOutcome> {
       });
 
     // 3. Send through the mailer (Resend when configured, honest backoff when not).
+    //    Sequence steps 2+ ride the thread: In-Reply-To/References point at
+    //    the prospect's last live touch, so the follow-up lands as a reply,
+    //    not a new cold thread. The cadence refuses to queue without a
+    //    message id, so the fallback here only covers manual rows (step 1).
+    const priorTouch =
+      d.step > 1
+        ? await db.dispatch.findFirst({
+            where: {
+              prospectId: p.id,
+              channel: "channel_a_automated_email",
+              id: { not: d.id },
+              status: { in: ["sent", "delivered", "opened", "clicked", "replied"] },
+              providerMsgId: { not: null },
+            },
+            orderBy: { updatedAt: "desc" },
+            select: { providerMsgId: true },
+          })
+        : null;
     const result = await sendEmail({
       to: email,
       subject,
@@ -138,6 +169,7 @@ export async function runSequenceTick(): Promise<TickOutcome> {
       caslScope: p.caslScope,
       region: p.caslScope ? "ca" : "us",
       fromDomain: d.fromDomain,
+      inReplyTo: priorTouch?.providerMsgId ?? null,
     });
 
     if (result.status === "sent") {

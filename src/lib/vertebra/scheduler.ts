@@ -63,9 +63,10 @@ async function runScheduledSequenceTick(): Promise<void> {
   try {
     const out = await runSequenceTick();
     const fl = out.fastlane;
-    const detail = `sent ${out.sent} · due ${out.due} · failed ${out.failed} · fastlane ${
-      fl ? (fl.armed ? `armed, admitted ${fl.admitted}/${fl.scanned} scanned` : "disarmed") : "scan crashed"
-    }`;
+    const cd = out.cadence;
+    const laneStory = (label: string, scan: { armed: boolean; admitted: number; scanned: number } | null) =>
+      scan ? (scan.armed ? `${label} ${scan.admitted}/${scan.scanned}` : `${label} off`) : `${label} crashed`;
+    const detail = `sent ${out.sent} · due ${out.due} · failed ${out.failed} · ${laneStory("fastlane", fl)} · ${laneStory("cadence", cd)}`;
     console.log(`[sequence] tick — ${detail}`);
     await writeEnginePulse({
       engineId: SEQUENCE_ENGINE_ID,

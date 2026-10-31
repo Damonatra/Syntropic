@@ -28,6 +28,8 @@ export interface SendEmailInput {
   fromDisplayName?: string;
   fromDomain?: string | null;
   replyTo?: string | null;
+  /** Provider message id of the email this send replies to — thread continuity. */
+  inReplyTo?: string | null;
 }
 
 export interface SendEmailResult {
@@ -128,12 +130,19 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
   }
 
   try {
+    // Email headers ride the JSON body (Resend wire shape) — the CASL
+    // one-click pair and the thread pair are MESSAGE headers, not HTTP
+    // request headers; the transport would silently drop those.
+    const messageHeaders: Record<string, string> = { ...headers };
+    if (input.inReplyTo) {
+      messageHeaders["In-Reply-To"] = input.inReplyTo;
+      messageHeaders["References"] = input.inReplyTo;
+    }
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
         "Content-Type": "application/json",
-        ...headers,
       },
       signal: AbortSignal.timeout(12_000),
       body: JSON.stringify({
@@ -141,6 +150,7 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
         to: [input.to],
         subject: input.subject,
         text,
+        headers: messageHeaders,
         ...(input.replyTo ? { reply_to: input.replyTo } : {}),
       }),
     });
