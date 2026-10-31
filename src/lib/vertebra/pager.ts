@@ -31,8 +31,8 @@ const GATED_BY: Record<"telegram" | "slack", string> = {
   slack: "slack-pager",
 };
 
-function alertText(title: string, body: string): string {
-  return `🚨 ${title}\n\n${body}`;
+function alertText(title: string, body: string, glyph = "🚨"): string {
+  return `${glyph} ${title}\n\n${body}`;
 }
 
 async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
@@ -61,6 +61,19 @@ async function gateAllows(channel: "telegram" | "slack"): Promise<{ ok: boolean;
 }
 
 export async function deliverAlert(title: string, body: string): Promise<PagerOutcome> {
+  return deliverPage(title, body, "🚨");
+}
+
+/**
+ * Notices share the pager's rails (registry gate, both channels, honest
+ * outcome) but are reports, not emergencies — the sequence engine uses
+ * them to tell the operator what it just did autonomously.
+ */
+export async function deliverNotice(title: string, body: string): Promise<PagerOutcome> {
+  return deliverPage(title, body, "✅");
+}
+
+async function deliverPage(title: string, body: string, glyph: string): Promise<PagerOutcome> {
   const attempted: string[] = [];
   const delivered: string[] = [];
   const refused: string[] = [];
@@ -80,7 +93,7 @@ export async function deliverAlert(title: string, body: string): Promise<PagerOu
           fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ chat_id: tgChat, text: alertText(title, body), disable_web_page_preview: true }),
+            body: JSON.stringify({ chat_id: tgChat, text: alertText(title, body, glyph), disable_web_page_preview: true }),
           })
             .then(async (r) => {
               if (r.ok) delivered.push("telegram");
@@ -106,7 +119,7 @@ export async function deliverAlert(title: string, body: string): Promise<PagerOu
           fetch(slackHook, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text: alertText(title, body) }),
+            body: JSON.stringify({ text: alertText(title, body, glyph) }),
           })
             .then(async (r) => {
               if (r.ok) delivered.push("slack");

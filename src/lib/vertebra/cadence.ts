@@ -45,6 +45,7 @@ import { db } from "@/lib/db";
 import { isSuppressed } from "@/lib/vertebra/mailer";
 import { writeEnginePulse } from "@/lib/vertebra/pulse";
 import { fastlaneArmed } from "@/lib/vertebra/fastlane";
+import { landingUrlFor } from "@/lib/vertebra/track";
 
 export const CADENCE_ENGINE_ID = "cadence";
 export const CADENCE_WATCH_ID = "cadence_scan";
@@ -124,6 +125,8 @@ export interface FollowupContext {
   contactFirst: string;
   company: string;
   hookBody: string | null;
+  /** the tracked landing link — one line, same door the opener carries */
+  landingUrl?: string | null;
 }
 
 export function composeFollowup(step: number, ctx: FollowupContext): { subject: string | null; body: string } {
@@ -136,12 +139,12 @@ export function composeFollowup(step: number, ctx: FollowupContext): { subject: 
   if (step === 2) {
     return {
       subject: null, // the tick threads "Re: <opener subject>" from the ledger
-      body: `${first} — one follow-up, then quiet.${hook ? ` The short version is still: ${hook}` : ""} If that's worth 15 minutes this week, reply with a time. If not, one word back and I'll close the file. — Josias`,
+      body: `${first} — one follow-up, then quiet.${hook ? ` The short version is still: ${hook}` : ""} If that's worth 15 minutes this week, reply with a time.${ctx.landingUrl ? ` The one-page math: ${ctx.landingUrl}.` : ""} If not, one word back and I'll close the file. — Josias`,
     };
   }
   return {
     subject: null,
-    body: `${first} — last note from me on this, and I'll leave you in peace. Your quote desk's math hasn't changed since the first note${hook ? `: ${hook}` : ""}. If the timing is ever right, reply with a time and I'll work around your team. — Josias`,
+    body: `${first} — last note from me on this, and I'll leave you in peace. Your quote desk's math hasn't changed since the first note${hook ? `: ${hook}` : ""}.${ctx.landingUrl ? ` The one-page math: ${ctx.landingUrl}.` : ""} If the timing is ever right, reply with a time and I'll work around your team. — Josias`,
   };
 }
 
@@ -304,7 +307,12 @@ export async function runCadenceScan(now: Date = new Date()): Promise<CadenceOut
         : a.dueAt.getTime() > now.getTime()
           ? a.dueAt
           : new Date(now.getTime() + Math.floor(Math.random() * CADENCE_JITTER_MS));
-      const composed = composeFollowup(a.step, { contactFirst: a.contactFirst, company: a.name, hookBody: a.hookBody });
+      const composed = composeFollowup(a.step, {
+        contactFirst: a.contactFirst,
+        company: a.name,
+        hookBody: a.hookBody,
+        landingUrl: landingUrlFor(a.prospectId),
+      });
       const dispatch = await db.dispatch.create({
         data: {
           prospectId: a.prospectId,

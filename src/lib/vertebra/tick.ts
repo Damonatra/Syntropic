@@ -14,7 +14,9 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { db } from "@/lib/db";
 import { isSuppressed, mailProvider, sendEmail } from "@/lib/vertebra/mailer";
-import { CLOSE_CTA, buildCaslFooter, subjectForHook } from "@/lib/vertebra/casl";
+import { subjectForHook } from "@/lib/vertebra/casl";
+import { landingUrlFor } from "@/lib/vertebra/track";
+import { deliverNotice } from "@/lib/vertebra/pager";
 import { invalidateSnapshot } from "@/lib/vertebra/snapshot-cache";
 import { buildBriefPdf } from "@/lib/vertebra/brief-pdf";
 import { buildAuditBriefLines } from "@/lib/vertebra/brief-build";
@@ -49,16 +51,14 @@ export interface TickOutcome {
   details: Array<{ id: string; prospect: string; outcome: string; note?: string }>;
 }
 
-function composeBody(args: {
-  contactFirst: string;
-  hookBody: string | null;
-  region: string | null;
-  prospectId: string;
-  address: string;
-}): string {
+function composeBody(args: { contactFirst: string; hookBody: string | null; company: string; prospectId: string }): string {
   const first = args.contactFirst || "there";
   const hook = args.hookBody ?? "Your quote desk is leaking margin on RFQs that never get priced competitively.";
-  return `${first} —\n\n${hook}\n\n${CLOSE_CTA}\n\n— Josias\n\n${buildCaslFooter(args.prospectId, args.address, args.region)}`;
+  // The one tracked link — the visit fires portal_visit (heat +6, dossier
+  // timeline, high-intent page at QLV >= 85). No footer here: the mailer
+  // owns the identification footer + signature, and a second one would ship.
+  const cta = `I put the numbers on one page for ${args.company}: ${landingUrlFor(args.prospectId)} — the leakage math and the sealed audit, no form, no gate. If it's not relevant, the unsubscribe link below is instant.`;
+  return `${first} —\n\n${hook}\n\n${cta}\n\n— Josias`;
 }
 
 export async function runSequenceTick(): Promise<TickOutcome> {
@@ -137,9 +137,8 @@ export async function runSequenceTick(): Promise<TickOutcome> {
       composeBody({
         contactFirst: p.contacts[0]?.firstName ?? "",
         hookBody: topHook?.body ?? null,
-        region: p.caslScope ? "ca" : "us",
+        company: p.name,
         prospectId: p.id,
-        address: email,
       });
 
     // 3. Send through the mailer (Resend when configured, honest backoff when not).
@@ -189,6 +188,14 @@ export async function runSequenceTick(): Promise<TickOutcome> {
           note: convoy.delivered.length > 0 ? `paged: ${convoy.delivered.join("+")}` : "page claimed — no live channel, row in ops pulses",
         });
       }
+      // The autonomous-send notice — the operator's channels hear what the
+      // engine did on its own authority, every step, fire-and-forget.
+      void deliverNotice(`AUTONOMOUS SEND · ${p.name}`, [
+        `Step ${d.step} ${d.step === 1 ? "(opener)" : `(follow-up)`} sent to ${email}`,
+        `QLV ${score?.qlvScore ?? "?"} · ${score?.band ?? "?"} band · no human review`,
+        `Subject: ${subject}`,
+        `Dossier: /dossier?id=${p.id}`,
+      ].join("\n"));
     } else if (result.status === "staged") {
       await db.dispatch.update({
         where: { id: d.id },

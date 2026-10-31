@@ -2,17 +2,16 @@
  * POST /api/telemetry/ingest — Module 8 production intake.
  *
  * The Python engine (vertebra/telemetry/intent_tracker.py) posts portal
- * telemetry here; the Executive Enclave's socket bridge fans it out to the
- * command centre. High-signal events on critical-band prospects (QLV >= 85)
- * raise an IntentAlert using the fixed high-intent format.
+ * telemetry here. The ledger semantics live in portal-events.ts (shared
+ * with the /l/<token> doors): event row, intent-heat bump, snapshot
+ * invalidation, and the hour-deduped HIGH-INTENT alert — paged to the
+ * operator's channels — when a high-signal event lands on QLV >= 85.
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { isHighSignal } from "@/lib/vertebra/command";
 import { guardWrite } from "@/lib/vertebra/guard";
-import { invalidateSnapshot } from "@/lib/vertebra/snapshot-cache";
-import { deliverAlert } from "@/lib/vertebra/pager";
+import { recordPortalEvent } from "@/lib/vertebra/portal-events";
 
 const BodySchema = z.object({
   prospectId: z.string().min(1).optional(),
@@ -30,14 +29,6 @@ const BodySchema = z.object({
   durationMs: z.number().int().min(0).max(86_400_000).nullish(),
   payload: z.record(z.string(), z.unknown()).nullish(),
 });
-
-const HEAT_BUMP: Record<string, number> = {
-  portal_visit: 6,
-  audit_view: 9,
-  document_download: 12,
-  pricing_view: 4,
-  session_end: 2,
-};
 
 export async function POST(request: Request) {
   const denied = guardWrite(request, "telemetry/ingest", { limit: 60, windowMs: 60_000 });
@@ -62,78 +53,34 @@ export async function POST(request: Request) {
     }
     const prospect = await db.prospect.findFirst({
       where,
-      include: {
-        scores: { orderBy: { createdAt: "desc" }, take: 1 },
-        contacts: { take: 1 },
-        cluster: true,
-      },
+      include: { scores: { orderBy: { createdAt: "desc" }, take: 1 } },
     });
     if (!prospect) {
       return NextResponse.json({ error: "prospect_not_found" }, { status: 404 });
     }
 
-    const event = await db.telemetryEvent.create({
-      data: {
-        prospectId: prospect.id,
-        sessionId: body.sessionId ?? `ingest-${Date.now().toString(36)}`,
-        eventType: body.eventType,
-        url: body.url ?? null,
-        referrer: body.referrer ?? null,
-        city: body.city ?? prospect.city,
-        country: body.country ?? prospect.country,
-        latitude: body.latitude ?? prospect.latitude,
-        longitude: body.longitude ?? prospect.longitude,
-        userAgent: body.userAgent ?? null,
-        device: body.device ?? null,
-        durationMs: body.durationMs ?? null,
-        payloadJson: body.payload ? JSON.stringify(body.payload) : null,
-      },
+    const outcome = await recordPortalEvent({
+      prospectId: prospect.id,
+      eventType: body.eventType,
+      url: body.url ?? null,
+      referrer: body.referrer ?? null,
+      userAgent: body.userAgent ?? null,
+      sessionId: body.sessionId ?? null,
+      source: "ingest",
+      city: body.city ?? null,
+      country: body.country ?? null,
+      latitude: body.latitude ?? null,
+      longitude: body.longitude ?? null,
+      device: body.device ?? null,
+      durationMs: body.durationMs ?? null,
+      payload: body.payload ?? null,
     });
-
-    const bump = HEAT_BUMP[body.eventType] ?? 2;
-    const heat = Math.min(100, prospect.lastIntentHeat + bump);
-    await db.prospect.update({ where: { id: prospect.id }, data: { lastIntentHeat: heat } });
-    invalidateSnapshot();
-
-    const qlvScore = prospect.scores[0]?.qlvScore ?? 0;
-    let alert: { id: string; title: string; body: string } | null = null;
-    if (isHighSignal(body.eventType) && qlvScore >= 85) {
-      const contact = prospect.contacts[0];
-      const hourBucket = Math.floor(Date.now() / 3_600_000);
-      const dedupeKey = `hi:${prospect.id}:${body.eventType}:${hourBucket}`;
-      const existing = await db.intentAlert.findFirst({ where: { dedupeKey } });
-      if (!existing) {
-        const exec = contact
-          ? `${contact.firstName} ${contact.lastName} (${contact.titleRaw ?? contact.role}) — ${contact.phone ?? "direct line pending"}`
-          : "Primary contact pending";
-        const alertBody = [
-          `Company: ${prospect.name}`,
-          `Executive: ${exec}`,
-          `Location: ${prospect.city ?? "unknown"}, ${prospect.country ?? "unknown"}`,
-          `Action: Call direct line immediately.`,
-        ].join("\n");
-        // Fan out to Telegram/Slack when configured — channels recorded honestly.
-        const pager = await deliverAlert("HIGH-INTENT PROSPECT ON PORTAL", alertBody);
-        const created = await db.intentAlert.create({
-          data: {
-            prospectId: prospect.id,
-            title: "HIGH-INTENT PROSPECT ON PORTAL",
-            body: alertBody,
-            dedupeKey,
-            channelsAttempted: JSON.stringify(["in_app", ...pager.attempted]),
-            channelsDelivered: JSON.stringify(["in_app", ...pager.delivered]),
-            delivered: true,
-          },
-        });
-        alert = { id: created.id, title: created.title, body: created.body };
-      }
-    }
 
     return NextResponse.json({
       ok: true,
-      event: { id: event.id, eventType: event.eventType, occurredAt: event.occurredAt.toISOString() },
-      prospect: { id: prospect.id, name: prospect.name, qlvScore, lastIntentHeat: heat },
-      alert,
+      event: { id: outcome.eventId, eventType: outcome.eventType, occurredAt: outcome.occurredAt },
+      prospect: { id: prospect.id, name: prospect.name, qlvScore: prospect.scores[0]?.qlvScore ?? 0, lastIntentHeat: outcome.heat },
+      alert: outcome.alert,
     });
   } catch (error) {
     console.error("[api/telemetry/ingest] failed", error);
