@@ -1,0 +1,168 @@
+# Vertebra — external connections manifest (2026-10-31)
+# The complete key-shopping list. Every door below is already built, seeded
+# into the IntegrationRecord registry (staged, fail-closed) and waiting for
+# exactly one thing: an operator pasting a key and pressing arm.
+#
+# Doctrine reminder: a key appearing in .env never arms anything. Arming is
+# always an operator act on the Enclave connections panel. Key VALUES never
+# enter the ledger — only the env var NAME and whether it is set.
+#
+# Sixth living doc, alongside: strategy (10-30), domain runbook (10-30),
+# tier-1 doors handoff (10-30), operator handbook (10-30), advisory (10-31).
+
+===========================================================================
+A. THE REGISTRY — 8 staged rows, the keys to go get
+===========================================================================
+
+1) APOLLO.IO                                        env: APOLLO_API_KEY
+   kind: enrich · auth: api_key · priority: FIRST CHOICE
+   Double duty:
+     - mixed_people/search  -> feeds SourcingCandidate batches (the
+       seventh rail's live search; already built, commit 1570824)
+     - people/match         -> contact resolver's first-choice email
+       finder for named contacts on a domain (1 credit per reveal)
+   Free tier (2026): $0 plan = 900 credits/seat/year, granted monthly
+   = 75 credits/month, API access included. 75 = exactly the monthly
+   reveal budget in the $0 math. Search calls are rate-limited on free
+   (verify the exact daily cap at signup); credits burn on reveals.
+   -> THE key that activates live sourcing.
+
+2) HUNTER.IO                                        env: HUNTER_API_KEY
+   kind: enrich · auth: api_key · priority: FALLBACK (waterfall #2)
+   email-finder when Apollo is degraded or exhausted. 1 credit per
+   email found, 0.5 per verification. Free tier: ~25 searches + 50
+   verifications/month (they are consolidating to a 50-credit pool —
+   check the dashboard at signup). Fallback-only: fine at $0.
+
+3) RESEND — EGRESS                                  env: RESEND_API_KEY
+   kind: egress · auth: api_key
+   Sends every Channel A email and approved draft. Interlocked by the
+   unsubscribe secret, ENCLAVE_EGRESS_ARMED and the sending-domain
+   ledger. Free tier: 3,000 emails/mo, 100/day, 3 domains, webhooks +
+   SMTP + receiving included. Our 400-500 sends/mo and 40/day/domain
+   warmup cap sit far inside it. Resend issues the exact SPF/DKIM/
+   DMARC values on domain day — never hand-write them.
+
+4) RESEND — email.received                          env: RESEND_WEBHOOK_SECRET
+   kind: inbound · auth: svix
+   Receiving webhook -> /api/providers/resend/inbound. Full bodies
+   fetched from the Received-emails API, driven through the same
+   brain as the canonical relay door. Needs MX + a Receiving route
+   on domain day. Included in free.
+
+5) RESEND — event feedback                          env: RESEND_WEBHOOK_SECRET
+   kind: inbound · auth: svix
+   The reputation loop -> /api/providers/resend/events. Bounces land
+   in SuppressionRecord, complaints stop + suppress, delivered/opened
+   escalate the dispatch. ONE Svix signing secret covers rows 4+5.
+   Retries dedupe on svix-id via the EnginePulse ledger.
+
+6) SLACK — PAGER                                    env: SLACK_WEBHOOK_URL
+   kind: pager · auth: incoming webhook
+   Where crit alerts ring when they cannot wait for the next console
+   refresh. One POST per page. Incoming webhooks are free forever.
+
+7) GOOGLE CALENDAR                                  env: GOOGLE_OAUTH_REFRESH_TOKEN
+   kind: calendar · auth: oauth
+   Booking connector for the high-touch queue (Channel B). OAuth
+   refresh token minted OUTSIDE the enclave; the value never lands
+   in the ledger. HOLD until Channel B activates.
+
+8) GENERIC MAIL RELAY                               env: INBOUND_MAIL_SECRET
+   kind: inbound · auth: hmac
+   The canonical door any transport adapter POSTs received email
+   through (~20-line adapter: IMAP poller, Email Worker, parser).
+   Self-issued secret — already live in .env (tier-1 handoff doc).
+
+===========================================================================
+B. SELF-ISSUED SECRETS (no vendor — generate yourself; 4 already on disk)
+===========================================================================
+
+  ENCLAVE_SESSION_SECRET        console session signing        [on disk]
+  OPS_HEARTBEAT_SECRET          heartbeat door                 [on disk]
+  PORTAL_INGEST_SECRET          portal audit ingest HMAC       [on disk]
+  SYNTROPIC_UNSUBSCRIBE_SECRET  CASL one-click unsubscribe     [on disk]
+  VERTEBRA_INGEST_KEY           ingest guard door              [set when needed]
+
+  Plus the one env var that is a switch, not a secret:
+  ENCLAVE_EGRESS_ARMED=1        the operator's egress arm. Never auto-set.
+
+  Known gap: TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID (free crit pager,
+  already wired in pager.ts + the Python twin) has NO registry row —
+  it works but is invisible on the connections panel. Add a 9th row
+  when Telegram goes live (~10 lines).
+
+===========================================================================
+C. PRODUCTION TWIN (vertebra/ Python engine — when the zip deploys)
+===========================================================================
+
+  VERTEBRA_DATABASE__DSN        Neon Postgres. Free: 1 GB storage,
+                                100 CU-hrs/mo (~400 hrs at 0.25 CU,
+                                autosuspend fits the nightly cadence)
+  VERTEBRA_QDRANT__URL          Qdrant Cloud. Free: 1 GB RAM / 4 GB
+  VERTEBRA_QDRANT__API_KEY      disk — fits the firmographics collection
+  VERTEBRA_ANTHROPIC__API_KEY   Claude scorer (claude-3-5-sonnet).
+                                No free tier — pay-per-token, single-
+                                digit $/mo at our volume. Only when
+                                the engine leaves the enclave.
+  VERTEBRA_EMAIL__RESEND_API_KEY   same Resend key, twin's mailer
+  VERTEBRA_CALENDAR__SERVICE_ACCOUNT_FILE  Google service JSON
+  VERTEBRA_TELEMETRY__TRACKING_HMAC_SECRET  signed ?lid= tokens (>=16 chars)
+
+  Optional, deferred: S3/R2 for audit assets (settings support it,
+  defaults local — skip at $0), proxy_url for the scraper (skip —
+  politeness policy runs at 0.5 rps).
+
+===========================================================================
+D. NOT API KEYS, BUT CONNECTIONS
+===========================================================================
+
+  - GitHub PAT: fresh token required — local main is 4 commits ahead
+    of origin, old PAT revoked. Push needs it.
+  - Registrar + DNS: any registrar (WHOIS privacy ON, register 1-2
+    years). Resend issues the DNS values on domain day.
+  - Console hosting (Vercel/Fly) when the cockpit leaves the sandbox:
+    deferred, not wired, not counted.
+  - Z.ai sandbox: this enclave's own runtime — not a vendor door.
+
+===========================================================================
+E. THE ANTI-LIST — vendors we deliberately do NOT connect
+===========================================================================
+
+  No ZoomInfo / Clay subscriptions   — Apollo->Hunter waterfall covers it
+  No warmup vendor                   — Resend + self-run warmup curve
+  No CRM                             — the ledger brain IS the CRM
+  No LinkedIn scraper                — the four doors are CASL-clean
+  No proxy pool                      — 0.5 rps politeness, no evasion
+  Every skip protects the single-ledger doctrine and the $0 math.
+
+===========================================================================
+F. THE $0 LEDGER
+===========================================================================
+
+  Apollo $0 · Hunter $0 · Resend $0 · Neon $0 · Qdrant $0 · Slack $0
+  Telegram $0 · Google $0 · GitHub $0            = $0/month today.
+
+  First real dollars, in order:
+    1. Anthropic scoring (single-digit $/mo) — when the twin deploys
+    2. Resend Pro $20/mo — when the scale trigger fires: two
+       consecutive weeks >=3% reply AND <2% bounce
+
+===========================================================================
+G. KEY-DAY ORDER OF OPERATIONS
+===========================================================================
+
+  1. Apollo key   -> paste into .env -> arm on connections panel ->
+     probe -> live batch. Sourcing rail goes live end to end.
+  2. Slack webhook -> paste -> arm. Crit paging live in 60 seconds.
+  3. Resend key   -> domain day, per vertebra-domain-runbook:
+     buy -> ledger row -> Resend domain -> DNS (Resend's values) ->
+     verify -> flip ledger -> wire both webhooks -> MX for inbound.
+  4. Hunter key   -> arms the waterfall fallback. Not urgent.
+  5. Calendar OAuth -> when Channel B activates. Not urgent.
+  6. GitHub token -> push the 4 local commits. Then continue.
+
+  After each paste: probe on the connections panel. Probes tell the
+  truth about what they checked — "reachability confirmed" never
+  impersonates "enrichment works". Circuit opens at 5 consecutive
+  failures; a real success or an operator probe closes it.
