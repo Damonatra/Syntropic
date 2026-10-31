@@ -1,0 +1,240 @@
+═══════════════════════════════════════════════════════════════════════════
+  VERTEBRA — SYSTEM ORGANIZATION ADVISORY
+  Full-system analysis + how to organize everything, especially the Ops UI
+  2026-10-31 · prepared for Damon
+═══════════════════════════════════════════════════════════════════════════
+
+First, one correction to the running state: the sourcing spoke is BUILT.
+Commit 1570824 ("sourcing spoke — search → stage → fit → reveal queue")
+shipped src/lib/vertebra/sourcing.ts, four /api/contacts/sourcing/* doors,
+the SourcingPanel, and 16 new tests. The next task in our queue was already
+finished in the tail of the last session.
+
+───────────────────────────────────────────────────────────────────────────
+0 · WHERE THINGS STAND — verified today, not remembered
+───────────────────────────────────────────────────────────────────────────
+
+  Tests          207/207 passing (12 files) — up from 191; sourcing added 16
+  Types          tsc clean in src/ (residual errors only in scripts/ + skills/)
+  Lint           ESLint 0 errors, 3 warnings
+  Tree           clean, nothing uncommitted
+  Git            4 commits ahead of origin (registry, panel, sourcing, misc)
+                 — push needs a fresh PAT; the old one is revoked
+  Keys           apollo / hunter / slack-pager still absent → registry rows
+                 all "staged", enclave fail-closed with named reasons
+  Doctrine intact   one ledger brain · derived read models · registry-gated
+                 spokes · ack-not-store alerts · zero-color law · silence is
+                 the product
+
+───────────────────────────────────────────────────────────────────────────
+1 · THE SYSTEM AS IT IS — one map
+───────────────────────────────────────────────────────────────────────────
+
+TWO RUNTIMES, ONE DOCTRINE
+
+  · The TS console (Next.js, this sandbox) is the live enclave: 34 lib
+    modules under src/lib/vertebra, 26 API doors, one cockpit
+    (CommandCentre) with six views, a dossier drawer, a palette, a keyboard
+    grammar, and a socket bridge.
+  · The Python vertebra/ package is the production twin (Neon PG, Qdrant,
+    FastAPI, asyncio workers, Claude scoring). It mirrors the same
+    contracts — QLV weights, classification rules, CASL kit — and is
+    packaged separately (vertebra-engine.zip). The console runs the same
+    math in TypeScript so sandbox and production never disagree.
+
+THE LEDGER (26 models) — the brain, and everything is state on a row
+
+  Book:        Prospect (dedupe @@unique([source, domainKey])) · Contact ·
+               Score · PainSignal (verbatim evidence) · LeadCluster
+  Work:        SourcingCandidate (reveal queue) · Dispatch · HighTouchQueueItem
+               · AgentDraft · InboundReply · OperatorAction
+  Money:       Engagement + EngagementEvent + AuditDocument (portal → desk)
+  Compliance:  SuppressionRecord · CASL fields · SendingDomain (egress ledger)
+  Watching:    OpsAlertAck · OpsWatchFire (flap ledger) · EnginePulse
+               · CommandBaseline
+  Doors:       IntegrationRecord (the star made physical) · ContactResolution
+               (enrich honesty ledger)
+
+THE COCKPIT — six views, each nominally one question
+
+  Radar    (1)  "what is hot right now" — KPI strip, telemetry feed, alerts
+  Strike   (2)  "who do I work next" — ranked recovery queue, j/k cursor
+  Theatre  (3)  "where is the book" — US/CA spatial cluster board
+  Pipeline (4)  "what did they say back" — reply triage gate, tiered autonomy
+  Portal   (5)  "money → work" — engagement desk, stage machine
+  Ops      (6)  "is the machine healthy" — the Watchtower
+
+THE FOUR GATES (acquisition strategy, 2026-10-30 doc) → system coverage
+
+  1 Pain signals      built, manual cadence (30 min/week), verbatim → opener
+  2 Portal audit      built (audit parse + dropzone + forensics) — hottest
+  3 Sourcing search   BUILT (this week) — staged queue waiting on Apollo key
+  4 Inbound           built (portal visits, replies, telemetry + pager)
+
+───────────────────────────────────────────────────────────────────────────
+2 · THE DIAGNOSIS — seven frictions, each with evidence
+───────────────────────────────────────────────────────────────────────────
+
+F1 · OPS IS AN ACCRETION DISK
+    OpsView now stacks ~12 sections in one scroll: header, 24h brief,
+    vitals, alert deck, watch self-audit, turnaround engine table + drain +
+    pulses, sequence engine (run tick), SendingDomainsPanel,
+    ConnectionsPanel, SourcingPanel, ERP coverage, engine-contract card.
+    The doctrine above the fold ("what needs me?") is right. Below the
+    fold there is no order: watching, doing, configuring, and reference
+    material all interleave. Three kinds of surface, zero band labels.
+
+F2 · A WORK QUEUE LIVES IN THE HEALTH TAB (the big one)
+    Sourcing is gate 3 of the acquisition strategy — "who do we email
+    next" — an operator work queue with money decisions on every row
+    (reveal = credits). By the cockpit's own doctrine (one view = one
+    question), it belongs with the operator flow (Strike-class), not
+    buried at the bottom of machine health. Ops should carry only
+    sourcing's HEALTH (credit runway, refusals — already in the
+    ConnectionsPanel), never its WORK.
+
+F3 · THE SNAPSHOT ECONOMY HAS THREE ISLANDS
+    CommandCentre owns one read model (/api/command: 60s refresh, socket
+    pushes, localStorage boot cache). But SendingDomainsPanel,
+    ConnectionsPanel and SourcingPanel each self-fetch their own endpoint
+    on their own clock (sourcing polls every 30s) with their own error
+    states. Consequence: arming a connection, probing, running a batch or
+    a reveal leaves the alert deck, vitals and rail badges stale until
+    the next full snapshot. Cause and effect land on different screens at
+    different times — the opposite of frictionless.
+
+F4 · KEYBOARD GRAMMAR IS INCOMPLETE
+    The "?" overlay lists global / strike / pipeline only. Ops actually
+    has j / k / a / f / h / enter — all undocumented there. And "f" means
+    cycle-filter in Strike but ack-false-positive in Ops. View-scoped
+    overload is fine; undocumented overload is friction.
+
+F5 · ALARMS DON'T DEEP-LINK
+    The Ops drawer renders engagement subjects richly, but system /
+    dispatch / engine subjects get only ack buttons — no jump to the
+    dossier, the desk, or the theatre. "Enter opens the thing the alarm
+    names" holds only for engagements. The rail also has no crit badge on
+    Ops (the footer dot is the only hint).
+
+F6 · VOCABULARY COLLISIONS (docs more than UI)
+    "Portal" = the engagement-desk view AND the prospect's legacy quote
+    portal AND the public landing portal. "Engine" = turnaround engine
+    AND the Python vertebra engine AND the sequence loop. "Pipeline" =
+    the triage view AND the prospect pipeline. VIEW_TITLES already
+    disambiguate on screen; our written doctrine should rule on the
+    canonical terms so future docs and panels can't drift.
+
+F7 · WORKSPACE NOISE (not product, but it taxes every session)
+    download/ holds ~100 stale phase screenshots next to the four living
+    documents; scripts/ carries ~90 one-off verify scripts plus scripts/tmp
+    geo binaries. Every audit pays the tax of skimming around them.
+
+───────────────────────────────────────────────────────────────────────────
+3 · THE ORGANIZING PRINCIPLE
+───────────────────────────────────────────────────────────────────────────
+
+The spine is already right. Ledger brain, derived read models, fail-closed
+doors, ack-not-store alerts — the architecture does not need reorganizing.
+The UI friction is ORDER, not architecture. So the rule for every change
+below:
+
+  Sort, don't rebuild. Every surface answers exactly one question. Same
+  vocabulary everywhere. Any write anywhere refreshes everything. Nothing
+  new gets a surface until the surfaces it touches are ordered.
+
+───────────────────────────────────────────────────────────────────────────
+4 · THE PLAN — six moves, in order
+───────────────────────────────────────────────────────────────────────────
+
+MOVE 1 — OPS BECOMES FOUR BANDS IN ONE TAB (the frictionless pass)
+  Keep Ops a single tab (no sub-tabs: a 1-of-1 cockpit must stay one
+  glance) and sort the accretion disk into four titled bands:
+
+    BAND 1 · NEEDS ME    brief · vitals · alert deck · watch self-audit
+                         (exactly what lives there today, unchanged)
+    BAND 2 · LOOPS       sequence engine (tick) · turnaround engine table +
+                         drain + pulses — everything that runs on a clock
+    BAND 3 · DOORS       sending domains · enclave connections · engine
+                         contract card — everything that touches the outside
+    BAND 4 · BOOK        ERP coverage (+ any future reference material)
+
+  Cheap to build (reorder + three band headers inside OpsView), preserves
+  the deck's primacy, and gives every future panel an obvious home: new
+  things go to a band, never to the pile.
+
+MOVE 2 — SOURCING IS PROMOTED TO THE RAIL (decision point A)
+  Add a seventh view: "Sourcing — who's next through the door" (key 7,
+  rail glyph, badge = eligible-above-bar count). The panel moves whole
+  (batch runs, fit math, reveal/dismiss, revealed record). Ops keeps only
+  the health line it already has via ConnectionsPanel runway + a watch row
+  when credits run dry. This makes the rail mirror the four gates instead
+  of hiding one inside machine health.
+  Alternative if seven views offends: mount the panel as a Radar band.
+  My recommendation is the seventh view — the rail should answer every
+  first-class question with a view.
+
+MOVE 3 — ONE REFRESH ECONOMY
+  Every panel write (arm, probe, tick, batch, reveal, dismiss, domain
+  add/verify) broadcasts one console event; CommandCentre and every panel
+  subscribe. One write → deck, vitals, rail badges and panels all update
+  on the same beat. Implementation: a tiny window CustomEvent bus (or a
+  socket "console:refresh" push), ~40 lines. Later, optional: fold the
+  three panel payloads into the snapshot itself.
+
+MOVE 4 — GRAMMAR COMPLETENESS + ALARM DEEP-LINKS
+  · Add ops / sourcing / doors keys to the "?" overlay; document that f
+    means filter in Strike and false-positive in Ops.
+  · Ops drawer gains an "open subject" action: prospect/dispatch alarms →
+    DossierDrawer, engagement → Desk, cluster → Theatre deep-link.
+  · Crit badge on the Ops rail item (mirrors Radar/Pipeline badges).
+
+MOVE 5 — VOCABULARY RULING (one paragraph in the handbook, zero code)
+  quote portal = a prospect's RFQ site · the Desk = engagement desk ·
+  turnaround engine = the document pipeline · vertebra engine = the
+  Python production twin · sequence loop = the Channel A ticker.
+  (Optionally rename the Portal view label to "Desk" — your call; the
+  route/model names never change.)
+
+MOVE 6 — WORKSPACE HYGIENE
+  Archive the ~100 stale screenshots under download/archive/ (keep the
+  four living docs at top level: strategy, domain runbook, operator
+  handbook, key handoff); gitignore scripts/tmp. Ten minutes, once.
+
+───────────────────────────────────────────────────────────────────────────
+5 · WHAT NOT TO DO — perfect ≠ more
+───────────────────────────────────────────────────────────────────────────
+
+  · No color — the zero-color law holds; luminance and words only.
+  · No sub-tabs inside Ops, no dashboard-in-dashboard, no settings page
+    sprawl — bands, not branches.
+  · No Pipeline rebuild, no Theatre changes, no TheatreView revival —
+    shelved stays shelved.
+  · No auto-arming, no key material in the ledger, no new brain — the
+    registry stays the only door.
+  · Don't fold panels into the snapshot yet if the event bus lands first
+    — measure whether staleness actually dies before adding payload weight.
+
+───────────────────────────────────────────────────────────────────────────
+6 · BUILD ORDER AFTER YOUR GO
+───────────────────────────────────────────────────────────────────────────
+
+  1  Moves 1+3+4 in one pass (Ops bands + refresh economy + grammar +
+     deep-links) — the frictionless sprint, one session
+  2  Move 2 (sourcing 7th view) — one session, panel moves whole
+  3  Push the 4 unpushed commits (needs a fresh PAT from you)
+  4  Phase-2 cheap wins: nightly ledger snapshot · Slack pager (you make
+     the webhook, we arm the row) · pain-signal harvester cadence
+  5  Domain day per vertebra-domain-runbook — the gate to real egress
+  6  You, in parallel: Apollo free key → paste → arm (unlocks live search
+     + reveal; everything else already works)
+
+───────────────────────────────────────────────────────────────────────────
+7 · DECISIONS I NEED FROM YOU
+───────────────────────────────────────────────────────────────────────────
+
+  A  Sourcing as 7th rail view (recommended) vs Radar band?
+  B  Refresh economy now (recommended, ~40 lines) vs later snapshot merge?
+  C  Portal view label → "Desk"? (UI label only)
+  D  Archive the old screenshots out of download/?
+
+Say the word and I build in the order above.
