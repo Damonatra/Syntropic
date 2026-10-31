@@ -11,6 +11,7 @@ import re
 from urllib.parse import urlparse
 
 from vertebra.config.settings import REVENUE_CEILING_USD, REVENUE_FLOOR_USD
+from vertebra.ingestion.uom_normalizer import CanonicalUoM, NormalizedUoM, canonicalize_uom
 from vertebra.models.domain import CompanyRecord, Region, Vertical
 
 # --------------------------------------------------------------------------- #
@@ -219,3 +220,23 @@ def normalise_name(name: str) -> str:
         if cleaned.lower().endswith(drop):
             cleaned = cleaned[: -len(drop)].rstrip(" ,.")
     return cleaned
+
+
+# --------------------------------------------------------------------------- #
+# Line Item UoM standardization
+# --------------------------------------------------------------------------- #
+
+
+def standardize_line_item(
+    raw_unit: str,
+    quantity: int | float | str,
+    unit_price: int | float | str | None = None,
+    pack_size: int = 1,
+) -> NormalizedUoM:
+    """Standardize line item quantities and units of measure into canonical units."""
+    return canonicalize_uom(
+        raw_unit=raw_unit,
+        quantity=quantity,
+        unit_price=unit_price,
+        pack_size=pack_size,
+    )

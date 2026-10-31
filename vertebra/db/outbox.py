@@ -15,6 +15,7 @@ from typing import Any
 
 import asyncpg
 
+from vertebra.db.event_stream import EventStreamLogger
 from vertebra.db.pool import Database
 from vertebra.logging_conf import get_logger
 from vertebra.models.domain import OutboxEvent, utcnow
@@ -46,8 +47,9 @@ _FAIL_SQL = "UPDATE outbox SET last_error = $2 WHERE id = $1"
 class OutboxStore:
     """Read/write access to the transactional outbox table."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, *, stream_logger: EventStreamLogger | None = None) -> None:
         self._db = db
+        self._stream_logger = stream_logger
 
     # ------------------------------------------------------------------ write
     async def enqueue(
@@ -79,6 +81,14 @@ class OutboxStore:
             payload=dict(payload),
             created_at=row["created_at"],
         )
+        if self._stream_logger is not None:
+            try:
+                self._stream_logger.append(
+                    event_type,
+                    {"aggregate_type": aggregate_type, "aggregate_id": aggregate_id, **dict(payload)},
+                )
+            except Exception as stream_err:
+                log.warning("stream_log_append_failed", event_type=event_type, error=str(stream_err))
         log.info("outbox_enqueued", event_type=event_type, aggregate_id=aggregate_id)
         return event
 

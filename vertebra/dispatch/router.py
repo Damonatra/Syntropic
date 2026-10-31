@@ -22,6 +22,7 @@ from vertebra.db.outbox import OutboxStore
 from vertebra.db.pool import Database
 from vertebra.dispatch.calendar_sync import CalendarSync
 from vertebra.dispatch.channel_email import EmailDispatcher
+from vertebra.dispatch.graph_draft import GraphDraftPayload, MicrosoftGraphDraftClient
 from vertebra.dispatch.high_touch import HighTouchExporter
 from vertebra.enrichment.casl import build_casl_footer, build_email_headers
 from vertebra.logging_conf import get_logger
@@ -69,6 +70,7 @@ class DispatchRouter:
         self._high_touch = high_touch or HighTouchExporter(
             db, self._outbox, export_dir=self._policy.high_touch_export_dir, calendar=self._calendar
         )
+        self._graph_client = MicrosoftGraphDraftClient()
 
     # ----------------------------------------------------------------- decide
     def decide(self, prospect: Prospect) -> DispatchDecision:
@@ -168,6 +170,26 @@ class DispatchRouter:
     # ------------------------------------------------------------- channel B
     async def _execute_channel_b(self, prospect: Prospect) -> DispatchDecision:
         await self._high_touch.enqueue(prospect)
+        # Attempt Microsoft Graph draft injection if configured
+        if prospect.best_email and prospect.score:
+            try:
+                subject = self._subject(prospect.score, prospect.company.name)
+                body = self._body(prospect.score)
+                payload = GraphDraftPayload(
+                    subject=subject,
+                    recipient_email=prospect.best_email,
+                    recipient_name=(
+                        f"{prospect.primary_contact.first_name} {prospect.primary_contact.last_name}"
+                        if prospect.primary_contact
+                        else None
+                    ),
+                    html_body=f"<p>{body.replace('\n', '<br>')}</p>",
+                    sender_user_principal="rep@syntropic.com",
+                )
+                if self._graph_client.tenant_id:
+                    await self._graph_client.inject_draft(payload)
+            except Exception as graph_err:
+                log.debug("graph_draft_injection_skipped", error=str(graph_err))
         return prospect.dispatch  # type: ignore[return-value]
 
     # ------------------------------------------------------------ persistence

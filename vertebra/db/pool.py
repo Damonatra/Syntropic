@@ -15,6 +15,7 @@ from typing import Any
 import asyncpg
 
 from vertebra.config.settings import DatabaseSettings, Settings, get_settings
+from vertebra.db.ast_veto import validate_tenant_query
 from vertebra.logging_conf import get_logger
 
 log = get_logger("db.pool")
@@ -78,15 +79,21 @@ class Database:
         log.info("migrations_applied", path=str(path))
 
     # ---------------------------------------------------------------- helpers
-    async def fetch(self, sql: str, *args: Any) -> list[asyncpg.Record]:
+    async def fetch(self, sql: str, *args: Any, enforce_tenant: bool = False, expected_tenant_id: str | None = None) -> list[asyncpg.Record]:
+        if enforce_tenant:
+            validate_tenant_query(sql, expected_tenant_id=expected_tenant_id)
         async with self.pool.acquire() as conn:
             return await conn.fetch(sql, *args)
 
-    async def fetchrow(self, sql: str, *args: Any) -> asyncpg.Record | None:
+    async def fetchrow(self, sql: str, *args: Any, enforce_tenant: bool = False, expected_tenant_id: str | None = None) -> asyncpg.Record | None:
+        if enforce_tenant:
+            validate_tenant_query(sql, expected_tenant_id=expected_tenant_id)
         async with self.pool.acquire() as conn:
             return await conn.fetchrow(sql, *args)
 
-    async def execute(self, sql: str, *args: Any) -> str:
+    async def execute(self, sql: str, *args: Any, enforce_tenant: bool = False, expected_tenant_id: str | None = None) -> str:
+        if enforce_tenant:
+            validate_tenant_query(sql, expected_tenant_id=expected_tenant_id)
         async with self.pool.acquire() as conn:
             return await conn.execute(sql, *args)
 

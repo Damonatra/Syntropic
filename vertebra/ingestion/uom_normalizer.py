@@ -57,7 +57,9 @@ UOM_SYNONYM_MAP: dict[str, tuple[CanonicalUoM, Decimal]] = {
     "c": (CanonicalUoM.EACH, Decimal("100.0")),  # hundred in industrial catalog
     "hnd": (CanonicalUoM.EACH, Decimal("100.0")),
     "hundred": (CanonicalUoM.EACH, Decimal("100.0")),
-    "m": (CanonicalUoM.EACH, Decimal("1000.0")),  # thousand (mille) in PVF/fasteners
+    "m": (CanonicalUoM.EACH, Decimal("1000.0")),  # thousand (mille / M) in PVF/fasteners
+    "mil": (CanonicalUoM.EACH, Decimal("1000.0")),
+    "mille": (CanonicalUoM.EACH, Decimal("1000.0")),
     "th": (CanonicalUoM.EACH, Decimal("1000.0")),
     "thousand": (CanonicalUoM.EACH, Decimal("1000.0")),
     "bx": (CanonicalUoM.EACH, Decimal("1.0")),  # Container with package-level quantity
@@ -84,7 +86,6 @@ UOM_SYNONYM_MAP: dict[str, tuple[CanonicalUoM, Decimal]] = {
     "in": (CanonicalUoM.INCH, Decimal("1.0")),
     "inch": (CanonicalUoM.INCH, Decimal("1.0")),
     "inches": (CanonicalUoM.INCH, Decimal("1.0")),
-    "m": (CanonicalUoM.METER, Decimal("1.0")),
     "mtr": (CanonicalUoM.METER, Decimal("1.0")),
     "meter": (CanonicalUoM.METER, Decimal("1.0")),
     "meters": (CanonicalUoM.METER, Decimal("1.0")),

@@ -8,10 +8,12 @@ allowing human review and 1-click personal dispatch without third-party email tr
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from typing import Any
 
 import httpx
 
+from vertebra.config.settings import get_settings
 from vertebra.models.errors import DispatchError
 
 
@@ -36,9 +38,9 @@ class MicrosoftGraphDraftClient:
         client_secret: str | None = None,
         graph_base_url: str = "https://graph.microsoft.com/v1.0",
     ):
-        self.tenant_id = tenant_id
-        self.client_id = client_id
-        self.client_secret = client_secret
+        self.tenant_id = tenant_id or os.getenv("AZURE_TENANT_ID") or os.getenv("VERTEBRA_AZURE_TENANT_ID")
+        self.client_id = client_id or os.getenv("AZURE_CLIENT_ID") or os.getenv("VERTEBRA_AZURE_CLIENT_ID")
+        self.client_secret = client_secret or os.getenv("AZURE_CLIENT_SECRET") or os.getenv("VERTEBRA_AZURE_CLIENT_SECRET")
         self.graph_base_url = graph_base_url.rstrip("/")
 
     def format_draft_body(self, payload: GraphDraftPayload) -> dict[str, Any]:

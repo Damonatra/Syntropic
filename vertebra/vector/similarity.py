@@ -22,6 +22,7 @@ from typing import Any
 from vertebra.config.settings import QdrantSettings, get_settings
 from vertebra.logging_conf import get_logger
 from vertebra.models.domain import Vertical
+from vertebra.vector.hybrid_rrf import ScoredEntity, reciprocal_rank_fusion
 
 log = get_logger("vector.similarity")
 
@@ -244,6 +245,22 @@ class FirmographicIndex:
         """Lookalikes for one prospect, excluding itself."""
         neighbours = await self.search_similar(vector, top_k=top_k + 1)
         return [n for n in neighbours if n.prospect_id != exclude_prospect_id][:top_k]
+
+    # -------------------------------------------------------------- hybrid rrf
+    def hybrid_fuse(
+        self,
+        dense_prospect_ids: list[str],
+        lexical_prospect_ids: list[str],
+        k: int = 60,
+        payloads: dict[str, dict[str, Any]] | None = None,
+    ) -> list[ScoredEntity]:
+        """Perform Reciprocal Rank Fusion over dense vector and lexical rankings."""
+        return reciprocal_rank_fusion(
+            dense_ranked_ids=dense_prospect_ids,
+            lexical_ranked_ids=lexical_prospect_ids,
+            k=k,
+            payloads=payloads,
+        )
 
     # ------------------------------------------------------------------ patch
     async def patch_payload(self, prospect_id: str, payload: dict[str, Any]) -> None:
