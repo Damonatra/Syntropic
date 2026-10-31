@@ -28,6 +28,7 @@ import {
   type TurnaroundRow,
 } from "@/lib/vertebra/turnaround";
 import { writeEnginePulse } from "@/lib/vertebra/pulse";
+import { runConvoyForDispatch } from "@/lib/vertebra/convoy";
 import { stageMoveTarget } from "@/lib/vertebra/watches";
 
 const NO_PROVIDER_BACKOFF_MS = 15 * 60_000;
@@ -131,6 +132,16 @@ export async function runSequenceTick(): Promise<TickOutcome> {
       });
       outcome.sent += 1;
       outcome.details.push({ id: d.id, prospect: p.name, outcome: "sent", note: result.providerMsgId });
+      // The convoy — step-1 sends task the human touch call (never throws).
+      const convoy = await runConvoyForDispatch(d.id);
+      if (convoy.fired) {
+        outcome.details.push({
+          id: d.id,
+          prospect: p.name,
+          outcome: "convoy_paged",
+          note: convoy.delivered.length > 0 ? `paged: ${convoy.delivered.join("+")}` : "page claimed — no live channel, row in ops pulses",
+        });
+      }
     } else if (result.status === "staged") {
       await db.dispatch.update({
         where: { id: d.id },
