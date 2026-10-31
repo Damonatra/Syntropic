@@ -54,11 +54,39 @@ model Prospect {
   operatorActions    OperatorAction[]
   painSignals        PainSignal[]
   engagements        Engagement[]
+  sourcingCandidate  SourcingCandidate?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   @@unique([source, domainKey])
   @@index([ingestion])
+}
+
+/// Sourcing candidate — the reveal queue's row. The sourcing spoke searches
+/// WHO to email (Apollo people search — search burns no email credits),
+/// scores each hit with the pre-contact fit rubric, and stages it here.
+/// Money (a reveal through the resolver) only flows to candidates at or
+/// above the reveal bar; every attempt, refusal, and dismissal is state on
+/// this row. One candidate per prospect — the person the enclave believes in.
+model SourcingCandidate {
+  id               String    @id @default(cuid())
+  prospect         Prospect  @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  prospectId       String    @unique
+  contactId        String? // the Contact row for the person this candidate names
+  fitScore         Int // 0–100 pre-contact fit (vertical · erp · size · region · title)
+  fitJson          String // factor breakdown — the math behind the score
+  batchId          String // fixture:… or live:<ts> — provenance of the search run
+  mode             String    @default("live") // live | staging
+  stage            String    @default("staged") // staged | revealed | dismissed
+  stageReason      String? // why the last reveal attempt failed / why dismissed
+  attempts         Int       @default(0)
+  revealedProvider String?
+  revealedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([stage, fitScore])
+  @@index([batchId])
 }
 
 model Contact {

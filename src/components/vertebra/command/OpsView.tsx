@@ -26,6 +26,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Chip, ErpBadge, LiveDot, PillButton, SectionLabel, SoftCard } from "./bits";
 import { SendingDomainsPanel } from "./SendingDomainsPanel";
 import { ConnectionsPanel } from "./ConnectionsPanel";
+import { SourcingPanel } from "./SourcingPanel";
 import type { CommandSnapshot, OpsWatchAlert, WatchSeverity } from "@/lib/vertebra/command";
 import { nextActionFor, STAGE_LABELS, type EngagementStage } from "@/lib/vertebra/portal";
 import { humanDuration } from "@/lib/vertebra/watches";
@@ -507,6 +508,9 @@ export function OpsView({
 
       {/* enclave connections — the integration registry: every external API, one ledger row */}
       <ConnectionsPanel />
+
+      {/* sourcing — the prospect spoke: search → stage → fit → reveal queue */}
+      <SourcingPanel />
 
       {/* ERP coverage */}
       <SoftCard className="mt-5 px-6 py-5">

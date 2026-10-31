@@ -28,14 +28,19 @@ findings scored. A prospect who handed over their own data outranks any
 purchased contact. This door is the product-led engine: audit → margin
 recovery report → pilot engagement.
 
-DOOR 3 — APOLLO SOURCING SEARCH (the one missing spoke) [PENDING BUILD]
+DOOR 3 — APOLLO SOURCING SEARCH (the one missing spoke) [BUILT 2026-10-31]
 Bulk search by ICP filters (Apollo mixed_people/search — search itself burns
 no email credits) → staged Prospect rows (source:"sourcing", deduped via
-@@unique([source, domainKey])) → deterministic pre-score → only band
-high/critical enter the reveal queue → EXISTING resolver (name+domain →
-email, registry-gated, ledgered) → verify → CASL + suppression gate →
-dispatch queue, warmup-gated. Reuses: registry gate, ContactResolution
-ledger, circuits, refusal feed. Nothing new to trust.
+@@unique([source, domainKey])) → pre-contact fit rubric (vertical .35 ·
+erp .20 · size .15 · region .15 · title .15; reveal bar 70 mirrors
+CHANNEL_A_MIN_SCORE) → only fit ≥ 70 enter the reveal queue → EXISTING
+resolver (name+domain → email, registry-gated, ledgered) → verify →
+CASL + suppression gate → dispatch queue, warmup-gated. Panel: Ops →
+"Sourcing — the prospect spoke" (staging batch / live batch / math per
+row / reveal / dismiss; dismissed verdicts survive re-staging). Staging
+batches run .example.com fixtures while the key is absent — they queue and
+score honestly but never reveal; a reveal walks the resolver's own gate and
+refuses with its named reason.
 
 DOOR 4 — INBOUND (already built)                        [BUILT]
 Portal form, mail relay, replies. Every dispatch manufactures inbound:
@@ -68,8 +73,12 @@ sends → Resend events (bounce/complaint → suppression) → replies → mail 
 score smarter weekly.
 
 OPERATOR STATE TODAY
-  APOLLO_API_KEY  absent → registry row staged, resolver refuses with reason
+  APOLLO_API_KEY  absent → registry row staged, sourcing + resolver refuse
+                    with named reasons; staging batches run on fixtures
   HUNTER_API_KEY  absent → same
   RESEND_API_KEY  absent → egress gate stays shut (warmup unaffected)
-  Next build on "proceed": sourcing spoke v1 (search → stage → pre-score →
-  reveal queue). Next operator act: register Apollo free, paste key, arm.
+  SOURCING SPOKE  built + committed — Ops panel "Sourcing — the prospect
+                  spoke"; 207/207 tests green
+  Next operator act: register Apollo free, paste APOLLO_API_KEY into .env,
+  arm the apollo row on the Enclave connections panel, run the first LIVE
+  batch — search stages free, reveals only above the bar.
