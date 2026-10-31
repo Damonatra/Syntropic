@@ -20,9 +20,11 @@ import { TheatreView } from "./TheatreView";
 import { PipelineView } from "./PipelineView";
 import { PortalView } from "./portal/PortalView";
 import { OpsView } from "./OpsView";
+import { SourcingView } from "./SourcingView";
 import { DossierDrawer } from "./DossierDrawer";
 import { HudMeta, LiveDot } from "./bits";
 import { chime } from "@/lib/vertebra/chime";
+import { onConsoleRefresh } from "@/lib/vertebra/console-bus";
 import { PERSONAS, personaDef, type PersonaId } from "@/lib/vertebra/persona";
 import {
   INTENT_LABELS,
@@ -78,7 +80,7 @@ interface Toast {
 
 /** M7 — the grammar overlay's single source of truth. */
 const SHORTCUTS: Array<[string, string, string]> = [
-  ["global", "1 – 6", "switch deck"],
+  ["global", "1 – 7", "switch deck"],
   ["global", "⌘K", "command jump"],
   ["global", "?", "this overlay"],
   ["strike", "j / k", "move cursor"],
@@ -96,6 +98,11 @@ const SHORTCUTS: Array<[string, string, string]> = [
   ["pipeline", "enter", "open dossier"],
   ["pipeline", "space", "select for bulk"],
   ["pipeline", "f", "cycle intent filter"],
+  ["ops", "j / k", "move cursor"],
+  ["ops", "a", "ack — real (quiet this window)"],
+  ["ops", "f", "ack — false positive"],
+  ["ops", "h", "ack — handled"],
+  ["ops", "enter", "open subject drawer"],
 ];
 
 const VIEW_TITLES: Record<ViewKey, string> = {
@@ -105,9 +112,10 @@ const VIEW_TITLES: Record<ViewKey, string> = {
   pipeline: "Pipeline — machine state & triage",
   portal: "Portal — engagement desk",
   ops: "Ops — engine health",
+  sourcing: "Sourcing — who's next through the door",
 };
 
-const VIEW_KEYS: ViewKey[] = ["radar", "strike", "theatre", "pipeline", "portal", "ops"];
+const VIEW_KEYS: ViewKey[] = ["radar", "strike", "theatre", "pipeline", "portal", "ops", "sourcing"];
 
 /** localStorage key for the last good snapshot — boot paint before the network answers. */
 const SNAPSHOT_CACHE_KEY = "vertebra:last-snapshot";
@@ -285,6 +293,22 @@ export function CommandCentre() {
     void refresh();
     const t = setInterval(() => void refresh(), 60_000);
     return () => clearInterval(t);
+  }, [refresh]);
+
+  // ---- console refresh bus — one beat everywhere -------------------------- //
+  // Any write anywhere (arm, probe, batch, reveal, tick, ack, domain change)
+  // fires the bus; the root snapshot reloads on the same beat the panels do.
+  // Debounced so a burst of writes costs one fetch, not ten.
+  const busTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const off = onConsoleRefresh(() => {
+      if (busTimer.current) clearTimeout(busTimer.current);
+      busTimer.current = setTimeout(() => void refresh(), 250);
+    });
+    return () => {
+      off();
+      if (busTimer.current) clearTimeout(busTimer.current);
+    };
   }, [refresh]);
 
   // M5 — fresh snapshot arrived: optimistic dims yield to the real state.
@@ -633,7 +657,7 @@ export function CommandCentre() {
       }
       if (shortcutsOpen || paletteOpen || dossierOpen) return;
 
-      if (["1", "2", "3", "4", "5", "6"].includes(e.key)) {
+      if (["1", "2", "3", "4", "5", "6", "7"].includes(e.key)) {
         setView(VIEW_KEYS[Number(e.key) - 1]);
         return;
       }
@@ -819,7 +843,8 @@ export function CommandCentre() {
                 />
               )}
               {view === "portal" && <PortalView snap={snap} refresh={refresh} />}
-              {view === "ops" && <OpsView snap={snap} connected={connected} refresh={refresh} />}
+              {view === "ops" && <OpsView snap={snap} connected={connected} onGoPortal={() => setView("portal")} />}
+              {view === "sourcing" && <SourcingView onOpenDossier={openDossierById} />}
             </>
           )}
         </div>

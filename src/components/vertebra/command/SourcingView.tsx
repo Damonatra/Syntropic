@@ -1,17 +1,30 @@
 /**
- * Sourcing panel — the reveal queue's console face.
+ * Sourcing — the rail's seventh view: "who's next through the door".
  *
- * One spoke, made visible: run a batch (staging fixtures while no key sits
- * on disk, live Apollo search once armed), read the fit math per candidate,
- * and move money only above the bar. The fit bar is luminance-only — zero
- * color law — and every refusal from the door lands on the row it belongs
- * to, named, not swallowed. Below-bar rows stay visible on purpose: an
- * operator should see what the enclave refused to spend on, and why.
+ * Promoted from an Ops-bottom panel: by the cockpit's doctrine (one view =
+ * one question), a work queue with money decisions on every row is
+ * operator flow, not machine health. Ops keeps only sourcing's health —
+ * the credit runway on the enclave connections row and a watch when
+ * credits run dry; the queue itself lives here.
+ *
+ * One spoke, made visible: run a batch (staging fixtures while no key
+ * sits on disk, live Apollo search once armed), read the fit math per
+ * candidate, and move money only above the bar. The fit bar is
+ * luminance-only — zero color law — and every refusal from the door lands
+ * on the row it belongs to, named, not swallowed. Below-bar rows stay
+ * visible on purpose: an operator should see what the enclave refused to
+ * spend on, and why.
+ *
+ * Refresh economy: every write (batch, reveal, dismiss) fires the console
+ * refresh bus, so the cockpit snapshot (rail badge, snapshot counts) and
+ * the sibling panels reload on the same beat; this view reloads itself
+ * the same way when any other surface writes.
  */
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Chip, SectionLabel, SoftCard } from "./bits";
+import { Chip, LiveDot, SectionLabel } from "./bits";
+import { requestConsoleRefresh, onConsoleRefresh } from "@/lib/vertebra/console-bus";
 
 interface FitFactor {
   key: string;
@@ -79,7 +92,7 @@ function FitBar({ score }: { score: number }) {
   );
 }
 
-export function SourcingPanel() {
+export function SourcingView({ onOpenDossier }: { onOpenDossier?: (prospectId: string) => void }) {
   const [data, setData] = useState<QueuePayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [batch, setBatch] = useState<BatchOutcome | null>(null);
@@ -105,6 +118,9 @@ export function SourcingPanel() {
     return () => clearInterval(t);
   }, [load]);
 
+  // One beat everywhere: another surface's write (or our own, below) reloads the queue.
+  useEffect(() => onConsoleRefresh(() => void load()), [load]);
+
   const runBatch = async (mode: "live" | "staging") => {
     setRunning(mode);
     setBusy(true);
@@ -112,12 +128,15 @@ export function SourcingPanel() {
       const res = await fetch("/api/contacts/sourcing/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode }), // house ICP — the panel runs the default book
+        body: JSON.stringify({ mode }), // house ICP — the view runs the default book
       });
       const j = (await res.json().catch(() => ({}))) as BatchOutcome;
       setBatch(j);
       if (!res.ok || !j.ok) setError(j.reason ?? `batch refused (${res.status})`);
-      else setError(null);
+      else {
+        setError(null);
+        requestConsoleRefresh(`sourcing:batch-${mode}`);
+      }
       await load();
     } catch {
       setError("batch failed");
@@ -133,12 +152,15 @@ export function SourcingPanel() {
       const res = await fetch(`/api/contacts/sourcing/${path}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(path === "dismiss" ? { candidateId, reason: "dismissed from the panel" } : { candidateId }),
+        body: JSON.stringify(path === "dismiss" ? { candidateId, reason: "dismissed from the sourcing view" } : { candidateId }),
       });
       const j = (await res.json().catch(() => ({}))) as { ok?: boolean; reason?: string; status?: string; email?: string | null };
       if (path === "reveal" && res.ok && j.ok) setBatch({ ok: true, reason: undefined, staged: undefined, mode: `reveal ${j.status}`, batchId: j.email ?? "" });
       if (!res.ok) setError(j.reason ?? `action failed (${res.status})`);
-      else setError(null);
+      else {
+        setError(null);
+        requestConsoleRefresh(`sourcing:${path}`);
+      }
       await load();
     } catch {
       setError("action failed");
@@ -150,10 +172,15 @@ export function SourcingPanel() {
   const stats = data?.stats;
 
   return (
-    <SoftCard className="mt-5 px-6 py-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="relative flex h-full flex-col overflow-y-auto cc-scroll p-6">
+      {/* header */}
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <SectionLabel>Sourcing — the prospect spoke</SectionLabel>
+          <p className="mt-2 flex items-center gap-2.5 font-display text-[22px] font-semibold tracking-[-0.03em] text-[#F4F5F2]">
+            <LiveDot level={error ? "fail" : "live"} />
+            {stats ? `${stats.eligible} above the bar` : "Reading the queue…"}
+          </p>
           <p className="mt-1.5 max-w-3xl text-[12.5px] leading-relaxed text-[#8E9194]">
             Search costs nothing; reveal costs credits. A batch finds WHO to email, scores each hit on pre-contact fit (vertical · erp · size · region ·
             title), and stages it here — money moves only at or above the reveal bar of 70, and every refusal is named on its row. Staging batches run
@@ -180,7 +207,11 @@ export function SourcingPanel() {
         </div>
       </div>
 
-      {error && <p className="mt-3 font-mono text-[10.5px] uppercase tracking-[0.14em] text-[#FF8A7A]">{error}</p>}
+      {error && (
+        <p className="mt-4 rounded-lg border border-white/20 bg-[#141614] px-4 py-2 font-mono text-[10.5px] uppercase tracking-[0.12em] text-[#FF8A7A]">
+          {error}
+        </p>
+      )}
 
       {batch && (
         <div className="mt-4 rounded-lg border border-white/[0.08] bg-[#0E100E] px-4 py-3">
@@ -227,6 +258,15 @@ export function SourcingPanel() {
                 >
                   {openFactors === c.candidateId ? "hide math" : "math"}
                 </button>
+                {onOpenDossier && (
+                  <button
+                    onClick={() => onOpenDossier(c.prospectId)}
+                    title="open the staged prospect's dossier — the company behind the candidate"
+                    className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-[#8E9194] transition-colors hover:text-[#F4F5F2]"
+                  >
+                    dossier
+                  </button>
+                )}
                 {c.revealEligible && (
                   <button
                     onClick={() => void act("reveal", c.candidateId)}
@@ -280,6 +320,6 @@ export function SourcingPanel() {
           ))}
         </div>
       )}
-    </SoftCard>
+    </div>
   );
 }

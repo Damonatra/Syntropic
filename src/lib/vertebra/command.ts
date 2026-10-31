@@ -509,6 +509,19 @@ export interface BaselineBlock {
   inputs: KpiInputs;
 }
 
+/**
+ * Sourcing spoke counts — the rail badge and the view's health line read
+ * these instead of a second fetch. Counts only (the queue rows still live
+ * on the spoke's own route); optional so older cached snapshots parse.
+ */
+export interface SourcingSnapshot {
+  /** staged candidates at or above the reveal bar — the rail badge count. */
+  eligibleAboveBar: number;
+  staged: number;
+  revealed: number;
+  dismissed: number;
+}
+
 // --------------------------------------------------------------------------- //
 // Theatre pulse — territory-scoped movement ledger (Map-4)
 // --------------------------------------------------------------------------- //
@@ -554,6 +567,8 @@ export interface CommandSnapshot {
   pulse?: PulseEvent[];
   /** Portal engagement ledger — optional so older cached snapshots still parse. */
   engagements?: EngagementShape[];
+  /** Sourcing spoke counts — optional so older cached snapshots still parse. */
+  sourcing?: SourcingSnapshot | null;
 }
 
 // --------------------------------------------------------------------------- //

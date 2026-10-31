@@ -5,7 +5,7 @@ import { useCallback, useSyncExternalStore } from "react";
 import type { CommandSnapshot } from "@/lib/vertebra/command";
 import { LiveDot, SectionLabel } from "./bits";
 
-export type ViewKey = "radar" | "strike" | "theatre" | "pipeline" | "portal" | "ops";
+export type ViewKey = "radar" | "strike" | "theatre" | "pipeline" | "portal" | "ops" | "sourcing";
 
 const NAV: Array<{ key: ViewKey; label: string; hint: string; glyph: string }> = [
   { key: "radar", label: "Radar", hint: "1", glyph: "◎" },
@@ -14,6 +14,7 @@ const NAV: Array<{ key: ViewKey; label: string; hint: string; glyph: string }> =
   { key: "pipeline", label: "Pipeline", hint: "4", glyph: "▤" },
   { key: "portal", label: "Portal", hint: "5", glyph: "◧" },
   { key: "ops", label: "Ops", hint: "6", glyph: "▦" },
+  { key: "sourcing", label: "Sourcing", hint: "7", glyph: "◇" },
 ];
 
 /** Persisted rail posture — "1" keeps the icon column between visits. */
@@ -78,6 +79,8 @@ export function CommandRail({
   const highIntent = snap?.leads.filter((l) => l.highIntentNow).length ?? 0;
   const drafts = snap?.triage.pending.length ?? 0;
   const warn = snap?.ops.deck?.filter((a) => a.severity !== "info").length ?? 0;
+  const opsCrit = snap?.ops.deck?.filter((a) => a.severity === "crit").length ?? 0;
+  const sourcingEligible = snap?.sourcing?.eligibleAboveBar ?? 0;
 
   const badge = (key: ViewKey): string | null => {
     if (key === "radar" && highIntent > 0) return String(highIntent);
@@ -86,8 +89,14 @@ export function CommandRail({
       return n > 0 ? String(n) : null;
     }
     if (key === "pipeline" && drafts > 0) return String(drafts);
+    if (key === "ops" && opsCrit > 0) return String(opsCrit); // crit on the deck — the rail must ring too
+    if (key === "sourcing" && sourcingEligible > 0) return String(sourcingEligible); // candidates above the reveal bar
     return null;
   };
+
+  // Badges that ring loud (inverted) — alarms and work queues, not counts.
+  const isLoud = (key: ViewKey): boolean =>
+    (key === "radar" && highIntent > 0) || (key === "pipeline" && drafts > 0) || (key === "ops" && opsCrit > 0);
 
   // Identity — the signed session names whoever is at the stick; "—" while
   // the door is unlocked (sandbox, gate off) or the handshake is in flight.
@@ -153,7 +162,7 @@ export function CommandRail({
                       className={`absolute right-0.5 top-1 inline-flex h-[15px] min-w-[15px] items-center justify-center rounded-full px-1 font-mono text-[9px] tabular-nums ${
                         active
                           ? "bg-[#0B0C0B] text-[#F4F5F2]"
-                          : (item.key === "radar" && highIntent > 0) || (item.key === "pipeline" && drafts > 0)
+                          : isLoud(item.key)
                             ? "bg-[#F4F5F2] text-[#0B0C0B]"
                             : "border border-white/[0.08] bg-[#1A1D1A] text-[#8E9194]"
                       }`}
@@ -214,7 +223,7 @@ export function CommandRail({
                       className={`ml-auto inline-flex h-[19px] min-w-[19px] items-center justify-center rounded-full px-1.5 font-mono text-[10px] tabular-nums ${
                         active
                           ? "bg-[#0B0C0B] text-[#F4F5F2]"
-                          : (item.key === "radar" && highIntent > 0) || (item.key === "pipeline" && drafts > 0)
+                          : isLoud(item.key)
                             ? "bg-[#F4F5F2] text-[#0B0C0B]"
                             : "bg-[#1A1D1A] text-[#8E9194] border border-white/[0.08]"
                       }`}
@@ -244,7 +253,7 @@ export function CommandRail({
                 Clearance: {personaCode} · 1-of-1
               </p>
               <p className="mt-3 font-mono text-[9.5px] leading-relaxed text-[#5F6460]">
-                j/k move · e cold email · f filter · ? help · ⌘K jump
+                j/k move · e cold email · f filter · ? help · ⌘K jump · 1–7 decks
               </p>
             </div>
           </div>

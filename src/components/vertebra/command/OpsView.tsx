@@ -2,34 +2,41 @@
  * OPS — The Watchtower. Machine health that watches back.
  *
  * The old tab described the machine: fake HUD bars jittered by Math.random,
- * a hardcoded module board. This tab watches it. Three layers, one question
- * answered above the fold — "what needs me?":
+ * a hardcoded module board. This tab watches it. One question answered
+ * above the fold — "what needs me?" — then the machine, sorted into four
+ * fixed bands so nothing accretes into a pile again:
  *
- *   vitals strip  measured heartbeats — bridge, snapshot build, KPI baseline
- *                 capture, outbox, external engines. Quiet when beating.
- *   alert deck    every unacknowledged watch, ranked crit → warn → info, then
- *                 by time-to-impact. Each row states the problem in plain
- *                 words, the next action, the evidence line (the math), and
- *                 the predicted breach ETA. j/k cursor · a ack · enter opens
- *                 the subject drawer · esc closes.
- *   engine view   the document turnaround pipeline measured: per-stage count,
- *                 dwell, at-risk dollars — the promise (deliverable within 5
- *                 days of payment) priced out stage by stage.
+ *   01 needs me   morning brief · vitals strip (measured heartbeats) · the
+ *                 alert deck — every unacknowledged watch, ranked crit →
+ *                 warn → info, each row stating the problem in plain words,
+ *                 the next action, the evidence line (the math) and the
+ *                 predicted breach ETA. j/k cursor · a ack · enter opens
+ *                 the subject drawer · esc closes. · watch self-audit
+ *   02 loops      the clockwork — the document turnaround engine measured
+ *                 stage by stage, and the channel A sequence loop (run
+ *                 tick). Both honest about stalls.
+ *   03 doors      everything that touches the outside — the sending-domain
+ *                 egress ledger, the integration registry, the engine
+ *                 contract card.
+ *   04 book       reference — ERP coverage across the distributor book.
  *
  * Silence is the product: an empty deck renders one deliberate sentence, not
  * confetti. Every number traces to a real row — the watchtower never fires
- * an alarm it cannot show the math for.
+ * an alarm it cannot show the math for. Writes anywhere fire the console
+ * refresh bus, so this view, the door panels and the rail badges move on
+ * one beat. The sourcing work queue lives on its own rail view now; only
+ * its health stays here (runway on the connections row, watches on the deck).
  */
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Chip, ErpBadge, LiveDot, PillButton, SectionLabel, SoftCard } from "./bits";
 import { SendingDomainsPanel } from "./SendingDomainsPanel";
 import { ConnectionsPanel } from "./ConnectionsPanel";
-import { SourcingPanel } from "./SourcingPanel";
 import type { CommandSnapshot, OpsWatchAlert, WatchSeverity } from "@/lib/vertebra/command";
 import { nextActionFor, STAGE_LABELS, type EngagementStage } from "@/lib/vertebra/portal";
 import { humanDuration } from "@/lib/vertebra/watches";
+import { requestConsoleRefresh } from "@/lib/vertebra/console-bus";
 
 interface TickResult {
   ok: boolean;
@@ -56,14 +63,34 @@ function SeverityChip({ severity }: { severity: WatchSeverity }) {
   return <span className="shrink-0 rounded-lg border border-white/[0.09] px-2.5 py-1 font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-[#6E736E]">info</span>;
 }
 
+/**
+ * Band — the four fixed sections of the watchtower (needs me · loops ·
+ * doors · book). Ops stopped being an accretion disk the day every new
+ * surface had to name the band it belongs to; the deck's primacy above the
+ * fold is preserved because band one is exactly what always lived there.
+ */
+function Band({ id, index, label, note, children }: { id?: string; index: string; label: string; note: string; children: ReactNode }) {
+  return (
+    <section id={id} className="mt-8">
+      <div className="flex items-baseline gap-3 border-t border-white/[0.09] pt-3">
+        <span className="font-mono text-[9px] tabular-nums text-[#5F6460]">{index}</span>
+        <p className="font-mono text-[10.5px] font-medium uppercase tracking-[0.24em] text-[#F4F5F2]">{label}</p>
+        <span className="truncate font-mono text-[9px] uppercase tracking-[0.14em] text-[#5F6460]">{note}</span>
+      </div>
+      {children}
+    </section>
+  );
+}
+
 export function OpsView({
   snap,
   connected,
-  refresh,
+  onGoPortal,
 }: {
   snap: CommandSnapshot;
   connected: boolean;
-  refresh: () => Promise<void>;
+  /** Deep-link — an engagement alarm opens the desk it belongs to. */
+  onGoPortal: () => void;
 }) {
   const nowMs = snap.generatedAtMs || Date.now();
   const vitals = snap.ops.vitals ?? [];
@@ -100,7 +127,7 @@ export function OpsView({
           return false;
         }
         setAckFlash(`${a.watchId} · ${reason.replace("_", " ")}`);
-        await refresh();
+        requestConsoleRefresh("ops:ack"); // one beat — snapshot, panels, rail badges
         return true;
       } catch {
         setError("network_error");
@@ -109,7 +136,7 @@ export function OpsView({
         setBusy(false);
       }
     },
-    [refresh],
+    [],
   );
 
   // ---- keyboard — j/k cursor · a ack · enter drawer · esc close ----------- //
@@ -189,7 +216,10 @@ export function OpsView({
       const res = await fetch("/api/ops/tick", { method: "POST", headers: { "Content-Type": "application/json" } });
       const data = (await res.json()) as TickResult & { error?: string };
       if (!res.ok || data.error) setTickError(data.error ?? `server_${res.status}`);
-      else setTick(data);
+      else {
+        setTick(data);
+        requestConsoleRefresh("ops:tick"); // sends moved rows — the snapshot must catch up
+      }
     } catch {
       setTickError("network_error");
     }
@@ -226,6 +256,9 @@ export function OpsView({
           </p>
         </div>
       </div>
+
+      {/* BAND 01 · NEEDS ME — what the machine needs from you */}
+      <Band index="01" label="needs me" note="what the machine needs from you · every alarm carries its math">
 
       {/* the morning brief — one glance answers "what changed" */}
       {briefing && (
@@ -373,6 +406,11 @@ export function OpsView({
         </SoftCard>
       )}
 
+      </Band>
+
+      {/* BAND 02 · LOOPS — the clockwork */}
+      <Band index="02" label="loops" note="the clockwork — the turnaround engine and the send loop, both honest about stalls">
+
       {/* engine view — the document turnaround pipeline, measured */}
       {engine && (
         <SoftCard className="mt-5 px-6 py-5">
@@ -503,14 +541,42 @@ export function OpsView({
         )}
       </SoftCard>
 
+      </Band>
+
+      {/* BAND 03 · DOORS — everything that touches the outside */}
+      <Band index="03" label="doors" id="band-doors" note="everything that touches the outside — egress ledger · registry · the engine contract">
+
       {/* sending domains — the egress ledger the mailer gate enforces */}
       <SendingDomainsPanel />
 
       {/* enclave connections — the integration registry: every external API, one ledger row */}
       <ConnectionsPanel />
 
-      {/* sourcing — the prospect spoke: search → stage → fit → reveal queue */}
-      <SourcingPanel />
+      {/* the engine contract — how the document turnaround engine reports in */}
+      <SoftCard className="mt-5 px-6 py-5">
+        <SectionLabel className="mb-3">Engine contract — signed heartbeat ingress</SectionLabel>
+        <pre className="ink overflow-x-auto rounded-lg p-4 font-mono text-[11.5px] leading-relaxed text-white/90">{`POST /api/ops/heartbeat
+x-vertebra-signature: HMAC-SHA256(rawBody, OPS_HEARTBEAT_SECRET)
+{
+  "engineId": "turnaround-core",     // stable engine name
+  "pulseRef": "run-2026-10-30-014",  // idempotent — retries are free
+  "watchId": "parse_queue",          // which watch this pulse reports
+  "status": "ok",                    // ok | warn | fail
+  "detail": "queue drained · 12 docs parsed",
+  "expectEveryMs": 300000            // silence past max(3x, 10min) rings the deck
+}
+→ 200 { ok, deduped? }   // engines report in; the watchtower never dials out`}</pre>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Chip tone="outline">zero egress · one door in</Chip>
+          <Chip tone="outline">deck: fail pulses ring crit · silence rings crit</Chip>
+          <Chip tone="outline">native watches: SLA clocks · trend sentinels</Chip>
+        </div>
+      </SoftCard>
+
+      </Band>
+
+      {/* BAND 04 · BOOK — reference */}
+      <Band index="04" label="book" note="reference — the distributor book as it stands">
 
       {/* ERP coverage */}
       <SoftCard className="mt-5 px-6 py-5">
@@ -525,6 +591,7 @@ export function OpsView({
           {erpRows.length === 0 && <Chip tone="outline">no erp profiles yet</Chip>}
         </div>
       </SoftCard>
+      </Band>
 
       {/* the subject drawer — enter opens the thing the alarm names */}
       {drawerFor && (
@@ -560,6 +627,31 @@ export function OpsView({
               <p className="mt-2 rounded-lg border border-white/[0.08] bg-[#0E100E] px-3.5 py-2.5 font-mono text-[10px] leading-relaxed tracking-[0.04em] text-[#8E9194]">
                 math ▸ {drawerFor.evidence}
               </p>
+            )}
+
+            {/* deep-link — the subject the alarm names is one click away, not a search problem */}
+            {drawerFor.subjectKind === "engagement" && (
+              <button
+                onClick={() => {
+                  setDrawerFor(null);
+                  onGoPortal();
+                }}
+                className="mt-3 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#8E9194] transition-colors hover:text-[#F4F5F2]"
+              >
+                open the desk ▸
+              </button>
+            )}
+            {drawerFor.subjectKind === "dispatch" && (
+              <button
+                onClick={() => {
+                  setDrawerFor(null);
+                  document.getElementById("band-doors")?.scrollIntoView({ behavior: "smooth" });
+                }}
+                title="the subject of this alarm is an egress domain — the doors band holds the ledger row"
+                className="mt-3 font-mono text-[9.5px] uppercase tracking-[0.14em] text-[#8E9194] transition-colors hover:text-[#F4F5F2]"
+              >
+                jump to the doors band ▸
+              </button>
             )}
 
             {drawerEngagement && (
@@ -660,26 +752,6 @@ export function OpsView({
           </div>
         </div>
       )}
-      {/* the engine contract — how the document turnaround engine reports in */}
-      <SoftCard className="mt-5 px-6 py-5">
-        <SectionLabel className="mb-3">Engine contract — signed heartbeat ingress</SectionLabel>
-        <pre className="ink overflow-x-auto rounded-lg p-4 font-mono text-[11.5px] leading-relaxed text-white/90">{`POST /api/ops/heartbeat
-x-vertebra-signature: HMAC-SHA256(rawBody, OPS_HEARTBEAT_SECRET)
-{
-  "engineId": "turnaround-core",     // stable engine name
-  "pulseRef": "run-2026-10-30-014",  // idempotent — retries are free
-  "watchId": "parse_queue",          // which watch this pulse reports
-  "status": "ok",                    // ok | warn | fail
-  "detail": "queue drained · 12 docs parsed",
-  "expectEveryMs": 300000            // silence past max(3x, 10min) rings the deck
-}
-→ 200 { ok, deduped? }   // engines report in; the watchtower never dials out`}</pre>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Chip tone="outline">zero egress · one door in</Chip>
-          <Chip tone="outline">deck: fail pulses ring crit · silence rings crit</Chip>
-          <Chip tone="outline">native watches: SLA clocks · trend sentinels</Chip>
-        </div>
-      </SoftCard>
     </div>
   );
 }

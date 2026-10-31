@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Chip, PillButton, SectionLabel, SoftCard } from "./bits";
 import { humanDuration } from "@/lib/vertebra/watches";
+import { onConsoleRefresh, requestConsoleRefresh } from "@/lib/vertebra/console-bus";
 
 interface IntegrationRow {
   provider: string;
@@ -163,6 +164,10 @@ export function ConnectionsPanel() {
     return () => clearInterval(t);
   }, [load]);
 
+  // One beat everywhere: arming here refreshes the cockpit deck; a reveal in
+  // the sourcing view refreshes the spend line here.
+  useEffect(() => onConsoleRefresh(() => void load()), [load]);
+
   const patch = async (provider: string, body: Record<string, string | number | null>) => {
     setBusy(true);
     try {
@@ -176,6 +181,7 @@ export function ConnectionsPanel() {
         setError(j.error ?? `action failed (${res.status})`);
       } else {
         setError(null);
+        requestConsoleRefresh("connections:patch");
         await load();
       }
     } catch {
@@ -200,6 +206,7 @@ export function ConnectionsPanel() {
       } else {
         setError(j.error ?? `probe failed (${res.status})`);
       }
+      requestConsoleRefresh("connections:probe");
       await load();
     } catch {
       setError("probe failed");

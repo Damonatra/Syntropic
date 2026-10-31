@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Chip, PillButton, SectionLabel, SoftCard } from "./bits";
+import { onConsoleRefresh, requestConsoleRefresh } from "@/lib/vertebra/console-bus";
 
 interface DomainRow {
   domain: string;
@@ -74,6 +75,10 @@ export function SendingDomainsPanel() {
     return () => clearInterval(t);
   }, [load]);
 
+  // One beat everywhere: a register/patch here refreshes the cockpit deck;
+  // any other surface's write refreshes the ledger here.
+  useEffect(() => onConsoleRefresh(() => void load()), [load]);
+
   const mutate = useCallback(
     async (init: RequestInit) => {
       setBusy(true);
@@ -84,6 +89,7 @@ export function SendingDomainsPanel() {
           setError(j.error ?? `action failed (${res.status})`);
         } else {
           setError(null);
+          requestConsoleRefresh(`domains:${String(init.method ?? "get").toLowerCase()}`);
           await load();
         }
       } catch {

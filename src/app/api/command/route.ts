@@ -33,6 +33,7 @@ import {
   type PulseKind,
   type ReplyIntent,
   type ScoreShape,
+  type SourcingSnapshot,
   type TriageItem,
   type WatchHealth,
 } from "@/lib/vertebra/command";
@@ -57,6 +58,7 @@ import {
 } from "@/lib/vertebra/watches";
 import { capForDay, startOfUtcDay, warmupDay } from "@/lib/vertebra/warmup";
 import { deliverAlert, pagerConfigured } from "@/lib/vertebra/pager";
+import { REVEAL_BAR } from "@/lib/vertebra/sourcing";
 
 function parseErp(raw: string | null): ErpShape | null {
   if (!raw) return null;
@@ -959,6 +961,32 @@ export async function GET(request: Request) {
 
     const pulse = pulseRaw.sort((a, b) => b.atMs - a.atMs).slice(0, 120);
 
+    // ---- sourcing spoke counts ---------------------------------------------- //
+    // The rail badge and the sourcing view's health line ride the snapshot
+    // instead of a second fetch. Raw SQL on purpose (same doctrine as the
+    // baseline ledger: survives a schema push without a client regenerate);
+    // failure removes the badge, never the page.
+    let sourcingCounts: SourcingSnapshot | null = null;
+    try {
+      const rows = await db.$queryRawUnsafe<Array<{ stage: string; eligible: number; total: number }>>(
+        `SELECT stage,
+                COALESCE(SUM(CASE WHEN fitScore >= ? THEN 1 ELSE 0 END), 0) AS eligible,
+                COUNT(*) AS total
+         FROM SourcingCandidate
+         GROUP BY stage`,
+        REVEAL_BAR,
+      );
+      const byStage = new Map(rows.map((r) => [r.stage, r]));
+      sourcingCounts = {
+        eligibleAboveBar: Number(byStage.get("staged")?.eligible ?? 0),
+        staged: Number(byStage.get("staged")?.total ?? 0),
+        revealed: Number(byStage.get("revealed")?.total ?? 0),
+        dismissed: Number(byStage.get("dismissed")?.total ?? 0),
+      };
+    } catch (err) {
+      console.error("[api/command] sourcing counts failed", err);
+    }
+
     const snapshot: CommandSnapshot = {
       generatedAtMs: now,
       leads,
@@ -971,6 +999,7 @@ export async function GET(request: Request) {
       baseline: null,
       pulse,
       engagements,
+      sourcing: sourcingCounts,
     };
 
     // ---- 24h baseline ledger ------------------------------------------------ //
