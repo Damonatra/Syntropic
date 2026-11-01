@@ -1,0 +1,57 @@
+services:
+  # Next.js 16 Audit Workstation & Command Centre
+  syntropic-ui:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM oven/bun:1.2-slim AS base
+        WORKDIR /app
+        COPY package.json bun.lock ./
+        RUN bun install --frozen-lockfile
+        COPY . .
+        RUN bun run build
+        EXPOSE 3000
+        CMD ["bun", "run", "start"]
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - ENCLAVE_SESSION_SECRET=${ENCLAVE_SESSION_SECRET}
+    restart: always
+
+  # Vertebra Python FastAPI Lead & Scoring Engine
+  vertebra:
+    build:
+      context: ./vertebra
+      dockerfile_inline: |
+        FROM python:3.12-slim
+        WORKDIR /app
+        RUN apt-get update && apt-get install -y --no-install-recommends \
+            curl \
+            && rm -rf /var/lib/apt/lists/*
+        COPY pyproject.toml .
+        RUN pip install --no-cache-dir -e "."
+        COPY . .
+        EXPOSE 8000
+        CMD ["uvicorn", "vertebra.api.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    restart: always
+    depends_on:
+      - qdrant
+
+  # Qdrant Vector Search Engine
+  qdrant:
+    image: qdrant/qdrant:v1.12.0
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    restart: always
+
+volumes:
+  qdrant_storage:
