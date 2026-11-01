@@ -1,5 +1,8 @@
 /**
  * Alert pager — Telegram / Slack delivery for high-intent IntentAlerts.
+ * Telegram fans out to TWO destinations — the operator's private chat
+ * (TELEGRAM_CHAT_ID) and the team group (TELEGRAM_GROUP_CHAT_ID) — each
+ * attempted independently and reported under its own honest label.
  * Console parity of vertebra/telemetry/notifier.py channel fan-out.
  *
  * The pager is a spoke like any other, so it obeys the same constitution:
@@ -80,29 +83,35 @@ async function deliverPage(title: string, body: string, glyph: string): Promise<
   const jobs: Array<Promise<void>> = [];
 
   const tgToken = process.env.TELEGRAM_BOT_TOKEN;
-  const tgChat = process.env.TELEGRAM_CHAT_ID;
-  if (tgToken && tgChat) {
+  // one integration, two destinations — private command channel first,
+  // team group second; each rings independently, each reports honestly
+  const destinations: Array<{ label: string; chatId: string }> = [];
+  if (process.env.TELEGRAM_CHAT_ID) destinations.push({ label: "telegram", chatId: process.env.TELEGRAM_CHAT_ID });
+  if (process.env.TELEGRAM_GROUP_CHAT_ID) destinations.push({ label: "telegram-group", chatId: process.env.TELEGRAM_GROUP_CHAT_ID });
+  if (tgToken && destinations.length > 0) {
     const gate = await gateAllows("telegram");
     if (!gate.ok) {
-      refused.push(`telegram: ${gate.reason}`);
+      for (const d of destinations) refused.push(`${d.label}: ${gate.reason}`);
       console.warn(`[pager] telegram refused by the registry: ${gate.reason}`);
     } else {
-      attempted.push("telegram");
-      jobs.push(
-        withTimeout(
-          fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ chat_id: tgChat, text: alertText(title, body, glyph), disable_web_page_preview: true }),
-          })
-            .then(async (r) => {
-              if (r.ok) delivered.push("telegram");
-              else console.warn(`[pager] telegram ${r.status}: ${(await r.text().catch(() => "")).slice(0, 120)}`);
+      for (const d of destinations) {
+        attempted.push(d.label);
+        jobs.push(
+          withTimeout(
+            fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ chat_id: d.chatId, text: alertText(title, body, glyph), disable_web_page_preview: true }),
             })
-            .catch((e) => console.warn("[pager] telegram failed:", String(e).slice(0, 120))),
-          4_000,
-        ),
-      );
+              .then(async (r) => {
+                if (r.ok) delivered.push(d.label);
+                else console.warn(`[pager] ${d.label} ${r.status}: ${(await r.text().catch(() => "")).slice(0, 120)}`);
+              })
+              .catch((e) => console.warn(`[pager] ${d.label} failed:`, String(e).slice(0, 120))),
+            4_000,
+          ),
+        );
+      }
     }
   }
 
@@ -188,7 +197,7 @@ export async function probePagerChannel(provider: string, transport: typeof fetc
 
 export function pagerConfigured(): string[] {
   const channels: string[] = [];
-  if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) channels.push("telegram");
+  if (process.env.TELEGRAM_BOT_TOKEN && (process.env.TELEGRAM_CHAT_ID || process.env.TELEGRAM_GROUP_CHAT_ID)) channels.push("telegram");
   if (process.env.SLACK_WEBHOOK_URL) channels.push("slack");
   return channels;
 }

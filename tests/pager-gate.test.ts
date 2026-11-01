@@ -46,6 +46,7 @@ beforeAll(async () => {
   delete process.env.SLACK_WEBHOOK_URL;
   delete process.env.TELEGRAM_BOT_TOKEN;
   delete process.env.TELEGRAM_CHAT_ID;
+  delete process.env.TELEGRAM_GROUP_CHAT_ID;
   rmSync(SCRATCH, { force: true });
   rmSync(`${SCRATCH}-journal`, { force: true });
   execSync("npx prisma db push --skip-generate", {
@@ -59,6 +60,7 @@ afterAll(async () => {
   delete process.env.SLACK_WEBHOOK_URL;
   delete process.env.TELEGRAM_BOT_TOKEN;
   delete process.env.TELEGRAM_CHAT_ID;
+  delete process.env.TELEGRAM_GROUP_CHAT_ID;
   vi.unstubAllGlobals();
   await db.$disconnect();
 });
@@ -87,6 +89,37 @@ describe("pager — the registry gate", () => {
     const [url, init] = fakeFetch.mock.calls[0] as [string, RequestInit];
     expect(url).toBe(SLACK_HOOK);
     expect(String(init.body)).toContain("IRON HOT · prime");
+  });
+
+  it("2b. armed telegram row + private chat and team group → fires to both destinations", async () => {
+    await seedPagerRow("telegram-pager", "TELEGRAM_BOT_TOKEN");
+    await db.integrationRecord.update({ where: { provider: "telegram-pager" }, data: { status: "armed" } });
+    // hermetic: this test states its own env truth — slack stays silent here
+    const savedSlack = process.env.SLACK_WEBHOOK_URL;
+    delete process.env.SLACK_WEBHOOK_URL;
+    process.env.TELEGRAM_BOT_TOKEN = "123456789:AAtest-token-for-gate-checks";
+    process.env.TELEGRAM_CHAT_ID = "424242";
+    process.env.TELEGRAM_GROUP_CHAT_ID = "-1005555";
+    fakeFetch.mockClear();
+    try {
+      const out = await deliverAlert("IRON HOT · dual", "both destinations");
+      expect(out.attempted).toEqual(["telegram", "telegram-group"]);
+      expect(out.delivered).toEqual(["telegram", "telegram-group"]);
+      expect(out.refused).toEqual([]);
+      expect(fakeFetch).toHaveBeenCalledTimes(2);
+      const [, init1] = fakeFetch.mock.calls[0] as unknown as [string, RequestInit];
+      const [, init2] = fakeFetch.mock.calls[1] as unknown as [string, RequestInit];
+      expect(String(init1.body)).toContain('"chat_id":"424242"');
+      expect(String(init2.body)).toContain('"chat_id":"-1005555"');
+    } finally {
+      // restore the suite's preconditions even on failure — telegram back to
+      // unregistered, every telegram env var back to absent, slack restored
+      await db.integrationRecord.deleteMany({ where: { provider: "telegram-pager" } });
+      delete process.env.TELEGRAM_GROUP_CHAT_ID;
+      delete process.env.TELEGRAM_CHAT_ID;
+      delete process.env.TELEGRAM_BOT_TOKEN;
+      if (savedSlack !== undefined) process.env.SLACK_WEBHOOK_URL = savedSlack;
+    }
   });
 
   it("3. unregistered channel → refused (the star map is the allowlist)", async () => {
