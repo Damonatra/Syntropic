@@ -239,7 +239,7 @@ class IntentMonitor:
         if prospect_uuid is not None:
             heat = await self._intent_heat(prospect_uuid)
             await self._db.execute(
-                "UPDATE prospects SET last_intent_heat = $2, updated_at = now() WHERE id = $1",
+                "UPDATE prospects SET intent_heat = $2, updated_at = now() WHERE id = $1",
                 prospect_uuid,
                 heat,
             )

@@ -91,6 +91,12 @@ class Database:
         async with self.pool.acquire() as conn:
             return await conn.fetchrow(sql, *args)
 
+    async def fetchval(self, sql: str, *args: Any, enforce_tenant: bool = False, expected_tenant_id: str | None = None) -> Any:
+        if enforce_tenant:
+            validate_tenant_query(sql, expected_tenant_id=expected_tenant_id)
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(sql, *args)
+
     async def execute(self, sql: str, *args: Any, enforce_tenant: bool = False, expected_tenant_id: str | None = None) -> str:
         if enforce_tenant:
             validate_tenant_query(sql, expected_tenant_id=expected_tenant_id)

@@ -62,3 +62,6 @@ server.log
 
 __pycache__/
 *.pyc
+
+
+vertebra-standalone/

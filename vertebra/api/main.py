@@ -21,7 +21,7 @@ from vertebra.db.pool import Database, database_from_settings
 from vertebra.dispatch.router import DispatchRouter
 from vertebra.logging_conf import configure_logging, get_logger
 from vertebra.telemetry.intent_tracker import IntentMonitor, telemetry_router
-from vertebra.workers.jobs import default_jobs
+from vertebra.workers.jobs import PipelineJobs, default_jobs
 from vertebra.workers.scheduler import Scheduler
 from vertebra.workers.tactical_jobs import default_tactical_jobs
 
@@ -48,6 +48,7 @@ def create_app(*, start_scheduler: bool = True) -> FastAPI:
         app.state.dispatch_router = dispatch_router
         app.state.high_touch = high_touch
         app.state.scorer = _lazy_scorer()
+        app.state.jobs = PipelineJobs(db, outbox, dispatch_router)
         app.state.load_prospect = _make_prospect_loader(db)
 
         # -- advanced tactical modules (5-9) ---------------------------------
