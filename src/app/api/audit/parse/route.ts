@@ -182,31 +182,63 @@ export async function POST(request: Request) {
     const mime = file.type || "application/octet-stream";
 
     let extraction: Extraction;
-    if (mime === "application/pdf" || /\.pdf$/i.test(file.name)) {
-      const pages = countPdfPages(buf);
-      const text = extractPdfText(buf);
-      extraction = {
-        extraction: text.length > 400 ? "full_text" : text.length > 40 ? "partial" : "header_only",
-        pages,
-        text,
-        note:
-          text.length > 40
-            ? "flate streams inflated, text operators parsed"
-            : "no embedded text recovered — likely scanned raster; engine-side Docling OCR required",
-      };
-    } else if (mime.startsWith("text/") || /\.(csv|txt|tsv)$/i.test(file.name)) {
-      const text = buf.toString("utf8");
-      extraction = {
-        extraction: text.length > 200 ? "full_text" : "partial",
-        pages: null,
-        text,
-        note: "plain-text row parse",
-      };
-    } else {
-      return NextResponse.json(
-        { error: "unsupported_mime", supported: ["application/pdf", "text/csv", "text/plain", "text/tsv"] },
-        { status: 415 },
-      );
+    let doclingStatus = "engine_pending";
+
+    // Attempt to call Docling worker microservice ONLY if explicitly configured in environment
+    const doclingUrl = process.env.DOCLING_WORKER_URL;
+    if (doclingUrl) {
+      try {
+        const workerForm = new FormData();
+        workerForm.append("file", new Blob([buf], { type: mime }), file.name);
+        const workerRes = await fetch(doclingUrl, {
+          method: "POST",
+          body: workerForm,
+          signal: AbortSignal.timeout(3000),
+        });
+        if (workerRes.ok) {
+          const workerData = await workerRes.json();
+          if (workerData.text && workerData.text.length > 20) {
+            extraction = {
+              extraction: workerData.text.length > 400 ? "full_text" : "partial",
+              pages: workerData.total_pages ?? countPdfPages(buf),
+              text: workerData.text,
+              note: `processed via docling worker (${workerData.fidelity})`,
+            };
+            doclingStatus = "completed";
+          }
+        }
+      } catch {
+        // Fallback to internal native stream decompression
+      }
+    }
+
+    if (!doclingStatus || doclingStatus === "engine_pending") {
+      if (mime === "application/pdf" || /\.pdf$/i.test(file.name)) {
+        const pages = countPdfPages(buf);
+        const text = extractPdfText(buf);
+        extraction = {
+          extraction: text.length > 400 ? "full_text" : text.length > 40 ? "partial" : "header_only",
+          pages,
+          text,
+          note:
+            text.length > 40
+              ? "flate streams inflated, text operators parsed"
+              : "no embedded text recovered — likely scanned raster; engine-side Docling OCR required",
+        };
+      } else if (mime.startsWith("text/") || /\.(csv|txt|tsv)$/i.test(file.name)) {
+        const text = buf.toString("utf8");
+        extraction = {
+          extraction: text.length > 200 ? "full_text" : "partial",
+          pages: null,
+          text,
+          note: "plain-text row parse",
+        };
+      } else {
+        return NextResponse.json(
+          { error: "unsupported_mime", supported: ["application/pdf", "text/csv", "text/plain", "text/tsv"] },
+          { status: 415 },
+        );
+      }
     }
 
     const items = extractLineItems(extraction.text);
@@ -237,7 +269,7 @@ export async function POST(request: Request) {
           extraction: extraction.extraction,
           note: "identical bytes already sealed to this engagement",
           sampleItems: [],
-          engineStages: { docling_ocr: "engine_pending", hybrid_rrf_qdrant: "engine_pending" },
+          engineStages: { docling_ocr: doclingStatus, hybrid_rrf_qdrant: "engine_pending" },
         });
       }
     }
@@ -258,7 +290,7 @@ export async function POST(request: Request) {
           spaReferences: spaRefs,
           distinctSkus,
           sampleItems: items.slice(0, 8),
-          engineStages: { docling_ocr: "engine_pending", hybrid_rrf_qdrant: "engine_pending" },
+          engineStages: { docling_ocr: doclingStatus, hybrid_rrf_qdrant: "engine_pending" },
         }),
       },
     });
@@ -290,7 +322,7 @@ export async function POST(request: Request) {
       extraction: extraction.extraction,
       note: extraction.note,
       sampleItems: items.slice(0, 8),
-      engineStages: { docling_ocr: "engine_pending", hybrid_rrf_qdrant: "engine_pending" },
+      engineStages: { docling_ocr: doclingStatus, hybrid_rrf_qdrant: "engine_pending" },
     });
   } catch (error) {
     console.error("[api/audit/parse] failed", error);
